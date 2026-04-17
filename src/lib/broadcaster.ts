@@ -60,6 +60,12 @@ export async function startBroadcast(opts: StartOpts): Promise<BroadcasterState>
   stream.getVideoTracks().forEach((t) => t.stop());
   const audioOnly = new MediaStream(audioTracks);
 
+  // Chrome's "Stop sharing" toolbar or an OS-level tear-down ends the track;
+  // mirror that into a clean broadcast stop so server relays shut down too.
+  for (const t of audioTracks) {
+    t.addEventListener("ended", () => { stopBroadcast().catch(() => {}); });
+  }
+
   const mime = pickMime();
   const recorder = new MediaRecorder(
     audioOnly,
