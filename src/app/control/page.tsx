@@ -12,6 +12,7 @@ import {
   type CaptureSource,
 } from "@/lib/broadcaster";
 import {
+  activeSpeakerIsLive,
   activeSpeakerZone,
   startSpeakerMode,
   stopSpeakerMode,
@@ -25,6 +26,7 @@ export default function ControlPage() {
   const [loading, setLoading] = useState(true);
   const [liveState, setLiveState] = useState<{ zoneIds: string[]; mode: BroadcastMode } | null>(null);
   const [speakerZoneId, setSpeakerZoneId] = useState<string | null>(null);
+  const [speakerLive, setSpeakerLive] = useState(false);
 
   const reload = useCallback(async () => {
     try {
@@ -60,7 +62,10 @@ export default function ControlPage() {
   }, []);
 
   useEffect(() => {
-    const sync = () => setSpeakerZoneId(activeSpeakerZone());
+    const sync = () => {
+      setSpeakerZoneId(activeSpeakerZone());
+      setSpeakerLive(activeSpeakerIsLive());
+    };
     sync();
     return subscribeSpeaker(sync);
   }, []);
@@ -83,10 +88,8 @@ export default function ControlPage() {
 
   const toggleSpeaker = async (zone: ZoneWithDevices) => {
     if (speakerZoneId === zone.id) { stopSpeakerMode(); return; }
-    const url = zone.streamUrl;
-    if (!url) { alert("Für diese Zone ist keine Stream-URL hinterlegt."); return; }
     try {
-      await startSpeakerMode(zone.id, url);
+      await startSpeakerMode(zone.id);
     } catch (e) {
       alert(`Wiedergabe fehlgeschlagen: ${(e as Error).message}`);
     }
@@ -176,6 +179,7 @@ export default function ControlPage() {
               globalAnnounce={globalBroadcasting}
               speakerActive={speakerZoneId === z.id}
               speakerElsewhere={speakerZoneId !== null && speakerZoneId !== z.id}
+              speakerLive={speakerZoneId === z.id && speakerLive}
               onVolume={(v) => updateVolume(z.id, v)}
               onBroadcast={(src, mode) => doBroadcast(z.id, src, mode)}
               onEndBroadcast={endBroadcast}
@@ -196,12 +200,13 @@ function ZoneCard(props: {
   globalAnnounce: boolean;
   speakerActive: boolean;
   speakerElsewhere: boolean;
+  speakerLive: boolean;
   onVolume: (v: number) => void;
   onBroadcast: (src: CaptureSource, mode: BroadcastMode) => void;
   onEndBroadcast: () => void;
   onToggleSpeaker: () => void;
 }) {
-  const { zone, liveHere, liveMode, anyLive, globalAnnounce, speakerActive, speakerElsewhere } = props;
+  const { zone, liveHere, liveMode, anyLive, globalAnnounce, speakerActive, speakerElsewhere, speakerLive } = props;
   const [volume, setVolume] = useState(zone.volume);
   useEffect(() => { setVolume(zone.volume); }, [zone.volume]);
 
@@ -285,9 +290,8 @@ function ZoneCard(props: {
       <div>
         <button
           onClick={props.onToggleSpeaker}
-          disabled={speakerElsewhere || !zone.streamUrl}
+          disabled={speakerElsewhere}
           className={speakerActive ? "btn-danger w-full" : "btn-outline w-full"}
-          title={!zone.streamUrl ? "Keine Stream-URL in den Zonen-Einstellungen" : ""}
         >
           {speakerActive
             ? <Square className="h-4 w-4" aria-hidden />
@@ -295,7 +299,9 @@ function ZoneCard(props: {
           {speakerActive ? "Lautsprecher-Modus beenden" : "Lautsprecher-Modus starten"}
         </button>
         <p className="mt-1.5 text-xs text-neutral-500">
-          Dieses Gerät spielt den Zonen-Stream lokal ab. Nur eine Zone gleichzeitig.
+          {speakerActive
+            ? (speakerLive ? "Spielt den aktiven Live-Stream dieser Zone ab." : "Spielt den nativen Stream dieser Zone ab.")
+            : "Dieses Gerät gibt den Zonen-Stream lokal wieder. Bei aktiver Tab-Audio/Durchsage wird automatisch der Live-Stream gespielt."}
         </p>
       </div>
 
