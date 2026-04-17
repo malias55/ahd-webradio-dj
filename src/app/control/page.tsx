@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Megaphone, MonitorPlay, Square, Volume2 } from "lucide-react";
+import { Headphones, Megaphone, MonitorPlay, Square, Volume2 } from "lucide-react";
 import type { Zone, Device } from "@/types";
 import { patchZone, sendZoneCommand } from "@/lib/apiClient";
 import {
@@ -11,6 +11,12 @@ import {
   type BroadcastMode,
   type CaptureSource,
 } from "@/lib/broadcaster";
+import {
+  activeSpeakerZone,
+  startSpeakerMode,
+  stopSpeakerMode,
+  subscribeSpeaker,
+} from "@/lib/speakerMode";
 
 type ZoneWithDevices = Zone & { devices: Device[] };
 
@@ -18,6 +24,7 @@ export default function ControlPage() {
   const [zones, setZones] = useState<ZoneWithDevices[]>([]);
   const [loading, setLoading] = useState(true);
   const [liveState, setLiveState] = useState<{ zoneIds: string[]; mode: BroadcastMode } | null>(null);
+  const [speakerZoneId, setSpeakerZoneId] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     try {
@@ -47,9 +54,15 @@ export default function ControlPage() {
   }, []);
 
   useEffect(() => {
-    const onHide = () => { stopBroadcast().catch(() => {}); };
+    const onHide = () => { stopBroadcast().catch(() => {}); stopSpeakerMode(); };
     window.addEventListener("pagehide", onHide);
     return () => window.removeEventListener("pagehide", onHide);
+  }, []);
+
+  useEffect(() => {
+    const sync = () => setSpeakerZoneId(activeSpeakerZone());
+    sync();
+    return subscribeSpeaker(sync);
   }, []);
 
   const updateVolume = async (zoneId: string, v: number) => {
@@ -67,6 +80,17 @@ export default function ControlPage() {
     }
   };
   const endBroadcast = async () => { await stopBroadcast(); setLiveState(null); };
+
+  const toggleSpeaker = async (zone: ZoneWithDevices) => {
+    if (speakerZoneId === zone.id) { stopSpeakerMode(); return; }
+    const url = zone.streamUrl;
+    if (!url) { alert("Für diese Zone ist keine Stream-URL hinterlegt."); return; }
+    try {
+      await startSpeakerMode(zone.id, url);
+    } catch (e) {
+      alert(`Wiedergabe fehlgeschlagen: ${(e as Error).message}`);
+    }
+  };
 
   // "Durchsage an alle" — toggles the same mic broadcast across every zone.
   const announceAll = async () => {
@@ -150,9 +174,12 @@ export default function ControlPage() {
               liveMode={liveState?.mode}
               anyLive={!!liveState}
               globalAnnounce={globalBroadcasting}
+              speakerActive={speakerZoneId === z.id}
+              speakerElsewhere={speakerZoneId !== null && speakerZoneId !== z.id}
               onVolume={(v) => updateVolume(z.id, v)}
               onBroadcast={(src, mode) => doBroadcast(z.id, src, mode)}
               onEndBroadcast={endBroadcast}
+              onToggleSpeaker={() => toggleSpeaker(z)}
             />
           ))}
         </div>
@@ -167,11 +194,14 @@ function ZoneCard(props: {
   liveMode?: BroadcastMode;
   anyLive: boolean;
   globalAnnounce: boolean;
+  speakerActive: boolean;
+  speakerElsewhere: boolean;
   onVolume: (v: number) => void;
   onBroadcast: (src: CaptureSource, mode: BroadcastMode) => void;
   onEndBroadcast: () => void;
+  onToggleSpeaker: () => void;
 }) {
-  const { zone, liveHere, liveMode, anyLive, globalAnnounce } = props;
+  const { zone, liveHere, liveMode, anyLive, globalAnnounce, speakerActive, speakerElsewhere } = props;
   const [volume, setVolume] = useState(zone.volume);
   useEffect(() => { setVolume(zone.volume); }, [zone.volume]);
 
@@ -250,6 +280,23 @@ function ZoneCard(props: {
             <Megaphone className="h-4 w-4" aria-hidden /> Durchsage beginnen
           </button>
         )}
+      </div>
+
+      <div>
+        <button
+          onClick={props.onToggleSpeaker}
+          disabled={speakerElsewhere || !zone.streamUrl}
+          className={speakerActive ? "btn-danger w-full" : "btn-outline w-full"}
+          title={!zone.streamUrl ? "Keine Stream-URL in den Zonen-Einstellungen" : ""}
+        >
+          {speakerActive
+            ? <Square className="h-4 w-4" aria-hidden />
+            : <Headphones className="h-4 w-4" aria-hidden />}
+          {speakerActive ? "Lautsprecher-Modus beenden" : "Lautsprecher-Modus starten"}
+        </button>
+        <p className="mt-1.5 text-xs text-neutral-500">
+          Dieses Gerät spielt den Zonen-Stream lokal ab. Nur eine Zone gleichzeitig.
+        </p>
       </div>
 
       <p className="text-xs text-neutral-500">
