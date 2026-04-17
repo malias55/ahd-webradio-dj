@@ -19,14 +19,28 @@ let lastAnnounceEndedAt = 0;
 
 const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
 
-function spawnFfmpeg(zoneId: string, kind: RelayKind): ChildProcessWithoutNullStreams {
-  // No -f on input: let ffmpeg autodetect. Browsers emit WebM/Opus (Chrome,
-  // Firefox, Android) or MP4/AAC (iOS Safari) from MediaRecorder; ffmpeg
-  // sniffs both fine as long as the first chunk carries the container header.
+function inputFormat(mime: string | undefined): string {
+  if (!mime) return "webm";
+  const m = mime.toLowerCase();
+  if (m.includes("webm")) return "webm";
+  if (m.includes("ogg")) return "ogg";
+  if (m.includes("mp4") || m.includes("aac") || m.includes("m4a")) return "mp4";
+  return "webm";
+}
+
+function spawnFfmpeg(zoneId: string, kind: RelayKind, mime?: string): ChildProcessWithoutNullStreams {
+  // Force -f based on the client's container so ffmpeg doesn't block trying
+  // to probe an incomplete live stream. probesize + analyzeduration are
+  // trimmed so the first MP3 bytes emit within a few hundred ms instead of
+  // ffmpeg waiting for enough data to run its usual heuristics.
   const proc = spawn(
     FFMPEG,
     [
       "-hide_banner", "-loglevel", "warning",
+      "-fflags", "+nobuffer+genpts",
+      "-analyzeduration", "0",
+      "-probesize", "32",
+      "-f", inputFormat(mime),
       "-i", "pipe:0",
       "-vn",
       "-c:a", "libmp3lame",
@@ -79,7 +93,7 @@ export function canStartAnnounce(): { ok: true } | { ok: false; reason: string; 
   return { ok: true };
 }
 
-export function startRelay(zoneId: string, kind: RelayKind): Relay {
+export function startRelay(zoneId: string, kind: RelayKind, mime?: string): Relay {
   const map = mapFor(kind);
   const existing = map.get(zoneId);
   if (existing) {
@@ -88,7 +102,7 @@ export function startRelay(zoneId: string, kind: RelayKind): Relay {
     map.delete(zoneId);
   }
 
-  const ffmpeg = spawnFfmpeg(zoneId, kind);
+  const ffmpeg = spawnFfmpeg(zoneId, kind, mime);
   const r: Relay = {
     zoneId, kind, ffmpeg,
     subscribers: new Set(),

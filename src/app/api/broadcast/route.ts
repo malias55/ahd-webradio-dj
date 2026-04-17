@@ -17,6 +17,7 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const action = body?.action === "stop" ? "stop" : "start";
   const mode: RelayKind = body?.mode === "announce" ? "announce" : "stream";
+  const mime: string = typeof body?.mime === "string" ? body.mime : "audio/webm";
   const zoneIds: string[] = Array.isArray(body?.zoneIds) ? body.zoneIds : [];
 
   if (zoneIds.length === 0) {
@@ -36,7 +37,7 @@ export async function POST(req: Request) {
     }
 
     for (const z of zones) {
-      startRelay(z.id, mode);
+      startRelay(z.id, mode, mime);
       const url = liveUrl(req, z.id);
       sendToZone(z.id, { type: "play", url });
       const v = mode === "announce" ? Math.max(80, z.volume) : z.volume;
