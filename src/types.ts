@@ -5,6 +5,7 @@ export type Zone = {
   streamUrl: string | null;
   volume: number;
   devices?: Device[];
+  liveBroadcast?: boolean;
 };
 
 export type Device = {

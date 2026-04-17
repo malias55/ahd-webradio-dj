@@ -2,11 +2,12 @@
 
 // Plays a zone's current audio source through this browser's output.
 // Preference: active browser-broadcast relay → zone.streamUrl.
-// Polls the resolver every few seconds so the player follows live/off transitions.
+// Starts in "waiting" state if nothing is available; polls every few seconds
+// so the local player picks up a live broadcast as soon as it starts.
 
 type State = {
   zoneId: string;
-  url: string;
+  url: string | null;
   live: boolean;
 };
 
@@ -23,7 +24,6 @@ function ensureEl() {
   el.preload = "none";
   el.crossOrigin = "anonymous";
   el.addEventListener("error", () => {
-    // Leave state intact so the UI still shows the zone; the next poll may recover.
     console.warn("[speaker] audio element error", el.error);
   });
   audioEl = el;
@@ -31,42 +31,50 @@ function ensureEl() {
 }
 
 async function resolveSource(zoneId: string): Promise<{ url: string; live: boolean } | null> {
-  const r = await fetch(`/api/zones/${zoneId}/current-source`, { cache: "no-store" });
-  if (!r.ok) return null;
-  const data = (await r.json()) as { url: string | null; live: boolean };
-  if (!data.url) return null;
-  return { url: data.url, live: data.live };
+  try {
+    const r = await fetch(`/api/zones/${zoneId}/current-source`, { cache: "no-store" });
+    if (!r.ok) return null;
+    const data = (await r.json()) as { url: string | null; live: boolean };
+    if (!data.url) return null;
+    return { url: data.url, live: data.live };
+  } catch { return null; }
 }
 
-async function swap(zoneId: string, next: { url: string; live: boolean }) {
+async function swap(zoneId: string, next: { url: string; live: boolean } | null) {
   const el = ensureEl();
-  const changed = !state || state.url !== next.url;
-  state = { zoneId, url: next.url, live: next.live };
-  if (changed) {
-    el.src = next.url;
-    try { await el.play(); }
-    catch (e) { console.warn("[speaker] play failed", e); }
+  const prevUrl = state?.url ?? null;
+  const nextUrl = next?.url ?? null;
+  state = { zoneId, url: nextUrl, live: next?.live ?? false };
+
+  if (prevUrl !== nextUrl) {
+    if (nextUrl) {
+      el.src = nextUrl;
+      try { await el.play(); }
+      catch (e) { console.warn("[speaker] play failed", e); }
+    } else {
+      el.pause();
+      el.removeAttribute("src");
+      el.load();
+    }
   }
   notify();
 }
 
 export async function startSpeakerMode(zoneId: string) {
   if (state && state.zoneId !== zoneId) stopSpeakerMode();
+  ensureEl();
 
   const initial = await resolveSource(zoneId);
-  if (!initial) {
-    throw new Error("Keine aktive Quelle — weder Live-Stream noch Zonen-URL erreichbar.");
-  }
   await swap(zoneId, initial);
 
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = setInterval(async () => {
     if (!state || state.zoneId !== zoneId) return;
-    try {
-      const current = await resolveSource(zoneId);
-      if (current && current.url !== state.url) await swap(zoneId, current);
-    } catch { /* ignore poll error */ }
-  }, 4000);
+    const current = await resolveSource(zoneId);
+    const nextUrl = current?.url ?? null;
+    if (nextUrl !== state.url) await swap(zoneId, current);
+    else state.live = current?.live ?? false;
+  }, 3000);
 }
 
 export function stopSpeakerMode() {
@@ -82,6 +90,7 @@ export function stopSpeakerMode() {
 
 export function activeSpeakerZone() { return state?.zoneId ?? null; }
 export function activeSpeakerIsLive() { return state?.live ?? false; }
+export function activeSpeakerHasSource() { return !!state?.url; }
 
 export function subscribeSpeaker(fn: () => void) {
   listeners.add(fn);
