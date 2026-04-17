@@ -122,28 +122,6 @@ export default function ControlPage() {
         </p>
       </div>
 
-      {liveState && (
-        <div className="card flex flex-col gap-3 border-brand-500 bg-brand-50 text-brand-900 dark:bg-brand-700/10 dark:text-brand-100 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            {liveState.mode === "announce"
-              ? <Megaphone className="h-5 w-5" aria-hidden />
-              : <MonitorPlay className="h-5 w-5" aria-hidden />}
-            <div>
-              <div className="text-sm font-semibold">
-                {liveState.mode === "announce" ? "Durchsage läuft" : "Tab-Audio läuft"}
-              </div>
-              <div className="text-xs opacity-80">
-                {liveState.zoneIds.length === zones.length ? "alle Zonen" : `${liveState.zoneIds.length} Zone(n)`}
-              </div>
-            </div>
-          </div>
-          <button onClick={endBroadcast} className="btn-danger w-full sm:w-auto">
-            <Square className="h-4 w-4" aria-hidden />
-            {liveState.mode === "announce" ? "Durchsage beenden" : "Tab-Audio beenden"}
-          </button>
-        </div>
-      )}
-
       <div className="card flex flex-wrap items-center gap-2">
         <span className="mr-1 w-full text-sm font-semibold sm:w-auto">Alle Zonen:</span>
         <button
