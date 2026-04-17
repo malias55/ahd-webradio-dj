@@ -160,11 +160,15 @@ app.prepare().then(() => {
   });
   broadcastNs.on("connection", (socket) => {
     const activeZones = new Map<string, RelayKind>();
+    // Relay lifecycle is owned by /api/broadcast (POST). This handler only
+    // records the socket's zone + mode so subsequent broadcast:chunk events
+    // know where to route their bytes. Avoids a race where a duplicate
+    // startRelay call from the socket killed the ffmpeg process just spawned
+    // by the REST call.
     socket.on("broadcast:start", (payload: { zoneId: string; mode?: RelayKind }) => {
       if (!payload?.zoneId) return;
       const mode: RelayKind = payload.mode === "announce" ? "announce" : "stream";
       activeZones.set(payload.zoneId, mode);
-      startRelay(payload.zoneId, mode);
     });
     socket.on("broadcast:chunk", (payload: { zoneId: string; chunk: ArrayBuffer | Buffer | Uint8Array }) => {
       if (!payload?.zoneId || !payload.chunk) return;

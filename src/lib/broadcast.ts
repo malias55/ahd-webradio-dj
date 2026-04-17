@@ -95,7 +95,12 @@ export function startRelay(zoneId: string, kind: RelayKind): Relay {
     startedAt: Date.now(),
   };
 
+  let loggedFirstOut = false;
   ffmpeg.stdout.on("data", (chunk: Buffer) => {
+    if (!loggedFirstOut) {
+      loggedFirstOut = true;
+      console.log(`[relay ${zoneId}/${kind}] first MP3 bytes: ${chunk.length}`);
+    }
     for (const sub of r.subscribers) {
       try { sub.write(chunk); } catch { r.subscribers.delete(sub); }
     }
@@ -128,9 +133,14 @@ export function stopAllRelaysForZone(zoneId: string) {
   stopRelay(zoneId, "stream");
 }
 
+const firstChunkLogged = new WeakSet<object>();
 export function pushChunk(zoneId: string, kind: RelayKind, chunk: Buffer) {
   const r = mapFor(kind).get(zoneId);
   if (!r) return 0;
+  if (!firstChunkLogged.has(r)) {
+    firstChunkLogged.add(r);
+    console.log(`[relay ${zoneId}/${kind}] first input chunk: ${chunk.length} B`);
+  }
   try { r.ffmpeg.stdin.write(chunk); } catch { /* noop */ }
   return r.subscribers.size;
 }

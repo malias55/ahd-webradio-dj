@@ -40,13 +40,10 @@ export async function startBroadcast(opts: StartOpts): Promise<BroadcasterState>
           audio: { suppressLocalAudioPlayback: true } as MediaTrackConstraints,
           video: true,
         })
-      : await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          },
-        });
+      // Let the browser pick sensible defaults for mic. Explicit AEC/NS/AGC
+      // constraints sometimes produced silence on Android Chrome when the
+      // requested combination wasn't fully supported.
+      : await navigator.mediaDevices.getUserMedia({ audio: true });
 
   const audioTracks = stream.getAudioTracks();
   if (audioTracks.length === 0) {
