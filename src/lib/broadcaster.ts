@@ -1,7 +1,6 @@
 "use client";
 
 import { io, type Socket } from "socket.io-client";
-import { stopSpeakerMode } from "./speakerMode";
 
 export type CaptureSource = "tab" | "microphone";
 export type BroadcastMode = "stream" | "announce";
@@ -25,15 +24,22 @@ type StartOpts = {
 
 export async function startBroadcast(opts: StartOpts): Promise<BroadcasterState> {
   if (active) await stopBroadcast();
-  // Lautsprecher-Modus and broadcasting are mutually exclusive on the same device.
-  stopSpeakerMode();
+  // Lautsprecher-Modus and broadcasting coexist: the source device can also
+  // play the relay audio (delayed) to stay in sync with other listeners.
 
   const { zoneIds, source, mode } = opts;
   if (!zoneIds.length) throw new Error("Keine Zone gewählt");
 
   const stream =
     source === "tab"
-      ? await navigator.mediaDevices.getDisplayMedia({ audio: true, video: true })
+      ? await navigator.mediaDevices.getDisplayMedia({
+          // suppressLocalAudioPlayback silences the shared tab's audio on THIS
+          // device while still capturing it for the relay. Prevents latency
+          // mismatches with other listeners. Chrome 109+; gracefully ignored
+          // by browsers that don't support the hint.
+          audio: { suppressLocalAudioPlayback: true } as MediaTrackConstraints,
+          video: true,
+        })
       : await navigator.mediaDevices.getUserMedia({
           audio: {
             echoCancellation: true,
