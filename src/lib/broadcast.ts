@@ -29,32 +29,36 @@ function inputFormat(mime: string | undefined): string {
 }
 
 function spawnFfmpeg(zoneId: string, kind: RelayKind, mime?: string): ChildProcessWithoutNullStreams {
-  // Force -f based on the client's container so ffmpeg doesn't block trying
-  // to probe an incomplete live stream. probesize + analyzeduration are
-  // trimmed so the first MP3 bytes emit within a few hundred ms instead of
-  // ffmpeg waiting for enough data to run its usual heuristics.
-  const proc = spawn(
-    FFMPEG,
-    [
-      "-hide_banner", "-loglevel", "warning",
-      "-fflags", "+nobuffer+genpts",
-      "-analyzeduration", "0",
-      "-probesize", "32",
-      "-f", inputFormat(mime),
-      "-i", "pipe:0",
-      "-vn",
-      "-c:a", "libmp3lame",
-      "-b:a", "128k",
-      "-ar", "44100",
-      "-ac", "2",
-      "-f", "mp3",
-      "pipe:1",
-    ],
-    { stdio: ["pipe", "pipe", "pipe"] },
-  );
+  const fmt = inputFormat(mime);
+  // Balance live latency with enough header probing to extract Opus/AAC
+  // stream parameters (too small and ffmpeg errors out with "Invalid data",
+  // too large and it buffers seconds before first MP3 byte).
+  const args = [
+    "-hide_banner", "-loglevel", "warning",
+    "-fflags", "+nobuffer+genpts",
+    "-probesize", "65536",
+    "-analyzeduration", "500000",
+    "-f", fmt,
+    "-i", "pipe:0",
+    "-vn",
+    "-c:a", "libmp3lame",
+    "-b:a", "128k",
+    "-ar", "44100",
+    "-ac", "2",
+    "-f", "mp3",
+    "pipe:1",
+  ];
+  const proc = spawn(FFMPEG, args, { stdio: ["pipe", "pipe", "pipe"] });
+  console.log(`[relay ${zoneId}/${kind}] ffmpeg spawn -f ${fmt} mime=${mime || "<none>"}`);
   proc.stderr.on("data", (d) => {
     const line = d.toString().trim();
     if (line) console.error(`[ffmpeg ${zoneId}/${kind}] ${line}`);
+  });
+  proc.stdin.on("error", (e) => {
+    // EPIPE is expected when the process dies before we write; noisy otherwise.
+    if ((e as NodeJS.ErrnoException).code !== "EPIPE") {
+      console.error(`[ffmpeg ${zoneId}/${kind}] stdin error`, e);
+    }
   });
   proc.on("exit", (code) => {
     console.warn(`[ffmpeg ${zoneId}/${kind}] exited code=${code}`);
