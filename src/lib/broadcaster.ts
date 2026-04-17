@@ -55,7 +55,10 @@ export async function startBroadcast(opts: StartOpts): Promise<BroadcasterState>
   const audioOnly = new MediaStream(audioTracks);
 
   const mime = pickMime();
-  const recorder = new MediaRecorder(audioOnly, { mimeType: mime, audioBitsPerSecond: 96_000 });
+  const recorder = new MediaRecorder(
+    audioOnly,
+    mime ? { mimeType: mime, audioBitsPerSecond: 96_000 } : { audioBitsPerSecond: 96_000 },
+  );
 
   const socket = io("/broadcast", { path: "/ws", transports: ["websocket"] });
   await new Promise<void>((resolve, reject) => {
@@ -111,9 +114,17 @@ export function activeBroadcast() {
 }
 
 function pickMime() {
-  const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"];
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/ogg;codecs=opus",
+    // iOS Safari: MediaRecorder only speaks MP4/AAC here
+    "audio/mp4;codecs=mp4a.40.2",
+    "audio/mp4",
+  ];
   for (const c of candidates) {
     if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(c)) return c;
   }
-  return "audio/webm";
+  // Last resort: let the browser pick its default.
+  return "";
 }

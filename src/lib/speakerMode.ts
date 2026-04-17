@@ -1,14 +1,14 @@
 "use client";
 
 // Plays a zone's current audio source through this browser's output.
-// Preference: active browser-broadcast relay → zone.streamUrl.
-// Starts in "waiting" state if nothing is available; polls every few seconds
-// so the local player picks up a live broadcast as soon as it starts.
+// Priority: active Durchsage > Tab-Audio > zone.streamUrl. Applies the
+// zone's master volume so the slider affects all listeners consistently.
 
 type State = {
   zoneId: string;
   url: string | null;
   live: boolean;
+  volume: number; // 0-100
 };
 
 let audioEl: HTMLAudioElement | null = null;
@@ -35,21 +35,32 @@ function ensureEl() {
   return el;
 }
 
-async function resolveSource(zoneId: string): Promise<{ url: string; live: boolean } | null> {
+async function resolveSource(
+  zoneId: string,
+): Promise<{ url: string; live: boolean; volume: number } | null> {
   try {
     const r = await fetch(`/api/zones/${zoneId}/current-source`, { cache: "no-store" });
     if (!r.ok) return null;
-    const data = (await r.json()) as { url: string | null; live: boolean };
+    const data = (await r.json()) as { url: string | null; live: boolean; volume?: number };
+    const vol = typeof data.volume === "number" ? data.volume : 80;
     if (!data.url) return null;
-    return { url: data.url, live: data.live };
+    return { url: data.url, live: data.live, volume: vol };
   } catch { return null; }
 }
 
-async function swap(zoneId: string, next: { url: string; live: boolean } | null) {
+async function swap(
+  zoneId: string,
+  next: { url: string; live: boolean; volume: number } | null,
+) {
   const el = ensureEl();
   const prevUrl = state?.url ?? null;
   const nextUrl = next?.url ?? null;
-  state = { zoneId, url: nextUrl, live: next?.live ?? false };
+  const nextVol = next?.volume ?? state?.volume ?? 80;
+
+  state = { zoneId, url: nextUrl, live: next?.live ?? false, volume: nextVol };
+
+  // Apply zone volume to the local element (0..1).
+  el.volume = Math.max(0, Math.min(1, nextVol / 100));
 
   if (prevUrl !== nextUrl) {
     if (nextUrl) {
@@ -77,9 +88,19 @@ export async function startSpeakerMode(zoneId: string) {
     if (!state || state.zoneId !== zoneId) return;
     const current = await resolveSource(zoneId);
     const nextUrl = current?.url ?? null;
-    if (nextUrl !== state.url) await swap(zoneId, current);
-    else state.live = current?.live ?? false;
-  }, 3000);
+    const nextVol = current?.volume ?? state.volume;
+    if (nextUrl !== state.url) {
+      await swap(zoneId, current);
+    } else {
+      // URL unchanged — apply live + volume updates.
+      state.live = current?.live ?? state.live;
+      if (nextVol !== state.volume) {
+        state.volume = nextVol;
+        if (audioEl) audioEl.volume = Math.max(0, Math.min(1, nextVol / 100));
+      }
+      notify();
+    }
+  }, 2500);
 }
 
 export function stopSpeakerMode() {

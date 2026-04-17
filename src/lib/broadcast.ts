@@ -20,11 +20,13 @@ let lastAnnounceEndedAt = 0;
 const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
 
 function spawnFfmpeg(zoneId: string, kind: RelayKind): ChildProcessWithoutNullStreams {
+  // No -f on input: let ffmpeg autodetect. Browsers emit WebM/Opus (Chrome,
+  // Firefox, Android) or MP4/AAC (iOS Safari) from MediaRecorder; ffmpeg
+  // sniffs both fine as long as the first chunk carries the container header.
   const proc = spawn(
     FFMPEG,
     [
       "-hide_banner", "-loglevel", "warning",
-      "-f", "webm",
       "-i", "pipe:0",
       "-vn",
       "-c:a", "libmp3lame",

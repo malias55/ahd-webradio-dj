@@ -8,6 +8,7 @@ type Ctx = { params: Promise<{ id: string }> };
 
 // Resolves what a passive listener (Lautsprecher-Modus) should play.
 // Priority: active Durchsage (announce) > Tab-Audio (stream) > zone.streamUrl.
+// Also returns the zone volume so the listener scales local playback to match.
 export async function GET(req: Request, { params }: Ctx) {
   const { id } = await params;
   const zone = await prisma.zone.findUnique({ where: { id } });
@@ -22,6 +23,7 @@ export async function GET(req: Request, { params }: Ctx) {
       url: `${origin}/api/zones/${id}/live?t=${Date.now()}`,
       live: true,
       mode,
+      volume: zone.volume,
     });
   }
 
@@ -31,5 +33,6 @@ export async function GET(req: Request, { params }: Ctx) {
     url: zone.streamUrl || process.env.AZURACAST_STREAM_URL || null,
     live: false,
     mode: null,
+    volume: zone.volume,
   });
 }
