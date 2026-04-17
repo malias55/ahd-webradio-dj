@@ -97,7 +97,6 @@ app.prepare().then(() => {
         await prisma.device.create({
           data: { serial, hostname, ip, status: "unassigned", lastSeen: new Date() },
         });
-        console.log(`[hub] new unassigned device: ${hostname} (${serial})`);
       } else {
         await prisma.device.update({
           where: { serial },
@@ -165,7 +164,6 @@ app.prepare().then(() => {
       if (!payload?.zoneId) return;
       activeZones.add(payload.zoneId);
       startRelay(payload.zoneId, payload.mime || "audio/webm");
-      console.log(`[broadcast] start zone=${payload.zoneId}`);
     });
     socket.on("broadcast:chunk", (payload: { zoneId: string; chunk: ArrayBuffer | Buffer | Uint8Array }) => {
       if (!payload?.zoneId || !payload.chunk) return;
@@ -174,8 +172,7 @@ app.prepare().then(() => {
         Buffer.isBuffer(src) ? src :
         src instanceof Uint8Array ? Buffer.from(src.buffer, src.byteOffset, src.byteLength) :
         Buffer.from(new Uint8Array(src));
-      const n = pushChunk(payload.zoneId, buf);
-      console.log(`[broadcast] chunk zone=${payload.zoneId} bytes=${buf.length} subs=${n}`);
+      pushChunk(payload.zoneId, buf);
     });
     socket.on("broadcast:stop", (payload: { zoneId: string }) => {
       if (payload?.zoneId) stopRelay(payload.zoneId);
@@ -194,7 +191,6 @@ app.prepare().then(() => {
             sendToZone(zid, { type: "play", url: zone.streamUrl });
             sendToZone(zid, { type: "volume", value: zone.volume });
           }
-          console.log(`[broadcast] auto-restore zone=${zid}`);
         } catch (err) { console.error("[broadcast] restore failed", err); }
       }
       activeZones.clear();
