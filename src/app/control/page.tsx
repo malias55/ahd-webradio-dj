@@ -217,9 +217,10 @@ function ZoneCard(props: {
 
   const onlineCount = zone.devices?.filter((d) => d.status === "online").length ?? 0;
   const totalCount = zone.devices?.length ?? 0;
-  // "aktiv" means the zone has audio in motion: live browser-broadcast OR at
-  // least one Pi reachable. If none of that holds it's truly inactive.
-  const zoneActive = onlineCount > 0 || !!zone.liveBroadcast;
+  // "aktiv" means the zone has audio in motion: live browser-broadcast OR
+  // Pi online OR AzuraCast native stream is reachable.
+  const nativeOnline = !!zone.nowPlaying?.online;
+  const zoneActive = onlineCount > 0 || !!zone.liveBroadcast || nativeOnline;
 
   const tabActive = liveHere && liveMode === "stream";
   const announceActive = liveHere && liveMode === "announce";
@@ -231,7 +232,7 @@ function ZoneCard(props: {
   return (
     <div className={`card space-y-5 ${liveHere ? "ring-2 ring-brand-500" : ""}`}>
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
+        <div className="min-w-0">
           <h2 className="text-lg font-semibold sm:text-xl">{zone.name}</h2>
           <p className="text-xs text-neutral-500">
             {onlineCount}/{totalCount} Geräte online
@@ -241,6 +242,11 @@ function ZoneCard(props: {
               </span>
             )}
           </p>
+          {zone.nowPlaying?.online && zone.nowPlaying?.title && !liveHere && (
+            <p className="mt-1 truncate text-xs text-neutral-600 dark:text-neutral-400">
+              ♪ {zone.nowPlaying.artist ? `${zone.nowPlaying.artist} – ` : ""}{zone.nowPlaying.title}
+            </p>
+          )}
         </div>
         <span className={zoneActive ? "badge-online" : "badge-offline"}>
           <span className={`dot ${zoneActive ? "bg-green-500" : "bg-red-500"}`} />

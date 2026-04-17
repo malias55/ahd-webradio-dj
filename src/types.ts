@@ -6,6 +6,14 @@ export type Zone = {
   volume: number;
   devices?: Device[];
   liveBroadcast?: boolean;
+  nowPlaying?: {
+    online: boolean;
+    title?: string;
+    artist?: string;
+    art?: string;
+    elapsed?: number;
+    duration?: number;
+  } | null;
 };
 
 export type Device = {
