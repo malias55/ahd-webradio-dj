@@ -2,41 +2,46 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 const LOGTO_COOKIE_NAME = `logto_${process.env.LOGTO_APP_ID || ""}`;
-const PUBLIC_PATHS = [
-  "/api/auth/",
-  "/api/health",
-  "/backchannel_logout",
-  // Pi-consumed endpoints authenticate via DEVICE_API_KEY on the WebSocket, not the Logto cookie.
-  // The live-stream URL is handed to Pis as a short-lived pointer on-zone; leaving it open to Pi LAN.
-  "/api/zones/", // GET /api/zones/[id]/live is served to Pis; other mutation routes go through the auth gate below
-];
+
+// Paths that must stay public:
+//  - "/"                          -> renders LoginPage when unauthenticated
+//  - "/callback"                  -> OIDC redirect target
+//  - "/api/auth/*"                -> session cleanup routes
+//  - "/api/health"                -> Railway healthcheck
+//  - "/backchannel_logout"        -> Logto server-to-server logout
+//  - GET /api/zones/:id/live      -> Pi devices pull the live stream (auth via DEVICE_API_KEY on ws)
+function isPublic(pathname: string, method: string) {
+  if (pathname === "/") return true;
+  if (pathname === "/callback") return true;
+  if (pathname === "/backchannel_logout") return true;
+  if (pathname === "/api/health") return true;
+  if (pathname.startsWith("/api/auth/")) return true;
+  if (method === "GET" && /^\/api\/zones\/[^/]+\/live\/?$/.test(pathname)) return true;
+  return false;
+}
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (process.env.SKIP_AUTH === "true") return NextResponse.next();
+  if (isPublic(pathname, request.method)) return NextResponse.next();
 
-  if (pathname.startsWith("/api/auth/")) return NextResponse.next();
-  if (pathname === "/api/health") return NextResponse.next();
-  if (pathname === "/backchannel_logout") return NextResponse.next();
+  const cookie = request.cookies.get(LOGTO_COOKIE_NAME);
+  if (cookie?.value) return NextResponse.next();
 
-  // Allow Pi device live-stream pull (GET only) without Logto; all other API calls require auth
-  if (
-    request.method === "GET" &&
-    /^\/api\/zones\/[^/]+\/live\/?$/.test(pathname)
-  ) {
-    return NextResponse.next();
-  }
-
+  // Unauthenticated:
+  //  - API calls → 401 JSON (so fetches don't silently redirect and break JSON parsing)
+  //  - Page navigations → redirect to / (shows the login page)
   if (pathname.startsWith("/api/")) {
-    const cookie = request.cookies.get(LOGTO_COOKIE_NAME);
-    if (!cookie?.value) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  return NextResponse.next();
+  const url = request.nextUrl.clone();
+  url.pathname = "/";
+  url.search = "";
+  return NextResponse.redirect(url);
 }
 
-export const config = { matcher: ["/api/:path*"] };
-// NOTE: PUBLIC_PATHS isn't used; kept for future reference.
-void PUBLIC_PATHS;
+// Match everything except Next.js internals, static files, and common assets.
+export const config = {
+  matcher: ["/((?!_next/static|_next/image|_next/dev|favicon\\.ico|.*\\.(?:png|jpg|jpeg|svg|webp|ico|txt|webmanifest)).*)"],
+};

@@ -22,6 +22,15 @@ if (!DEVICE_API_KEY) {
   console.warn("[server] DEVICE_API_KEY is not set — WebSocket auth will reject all devices.");
 }
 
+// Production safety: hard-fail if SKIP_AUTH is enabled in prod.
+if (!dev && process.env.SKIP_AUTH === "true") {
+  console.error("[server] FATAL: SKIP_AUTH=true in production. Refusing to start.");
+  process.exit(1);
+}
+if (!dev && process.env.LOGTO_COOKIE_SECRET && process.env.LOGTO_COOKIE_SECRET.length < 32) {
+  console.warn("[server] LOGTO_COOKIE_SECRET is shorter than 32 chars — iron-session requires 32+.");
+}
+
 async function pushConfig(socket: Socket, serial: string) {
   const device = await prisma.device.findUnique({
     where: { serial },
@@ -192,8 +201,9 @@ app.prepare().then(() => {
     });
   });
 
-  httpServer.listen(port, () => {
-    console.log(`> AHD Radio DJ ready on http://localhost:${port}`);
+  // Bind to 0.0.0.0 so the container's external network (Railway, Docker) can reach us.
+  httpServer.listen(port, "0.0.0.0", () => {
+    console.log(`> AHD Radio DJ ready on 0.0.0.0:${port}`);
     console.log(`> WebSocket path: /ws`);
   });
 });
