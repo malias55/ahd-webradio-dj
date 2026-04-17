@@ -1,0 +1,40 @@
+// AHD Radio DJ – Prisma schema
+// All table + column names are snake_case in Postgres; Prisma client fields stay camelCase.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Device {
+  id        String   @id @default(uuid())
+  serial    String   @unique
+  hostname  String
+  ip        String?
+  mac       String?
+  model     String?
+  zoneId    String?  @map("zone_id")
+  zone      Zone?    @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+  status    String   @default("offline") // online | offline | unassigned
+  lastSeen  DateTime @default(now()) @map("last_seen")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([status])
+  @@index([zoneId])
+  @@map("devices")
+}
+
+model Zone {
+  id            String   @id @default(uuid())
+  name          String   @unique
+  defaultSource String   @default("azuracast") @map("default_source")
+  streamUrl     String?  @map("stream_url")
+  volume        Int      @default(80)
+  devices       Device[]
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("zones")
+}

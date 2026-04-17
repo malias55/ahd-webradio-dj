@@ -1,0 +1,15 @@
+[Unit]
+Description=AHD Radio DJ Pi Client
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/default/ahd-pi
+ExecStart=/usr/bin/node /opt/ahd-pi-client.js
+Restart=always
+RestartSec=3
+User=pi
+
+[Install]
+WantedBy=multi-user.target

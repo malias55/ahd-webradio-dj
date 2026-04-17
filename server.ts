@@ -1,0 +1,199 @@
+import { createServer } from "http";
+import next from "next";
+import { parse } from "url";
+import { Server as SocketServer, type Socket } from "socket.io";
+import { prisma } from "./src/lib/prisma";
+import {
+  registerHub,
+  trackSocket,
+  joinZoneRoom,
+  broadcastConfig,
+} from "./src/lib/deviceHub";
+import { pushChunk, startRelay, stopRelay } from "./src/lib/broadcast";
+import { sendToZone } from "./src/lib/deviceHub";
+
+const dev = process.env.NODE_ENV !== "production";
+const port = Number(process.env.PORT || 3000);
+const app = next({ dev });
+const handle = app.getRequestHandler();
+
+const DEVICE_API_KEY = process.env.DEVICE_API_KEY;
+if (!DEVICE_API_KEY) {
+  console.warn("[server] DEVICE_API_KEY is not set — WebSocket auth will reject all devices.");
+}
+
+async function pushConfig(socket: Socket, serial: string) {
+  const device = await prisma.device.findUnique({
+    where: { serial },
+    include: { zone: true },
+  });
+  if (!device) return;
+  joinZoneRoom(socket, device.zoneId);
+
+  const zone = device.zone;
+  const streamUrl =
+    zone?.defaultSource === "custom_url" || zone?.defaultSource === "azuracast"
+      ? zone?.streamUrl || process.env.AZURACAST_STREAM_URL || null
+      : null;
+
+  broadcastConfig(serial, {
+    zone: zone
+      ? { id: zone.id, name: zone.name, defaultSource: zone.defaultSource, volume: zone.volume }
+      : null,
+    streamUrl,
+    volume: zone?.volume ?? 80,
+  });
+}
+
+app.prepare().then(() => {
+  const httpServer = createServer((req, res) => {
+    const parsedUrl = parse(req.url || "/", true);
+    handle(req, res, parsedUrl);
+  });
+
+  const io = new SocketServer(httpServer, {
+    path: "/ws",
+    cors: { origin: "*" },
+  });
+
+  registerHub(io);
+
+  io.use((socket, next) => {
+    const auth = socket.handshake.headers["authorization"];
+    const token = typeof auth === "string" ? auth.replace(/^Bearer\s+/i, "") : "";
+    const serial = socket.handshake.headers["x-device-serial"];
+    const hostname = socket.handshake.headers["x-device-hostname"];
+
+    if (!DEVICE_API_KEY || token !== DEVICE_API_KEY) {
+      return next(new Error("unauthorized"));
+    }
+    if (!serial || typeof serial !== "string") {
+      return next(new Error("missing serial"));
+    }
+    socket.data.serial = serial;
+    socket.data.hostname = typeof hostname === "string" ? hostname : serial;
+    next();
+  });
+
+  io.on("connection", async (socket) => {
+    const serial: string = socket.data.serial;
+    const hostname: string = socket.data.hostname;
+    const ip =
+      (socket.handshake.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ||
+      socket.handshake.address;
+
+    try {
+      const existing = await prisma.device.findUnique({ where: { serial } });
+      if (!existing) {
+        await prisma.device.create({
+          data: { serial, hostname, ip, status: "unassigned", lastSeen: new Date() },
+        });
+        console.log(`[hub] new unassigned device: ${hostname} (${serial})`);
+      } else {
+        await prisma.device.update({
+          where: { serial },
+          data: {
+            hostname,
+            ip,
+            status: existing.zoneId ? "online" : "unassigned",
+            lastSeen: new Date(),
+          },
+        });
+      }
+
+      trackSocket(serial, socket);
+      await pushConfig(socket, serial);
+    } catch (err) {
+      console.error("[hub] connect error:", err);
+      socket.disconnect(true);
+      return;
+    }
+
+    socket.on("status", async (payload) => {
+      await prisma.device.update({
+        where: { serial },
+        data: { lastSeen: new Date() },
+      }).catch(() => {});
+      socket.broadcast.emit("device:status", { serial, ...payload });
+    });
+
+    socket.on("heartbeat", async () => {
+      await prisma.device.update({
+        where: { serial },
+        data: { lastSeen: new Date() },
+      }).catch(() => {});
+    });
+
+    socket.on("error-report", (payload) => {
+      console.error(`[device ${serial}] error:`, payload);
+    });
+
+    socket.on("disconnect", async () => {
+      await prisma.device
+        .update({ where: { serial }, data: { status: "offline" } })
+        .catch(() => {});
+      io.emit("device:status", { serial, online: false });
+    });
+  });
+
+  // expose hub to API routes via global (Next.js server runs in same process)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (global as any).__io = io;
+
+  // Browser broadcast namespace — uploads MediaRecorder chunks per zone.
+  // Auth: Logto cookie presence (skipped when SKIP_AUTH=true).
+  const broadcastNs = io.of("/broadcast");
+  broadcastNs.use((socket, next) => {
+    if (process.env.SKIP_AUTH === "true") return next();
+    const cookie = socket.handshake.headers.cookie || "";
+    const appId = process.env.LOGTO_APP_ID || "";
+    if (appId && cookie.includes(`logto_${appId}=`)) return next();
+    next(new Error("unauthorized"));
+  });
+  broadcastNs.on("connection", (socket) => {
+    const activeZones = new Set<string>();
+    socket.on("broadcast:start", (payload: { zoneId: string; mime?: string }) => {
+      if (!payload?.zoneId) return;
+      activeZones.add(payload.zoneId);
+      startRelay(payload.zoneId, payload.mime || "audio/webm");
+      console.log(`[broadcast] start zone=${payload.zoneId}`);
+    });
+    socket.on("broadcast:chunk", (payload: { zoneId: string; chunk: ArrayBuffer | Buffer | Uint8Array }) => {
+      if (!payload?.zoneId || !payload.chunk) return;
+      const src = payload.chunk as ArrayBuffer | Buffer | Uint8Array;
+      const buf =
+        Buffer.isBuffer(src) ? src :
+        src instanceof Uint8Array ? Buffer.from(src.buffer, src.byteOffset, src.byteLength) :
+        Buffer.from(new Uint8Array(src));
+      const n = pushChunk(payload.zoneId, buf);
+      console.log(`[broadcast] chunk zone=${payload.zoneId} bytes=${buf.length} subs=${n}`);
+    });
+    socket.on("broadcast:stop", (payload: { zoneId: string }) => {
+      if (payload?.zoneId) stopRelay(payload.zoneId);
+      activeZones.delete(payload?.zoneId);
+    });
+    // If the broadcasting browser tab closes without a clean stop,
+    // close the relay and snap each Pi back to its zone's native stream.
+    socket.on("disconnect", async () => {
+      for (const zid of activeZones) {
+        stopRelay(zid);
+        try {
+          const zone = await prisma.zone.findUnique({ where: { id: zid } });
+          if (!zone) continue;
+          sendToZone(zid, { type: "stop" });
+          if (zone.defaultSource !== "silent" && zone.streamUrl) {
+            sendToZone(zid, { type: "play", url: zone.streamUrl });
+            sendToZone(zid, { type: "volume", value: zone.volume });
+          }
+          console.log(`[broadcast] auto-restore zone=${zid}`);
+        } catch (err) { console.error("[broadcast] restore failed", err); }
+      }
+      activeZones.clear();
+    });
+  });
+
+  httpServer.listen(port, () => {
+    console.log(`> AHD Radio DJ ready on http://localhost:${port}`);
+    console.log(`> WebSocket path: /ws`);
+  });
+});
