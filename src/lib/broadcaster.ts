@@ -1,6 +1,7 @@
 "use client";
 
 import { io, type Socket } from "socket.io-client";
+import { stopSpeakerMode } from "./speakerMode";
 
 export type CaptureSource = "tab" | "microphone";
 export type BroadcastMode = "stream" | "announce";
@@ -24,6 +25,8 @@ type StartOpts = {
 
 export async function startBroadcast(opts: StartOpts): Promise<BroadcasterState> {
   if (active) await stopBroadcast();
+  // Lautsprecher-Modus and broadcasting are mutually exclusive on the same device.
+  stopSpeakerMode();
 
   const { zoneIds, source, mode } = opts;
   if (!zoneIds.length) throw new Error("Keine Zone gewählt");
@@ -61,13 +64,19 @@ export async function startBroadcast(opts: StartOpts): Promise<BroadcasterState>
   });
 
   // Tell the server to start a relay per target zone + switch Pis to live.
-  await fetch(`/api/broadcast`, {
+  const resp = await fetch(`/api/broadcast`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ action: "start", zoneIds, mode, mime }),
   });
+  if (!resp.ok) {
+    socket.close();
+    stream.getTracks().forEach((t) => t.stop());
+    const { error } = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
+    throw new Error(error || `HTTP ${resp.status}`);
+  }
 
-  for (const zoneId of zoneIds) socket.emit("broadcast:start", { zoneId, mime });
+  for (const zoneId of zoneIds) socket.emit("broadcast:start", { zoneId, mode });
 
   recorder.ondataavailable = async (ev) => {
     if (!ev.data || ev.data.size === 0) return;

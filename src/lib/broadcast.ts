@@ -1,28 +1,30 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "child_process";
 
 type ChunkSink = { write: (c: Buffer) => boolean | void; end: () => void };
+export type RelayKind = "stream" | "announce";
 
 type Relay = {
   zoneId: string;
-  inputMime: string;
-  outputMime: string;
+  kind: RelayKind;
   ffmpeg: ChildProcessWithoutNullStreams;
   subscribers: Set<ChunkSink>;
   startedAt: number;
 };
 
-const relays = new Map<string, Relay>();
+const streamRelays = new Map<string, Relay>();
+const announceRelays = new Map<string, Relay>();
+
+const ANNOUNCE_COOLDOWN_MS = 5000;
+let lastAnnounceEndedAt = 0;
+
 const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
 
-// Transcodes browser MediaRecorder chunks (webm/opus) into a universally
-// playable MP3 stream so iOS Safari, Android, desktop browsers, and mpv on
-// the Pi can all consume /api/zones/:id/live identically.
-function spawnFfmpeg(zoneId: string): ChildProcessWithoutNullStreams {
+function spawnFfmpeg(zoneId: string, kind: RelayKind): ChildProcessWithoutNullStreams {
   const proc = spawn(
     FFMPEG,
     [
       "-hide_banner", "-loglevel", "warning",
-      "-f", "webm",                         // force input container
+      "-f", "webm",
       "-i", "pipe:0",
       "-vn",
       "-c:a", "libmp3lame",
@@ -34,103 +36,132 @@ function spawnFfmpeg(zoneId: string): ChildProcessWithoutNullStreams {
     ],
     { stdio: ["pipe", "pipe", "pipe"] },
   );
-
   proc.stderr.on("data", (d) => {
     const line = d.toString().trim();
-    if (line) console.error(`[ffmpeg ${zoneId}] ${line}`);
+    if (line) console.error(`[ffmpeg ${zoneId}/${kind}] ${line}`);
   });
   proc.on("exit", (code) => {
-    console.warn(`[ffmpeg ${zoneId}] exited code=${code}`);
+    console.warn(`[ffmpeg ${zoneId}/${kind}] exited code=${code}`);
   });
   return proc;
 }
 
-export function startRelay(zoneId: string, inputMime: string): Relay {
-  const existing = relays.get(zoneId);
-  if (existing) {
-    closeAllSubscribers(existing);
-    try { existing.ffmpeg.kill("SIGTERM"); } catch { /* noop */ }
-    relays.delete(zoneId);
-  }
-
-  const ffmpeg = spawnFfmpeg(zoneId);
-  const r: Relay = {
-    zoneId,
-    inputMime,
-    outputMime: "audio/mpeg",
-    ffmpeg,
-    subscribers: new Set(),
-    startedAt: Date.now(),
-  };
-
-  ffmpeg.stdout.on("data", (chunk: Buffer) => {
-    for (const sub of r.subscribers) {
-      try { sub.write(chunk); }
-      catch { r.subscribers.delete(sub); }
-    }
-  });
-  ffmpeg.stdout.on("end", () => closeAllSubscribers(r));
-  ffmpeg.on("exit", () => closeAllSubscribers(r));
-
-  relays.set(zoneId, r);
-  return r;
+function mapFor(kind: RelayKind) {
+  return kind === "announce" ? announceRelays : streamRelays;
 }
 
-export function stopRelay(zoneId: string) {
-  const r = relays.get(zoneId);
-  if (!r) return false;
-  try { r.ffmpeg.stdin.end(); } catch { /* noop */ }
-  try { r.ffmpeg.kill("SIGTERM"); } catch { /* noop */ }
-  closeAllSubscribers(r);
-  relays.delete(zoneId);
-  return true;
-}
-
-export function hasRelay(zoneId: string) {
-  return relays.has(zoneId);
-}
-
-export function relayOutputMime(zoneId: string) {
-  return relays.get(zoneId)?.outputMime ?? "audio/mpeg";
-}
-
-// Pushes a WebM/Opus chunk from a browser broadcaster into ffmpeg's stdin.
-// Returns the number of live subscribers at call time.
-export function pushChunk(zoneId: string, chunk: Buffer) {
-  const r = relays.get(zoneId);
-  if (!r) return 0;
-  try { r.ffmpeg.stdin.write(chunk); } catch (e) {
-    console.error(`[relay ${zoneId}] ffmpeg stdin write failed`, e);
-  }
-  return r.subscribers.size;
-}
-
-export function attachSubscriber(zoneId: string, sink: ChunkSink): Relay | null {
-  const r = relays.get(zoneId);
-  if (!r) return null;
-  r.subscribers.add(sink);
-  return r;
-}
-
-export function detachSubscriber(zoneId: string, sink: ChunkSink) {
-  const r = relays.get(zoneId);
-  if (!r) return;
-  r.subscribers.delete(sink);
-}
-
-function closeAllSubscribers(r: Relay) {
+function closeSubscribers(r: Relay) {
   for (const sub of r.subscribers) {
     try { sub.end(); } catch { /* noop */ }
   }
   r.subscribers.clear();
 }
 
+// When the effective output mode changes, force every current listener to
+// reconnect so they pick up the new relay cleanly (MP3 frame continuity).
+function closeAllListenersForZone(zoneId: string) {
+  const a = announceRelays.get(zoneId);
+  const s = streamRelays.get(zoneId);
+  if (a) closeSubscribers(a);
+  if (s) closeSubscribers(s);
+}
+
+export function canStartAnnounce(): { ok: true } | { ok: false; reason: string; retryInMs?: number } {
+  if (announceRelays.size > 0) {
+    return { ok: false, reason: "Eine Durchsage läuft bereits." };
+  }
+  const left = lastAnnounceEndedAt + ANNOUNCE_COOLDOWN_MS - Date.now();
+  if (left > 0) {
+    return { ok: false, reason: `Bitte ${Math.ceil(left / 1000)}s bis zur nächsten Durchsage warten.`, retryInMs: left };
+  }
+  return { ok: true };
+}
+
+export function startRelay(zoneId: string, kind: RelayKind): Relay {
+  const map = mapFor(kind);
+  const existing = map.get(zoneId);
+  if (existing) {
+    closeSubscribers(existing);
+    try { existing.ffmpeg.stdin.end(); existing.ffmpeg.kill("SIGTERM"); } catch { /* noop */ }
+    map.delete(zoneId);
+  }
+
+  const ffmpeg = spawnFfmpeg(zoneId, kind);
+  const r: Relay = {
+    zoneId, kind, ffmpeg,
+    subscribers: new Set(),
+    startedAt: Date.now(),
+  };
+
+  ffmpeg.stdout.on("data", (chunk: Buffer) => {
+    for (const sub of r.subscribers) {
+      try { sub.write(chunk); } catch { r.subscribers.delete(sub); }
+    }
+  });
+  ffmpeg.stdout.on("end", () => closeSubscribers(r));
+
+  map.set(zoneId, r);
+  // An announce becoming active promotes to top priority — force listeners to reconnect.
+  if (kind === "announce") closeAllListenersForZone(zoneId);
+  return r;
+}
+
+export function stopRelay(zoneId: string, kind: RelayKind) {
+  const map = mapFor(kind);
+  const r = map.get(zoneId);
+  if (!r) return false;
+  try { r.ffmpeg.stdin.end(); r.ffmpeg.kill("SIGTERM"); } catch { /* noop */ }
+  closeSubscribers(r);
+  map.delete(zoneId);
+  if (kind === "announce") {
+    lastAnnounceEndedAt = Date.now();
+    // Announce ending demotes back to stream (or native) — force re-subscribe.
+    closeAllListenersForZone(zoneId);
+  }
+  return true;
+}
+
+export function stopAllRelaysForZone(zoneId: string) {
+  stopRelay(zoneId, "announce");
+  stopRelay(zoneId, "stream");
+}
+
+export function pushChunk(zoneId: string, kind: RelayKind, chunk: Buffer) {
+  const r = mapFor(kind).get(zoneId);
+  if (!r) return 0;
+  try { r.ffmpeg.stdin.write(chunk); } catch { /* noop */ }
+  return r.subscribers.size;
+}
+
+export function currentMode(zoneId: string): RelayKind | null {
+  if (announceRelays.has(zoneId)) return "announce";
+  if (streamRelays.has(zoneId)) return "stream";
+  return null;
+}
+
+export function hasAnyRelay(zoneId: string) {
+  return currentMode(zoneId) !== null;
+}
+
+export function attachSubscriber(zoneId: string, sink: ChunkSink): { kind: RelayKind } | null {
+  const kind = currentMode(zoneId);
+  if (!kind) return null;
+  const r = mapFor(kind).get(zoneId)!;
+  r.subscribers.add(sink);
+  return { kind };
+}
+
+export function detachSubscriber(zoneId: string, sink: ChunkSink) {
+  for (const map of [announceRelays, streamRelays]) {
+    const r = map.get(zoneId);
+    if (!r) continue;
+    r.subscribers.delete(sink);
+  }
+}
+
 export function relayStats() {
-  return Array.from(relays.values()).map((r) => ({
-    zoneId: r.zoneId,
-    inputMime: r.inputMime,
-    outputMime: r.outputMime,
-    subscribers: r.subscribers.size,
-    startedAt: r.startedAt,
-  }));
+  const out: { zoneId: string; kind: RelayKind; subscribers: number; startedAt: number }[] = [];
+  for (const r of announceRelays.values()) out.push({ zoneId: r.zoneId, kind: "announce", subscribers: r.subscribers.size, startedAt: r.startedAt });
+  for (const r of streamRelays.values()) out.push({ zoneId: r.zoneId, kind: "stream", subscribers: r.subscribers.size, startedAt: r.startedAt });
+  return out;
 }

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { hasRelay } from "@/lib/broadcast";
+import { hasAnyRelay } from "@/lib/broadcast";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +10,6 @@ export async function GET() {
     orderBy: { name: "asc" },
     include: { devices: true },
   });
-  const hydrated = zones.map((z) => ({ ...z, liveBroadcast: hasRelay(z.id) }));
+  const hydrated = zones.map((z) => ({ ...z, liveBroadcast: hasAnyRelay(z.id) }));
   return NextResponse.json(hydrated);
 }

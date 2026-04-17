@@ -9,7 +9,7 @@ import {
   joinZoneRoom,
   broadcastConfig,
 } from "./src/lib/deviceHub";
-import { pushChunk, startRelay, stopRelay } from "./src/lib/broadcast";
+import { pushChunk, startRelay, stopRelay, type RelayKind } from "./src/lib/broadcast";
 import { sendToZone } from "./src/lib/deviceHub";
 
 const dev = process.env.NODE_ENV !== "production";
@@ -159,30 +159,35 @@ app.prepare().then(() => {
     next(new Error("unauthorized"));
   });
   broadcastNs.on("connection", (socket) => {
-    const activeZones = new Set<string>();
-    socket.on("broadcast:start", (payload: { zoneId: string; mime?: string }) => {
+    const activeZones = new Map<string, RelayKind>();
+    socket.on("broadcast:start", (payload: { zoneId: string; mode?: RelayKind }) => {
       if (!payload?.zoneId) return;
-      activeZones.add(payload.zoneId);
-      startRelay(payload.zoneId, payload.mime || "audio/webm");
+      const mode: RelayKind = payload.mode === "announce" ? "announce" : "stream";
+      activeZones.set(payload.zoneId, mode);
+      startRelay(payload.zoneId, mode);
     });
     socket.on("broadcast:chunk", (payload: { zoneId: string; chunk: ArrayBuffer | Buffer | Uint8Array }) => {
       if (!payload?.zoneId || !payload.chunk) return;
+      const kind = activeZones.get(payload.zoneId);
+      if (!kind) return;
       const src = payload.chunk as ArrayBuffer | Buffer | Uint8Array;
       const buf =
         Buffer.isBuffer(src) ? src :
         src instanceof Uint8Array ? Buffer.from(src.buffer, src.byteOffset, src.byteLength) :
         Buffer.from(new Uint8Array(src));
-      pushChunk(payload.zoneId, buf);
+      pushChunk(payload.zoneId, kind, buf);
     });
     socket.on("broadcast:stop", (payload: { zoneId: string }) => {
-      if (payload?.zoneId) stopRelay(payload.zoneId);
-      activeZones.delete(payload?.zoneId);
+      if (!payload?.zoneId) return;
+      const kind = activeZones.get(payload.zoneId);
+      if (kind) stopRelay(payload.zoneId, kind);
+      activeZones.delete(payload.zoneId);
     });
     // If the broadcasting browser tab closes without a clean stop,
     // close the relay and snap each Pi back to its zone's native stream.
     socket.on("disconnect", async () => {
-      for (const zid of activeZones) {
-        stopRelay(zid);
+      for (const [zid, kind] of activeZones.entries()) {
+        stopRelay(zid, kind);
         try {
           const zone = await prisma.zone.findUnique({ where: { id: zid } });
           if (!zone) continue;

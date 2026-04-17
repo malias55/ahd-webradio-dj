@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { attachSubscriber, detachSubscriber, hasRelay, relayOutputMime } from "@/lib/broadcast";
+import { attachSubscriber, detachSubscriber, hasAnyRelay } from "@/lib/broadcast";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +9,7 @@ type Ctx = { params: Promise<{ id: string }> };
 // chunks into MP3 so every client (iOS Safari, Android, desktop, mpv) can play.
 export async function GET(_req: NextRequest, { params }: Ctx) {
   const { id } = await params;
-  if (!hasRelay(id)) return new Response("no active broadcast", { status: 404 });
+  if (!hasAnyRelay(id)) return new Response("no active broadcast", { status: 404 });
 
   let controller: ReadableStreamDefaultController<Uint8Array> | null = null;
   let closed = false;
@@ -30,7 +30,8 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
     },
   };
 
-  attachSubscriber(id, sink);
+  const attached = attachSubscriber(id, sink);
+  if (!attached) return new Response("no active broadcast", { status: 404 });
 
   const stream = new ReadableStream<Uint8Array>({
     start(c) { controller = c; },
@@ -39,10 +40,11 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
 
   return new Response(stream, {
     headers: {
-      "Content-Type": relayOutputMime(id),
+      "Content-Type": "audio/mpeg",
       "Cache-Control": "no-cache, no-store",
       "X-Accel-Buffering": "no",
       "Connection": "keep-alive",
+      "X-Relay-Kind": attached.kind,
     },
   });
 }

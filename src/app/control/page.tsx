@@ -83,6 +83,7 @@ export default function ControlPage() {
     try {
       await startBroadcast({ zoneIds: [zoneId], source, mode });
       setLiveState({ zoneIds: [zoneId], mode });
+      setSpeakerZoneId(null); // mutual exclusion with Lautsprecher-Modus
     } catch (e) {
       alert((e as Error).message);
     }
@@ -104,6 +105,7 @@ export default function ControlPage() {
       if (ids.length === 0) return;
       await startBroadcast({ zoneIds: ids, source: "microphone", mode: "announce" });
       setLiveState({ zoneIds: ids, mode: "announce" });
+      setSpeakerZoneId(null);
     } catch (e) { alert((e as Error).message); }
   };
 

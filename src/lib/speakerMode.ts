@@ -18,14 +18,19 @@ const listeners = new Set<() => void>();
 
 function notify() { for (const fn of listeners) fn(); }
 
+async function recover() {
+  if (!state) return;
+  const next = await resolveSource(state.zoneId);
+  await swap(state.zoneId, next);
+}
+
 function ensureEl() {
   if (audioEl) return audioEl;
   const el = new Audio();
   el.preload = "none";
   el.crossOrigin = "anonymous";
-  el.addEventListener("error", () => {
-    console.warn("[speaker] audio element error", el.error);
-  });
+  el.addEventListener("error", () => { recover(); });
+  el.addEventListener("ended", () => { recover(); });
   audioEl = el;
   return el;
 }
