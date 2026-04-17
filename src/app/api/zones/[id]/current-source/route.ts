@@ -6,9 +6,9 @@ export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-// Resolves what a passive listener (Lautsprecher-Modus) should play.
-// Priority: active Durchsage (announce) > Tab-Audio (stream) > zone.streamUrl.
-// Also returns the zone volume so the listener scales local playback to match.
+// Resolves what a passive listener should play. URL is stable per mode — no
+// cache-busting parameter — so Lautsprecher-Modus doesn't thrash a reconnect
+// on every poll. URL changes only when the actual output mode changes.
 export async function GET(req: Request, { params }: Ctx) {
   const { id } = await params;
   const zone = await prisma.zone.findUnique({ where: { id } });
@@ -20,7 +20,7 @@ export async function GET(req: Request, { params }: Ctx) {
     return NextResponse.json({
       zoneId: id,
       zoneName: zone.name,
-      url: `${origin}/api/zones/${id}/live?t=${Date.now()}`,
+      url: `${origin}/api/zones/${id}/live?m=${mode}`,
       live: true,
       mode,
       volume: zone.volume,

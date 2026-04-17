@@ -159,50 +159,78 @@ app.prepare().then(() => {
     next(new Error("unauthorized"));
   });
   broadcastNs.on("connection", (socket) => {
-    const activeZones = new Map<string, RelayKind>();
-    // Relay lifecycle is owned by /api/broadcast (POST). This handler only
-    // records the socket's zone + mode so subsequent broadcast:chunk events
-    // know where to route their bytes. Avoids a race where a duplicate
-    // startRelay call from the socket killed the ffmpeg process just spawned
-    // by the REST call.
-    socket.on("broadcast:start", (payload: { zoneId: string; mode?: RelayKind }) => {
+    // Per-socket map: zoneId → { kind, mime }. The socket owns the relay
+    // lifecycle so tab refresh / network drop deterministically cleans up.
+    const owned = new Map<string, { kind: RelayKind; mime: string }>();
+
+    function zoneLiveUrl(req: import("http").IncomingMessage, zoneId: string, kind: RelayKind) {
+      const host = req.headers.host || `localhost:${port}`;
+      const proto = (req.headers["x-forwarded-proto"] as string) || "http";
+      const base =
+        process.env.LOGTO_BASE_URL ||
+        (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : `${proto}://${host}`);
+      return `${base.replace(/\/$/, "")}/api/zones/${zoneId}/live?m=${kind}`;
+    }
+
+    socket.on("broadcast:start", async (payload: { zoneId: string; mode?: RelayKind; mime?: string }) => {
       if (!payload?.zoneId) return;
-      const mode: RelayKind = payload.mode === "announce" ? "announce" : "stream";
-      activeZones.set(payload.zoneId, mode);
+      const kind: RelayKind = payload.mode === "announce" ? "announce" : "stream";
+      const mime = typeof payload.mime === "string" ? payload.mime : "audio/webm";
+
+      startRelay(payload.zoneId, kind, mime);
+      owned.set(payload.zoneId, { kind, mime });
+
+      try {
+        const zone = await prisma.zone.findUnique({ where: { id: payload.zoneId } });
+        if (!zone) return;
+        const url = zoneLiveUrl(socket.request, payload.zoneId, kind);
+        sendToZone(payload.zoneId, { type: "stop" });
+        sendToZone(payload.zoneId, { type: "play", url });
+        sendToZone(payload.zoneId, {
+          type: "volume",
+          value: kind === "announce" ? Math.max(80, zone.volume) : zone.volume,
+        });
+      } catch (err) { console.error("[broadcast] start failed", err); }
     });
+
     socket.on("broadcast:chunk", (payload: { zoneId: string; chunk: ArrayBuffer | Buffer | Uint8Array }) => {
       if (!payload?.zoneId || !payload.chunk) return;
-      const kind = activeZones.get(payload.zoneId);
-      if (!kind) return;
+      const rec = owned.get(payload.zoneId);
+      if (!rec) return;
       const src = payload.chunk as ArrayBuffer | Buffer | Uint8Array;
       const buf =
         Buffer.isBuffer(src) ? src :
         src instanceof Uint8Array ? Buffer.from(src.buffer, src.byteOffset, src.byteLength) :
         Buffer.from(new Uint8Array(src));
-      pushChunk(payload.zoneId, kind, buf);
+      pushChunk(payload.zoneId, rec.kind, buf);
     });
-    socket.on("broadcast:stop", (payload: { zoneId: string }) => {
+
+    async function teardown(zid: string, kind: RelayKind) {
+      stopRelay(zid, kind);
+      try {
+        const zone = await prisma.zone.findUnique({ where: { id: zid } });
+        if (!zone) return;
+        sendToZone(zid, { type: "stop" });
+        if (zone.defaultSource !== "silent" && zone.streamUrl) {
+          sendToZone(zid, { type: "play", url: zone.streamUrl });
+          sendToZone(zid, { type: "volume", value: zone.volume });
+        }
+      } catch (err) { console.error("[broadcast] restore failed", err); }
+    }
+
+    socket.on("broadcast:stop", async (payload: { zoneId: string }) => {
       if (!payload?.zoneId) return;
-      const kind = activeZones.get(payload.zoneId);
-      if (kind) stopRelay(payload.zoneId, kind);
-      activeZones.delete(payload.zoneId);
+      const rec = owned.get(payload.zoneId);
+      if (!rec) return;
+      owned.delete(payload.zoneId);
+      await teardown(payload.zoneId, rec.kind);
     });
-    // If the broadcasting browser tab closes without a clean stop,
-    // close the relay and snap each Pi back to its zone's native stream.
+
     socket.on("disconnect", async () => {
-      for (const [zid, kind] of activeZones.entries()) {
-        stopRelay(zid, kind);
-        try {
-          const zone = await prisma.zone.findUnique({ where: { id: zid } });
-          if (!zone) continue;
-          sendToZone(zid, { type: "stop" });
-          if (zone.defaultSource !== "silent" && zone.streamUrl) {
-            sendToZone(zid, { type: "play", url: zone.streamUrl });
-            sendToZone(zid, { type: "volume", value: zone.volume });
-          }
-        } catch (err) { console.error("[broadcast] restore failed", err); }
+      for (const [zid, rec] of owned.entries()) {
+        await teardown(zid, rec.kind);
       }
-      activeZones.clear();
+      owned.clear();
     });
   });
 
