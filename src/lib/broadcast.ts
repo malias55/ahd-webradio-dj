@@ -60,7 +60,7 @@ function spawnFfmpeg(zoneId: string, kind: RelayKind, relayId: string, mime?: st
     "-i", "pipe:0",
     "-vn",
     "-c:a", "libmp3lame",
-    "-b:a", "128k",
+    "-b:a", kind === "stream" ? "192k" : "128k",
     "-ar", "44100",
     "-ac", "2",
     "-flush_packets", "1",

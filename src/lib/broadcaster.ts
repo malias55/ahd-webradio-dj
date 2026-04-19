@@ -86,9 +86,10 @@ export async function startBroadcast(opts: StartOpts): Promise<BroadcasterState>
   }
 
   const mime = pickMime();
+  const bps = source === "tab" ? 256_000 : 96_000;
   const recorder = new MediaRecorder(
     audioOnly,
-    mime ? { mimeType: mime, audioBitsPerSecond: 96_000 } : { audioBitsPerSecond: 96_000 },
+    mime ? { mimeType: mime, audioBitsPerSecond: bps } : { audioBitsPerSecond: bps },
   );
 
   // Analyser for the VU meter — separate tap on the same stream.
@@ -125,7 +126,7 @@ export async function startBroadcast(opts: StartOpts): Promise<BroadcasterState>
     const buf = await ev.data.arrayBuffer();
     for (const zoneId of zoneIds) socket.emit("broadcast:chunk", { zoneId, chunk: buf });
   };
-  recorder.start(mode === "announce" ? 60 : 200);
+  recorder.start(100);
 
   active = { zoneIds, source, mode, stream: audioOnly, recorder, socket, analyser, audioCtx, startedAt: Date.now() };
 
