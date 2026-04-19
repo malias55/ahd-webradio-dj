@@ -5,9 +5,12 @@ import { Headphones, Megaphone, MonitorPlay, Square, Volume2 } from "lucide-reac
 import type { Zone, Device } from "@/types";
 import { patchZone, sendZoneCommand } from "@/lib/apiClient";
 import {
+  ANNOUNCE_MAX_MS,
   activeBroadcast,
+  peakLevel,
   startBroadcast,
   stopBroadcast,
+  subscribeBroadcaster,
   type BroadcastMode,
   type CaptureSource,
 } from "@/lib/broadcaster";
@@ -25,7 +28,7 @@ type ZoneWithDevices = Zone & { devices: Device[] };
 export default function ControlPage() {
   const [zones, setZones] = useState<ZoneWithDevices[]>([]);
   const [loading, setLoading] = useState(true);
-  const [liveState, setLiveState] = useState<{ zoneIds: string[]; mode: BroadcastMode } | null>(null);
+  const [liveState, setLiveState] = useState<{ zoneIds: string[]; mode: BroadcastMode; startedAt: number } | null>(null);
   const [speakerZoneId, setSpeakerZoneId] = useState<string | null>(null);
   const [speakerLive, setSpeakerLive] = useState(false);
   const [speakerHasSource, setSpeakerHasSource] = useState(false);
@@ -51,10 +54,10 @@ export default function ControlPage() {
   useEffect(() => {
     const sync = () => {
       const s = activeBroadcast();
-      setLiveState(s ? { zoneIds: s.zoneIds, mode: s.mode } : null);
+      setLiveState(s ? { zoneIds: s.zoneIds, mode: s.mode, startedAt: s.startedAt } : null);
     };
-    const t = setInterval(sync, 500);
-    return () => clearInterval(t);
+    sync();
+    return subscribeBroadcaster(sync);
   }, []);
 
   useEffect(() => {
@@ -82,12 +85,11 @@ export default function ControlPage() {
   const doBroadcast = async (zoneId: string, source: CaptureSource, mode: BroadcastMode) => {
     try {
       await startBroadcast({ zoneIds: [zoneId], source, mode });
-      setLiveState({ zoneIds: [zoneId], mode });
     } catch (e) {
       alert((e as Error).message);
     }
   };
-  const endBroadcast = async () => { await stopBroadcast(); setLiveState(null); };
+  const endBroadcast = async () => { await stopBroadcast(); };
 
   const toggleSpeaker = async (zone: ZoneWithDevices) => {
     if (speakerZoneId === zone.id) { stopSpeakerMode(); return; }
@@ -103,7 +105,6 @@ export default function ControlPage() {
       const ids = zones.map((z) => z.id);
       if (ids.length === 0) return;
       await startBroadcast({ zoneIds: ids, source: "microphone", mode: "announce" });
-      setLiveState({ zoneIds: ids, mode: "announce" });
     } catch (e) { alert((e as Error).message); }
   };
 
@@ -138,6 +139,7 @@ export default function ControlPage() {
             : <Megaphone className="h-4 w-4" aria-hidden />}
           {globalBroadcasting ? "Durchsage an alle beenden" : "Durchsage an alle beginnen"}
         </button>
+        {liveState && <LiveMeter startedAt={liveState.startedAt} mode={liveState.mode} />}
       </div>
 
       {loading ? (
@@ -168,6 +170,41 @@ export default function ControlPage() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function LiveMeter({ startedAt, mode }: { startedAt: number; mode: BroadcastMode }) {
+  const [level, setLevel] = useState(0);
+  const [remaining, setRemaining] = useState<number | null>(null);
+
+  useEffect(() => {
+    const frame = () => {
+      setLevel(peakLevel());
+      if (mode === "announce") {
+        const left = Math.max(0, ANNOUNCE_MAX_MS - (Date.now() - startedAt));
+        setRemaining(Math.ceil(left / 1000));
+      } else {
+        setRemaining(null);
+      }
+      raf = requestAnimationFrame(frame);
+    };
+    let raf = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(raf);
+  }, [startedAt, mode]);
+
+  const pct = Math.round(level * 100);
+  return (
+    <div className="flex w-full items-center gap-3 sm:w-auto">
+      <div className="flex h-2 flex-1 min-w-[6rem] overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800 sm:w-40">
+        <div
+          className="h-full rounded-full bg-green-500 transition-[width] duration-75"
+          style={{ width: `${Math.min(100, pct)}%` }}
+        />
+      </div>
+      <span className="font-mono text-xs text-neutral-600 dark:text-neutral-400">
+        {remaining !== null ? `${remaining}s` : "live"}
+      </span>
     </div>
   );
 }

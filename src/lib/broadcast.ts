@@ -11,11 +11,28 @@ type Relay = {
   startedAt: number;
 };
 
-const streamRelays = new Map<string, Relay>();
-const announceRelays = new Map<string, Relay>();
+// State lives on globalThis so Next.js API routes (which may run in an
+// isolated server-components module context under dev/Turbopack) share the
+// same maps as the custom server.ts that spawns ffmpeg.
+type BroadcastGlobal = {
+  streamRelays: Map<string, Relay>;
+  announceRelays: Map<string, Relay>;
+  lastAnnounceEndedAt: number;
+};
+const _g = globalThis as unknown as { __ahdBroadcast?: BroadcastGlobal };
+if (!_g.__ahdBroadcast) {
+  _g.__ahdBroadcast = {
+    streamRelays: new Map(),
+    announceRelays: new Map(),
+    lastAnnounceEndedAt: 0,
+  };
+}
+const streamRelays = _g.__ahdBroadcast.streamRelays;
+const announceRelays = _g.__ahdBroadcast.announceRelays;
 
 const ANNOUNCE_COOLDOWN_MS = 5000;
-let lastAnnounceEndedAt = 0;
+function getLastAnnounceEndedAt(): number { return _g.__ahdBroadcast!.lastAnnounceEndedAt; }
+function setLastAnnounceEndedAt(v: number) { _g.__ahdBroadcast!.lastAnnounceEndedAt = v; }
 
 const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
 
@@ -33,11 +50,17 @@ function spawnFfmpeg(zoneId: string, kind: RelayKind, mime?: string): ChildProce
   // Balance live latency with enough header probing to extract Opus/AAC
   // stream parameters (too small and ffmpeg errors out with "Invalid data",
   // too large and it buffers seconds before first MP3 byte).
+  // Defaults for live streaming. probesize is the real lever here — ffmpeg
+  // needs the full EBML/moov header before it opens the decoder. MediaRecorder
+  // emits the init segment in the first chunk, so a moderate probesize is
+  // enough. Removed -analyzeduration 0 / -probesize 32 which made ffmpeg
+  // give up before the header arrived ("Read error at pos 0 EBML header
+  // parsing failed").
   const args = [
-    "-hide_banner", "-loglevel", "warning",
-    "-fflags", "+nobuffer+genpts",
-    "-probesize", "65536",
-    "-analyzeduration", "500000",
+    "-hide_banner", "-loglevel", "info",
+    "-fflags", "+nobuffer+genpts+discardcorrupt",
+    "-probesize", "2000000",
+    "-analyzeduration", "2000000",
     "-f", fmt,
     "-i", "pipe:0",
     "-vn",
@@ -90,7 +113,7 @@ export function canStartAnnounce(): { ok: true } | { ok: false; reason: string; 
   if (announceRelays.size > 0) {
     return { ok: false, reason: "Eine Durchsage läuft bereits." };
   }
-  const left = lastAnnounceEndedAt + ANNOUNCE_COOLDOWN_MS - Date.now();
+  const left = getLastAnnounceEndedAt() + ANNOUNCE_COOLDOWN_MS - Date.now();
   if (left > 0) {
     return { ok: false, reason: `Bitte ${Math.ceil(left / 1000)}s bis zur nächsten Durchsage warten.`, retryInMs: left };
   }
@@ -139,7 +162,7 @@ export function stopRelay(zoneId: string, kind: RelayKind) {
   closeSubscribers(r);
   map.delete(zoneId);
   if (kind === "announce") {
-    lastAnnounceEndedAt = Date.now();
+    setLastAnnounceEndedAt(Date.now());
     // Announce ending demotes back to stream (or native) — force re-subscribe.
     closeAllListenersForZone(zoneId);
   }

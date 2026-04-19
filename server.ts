@@ -193,15 +193,23 @@ app.prepare().then(() => {
       } catch (err) { console.error("[broadcast] start failed", err); }
     });
 
+    let chunkSeen = false;
     socket.on("broadcast:chunk", (payload: { zoneId: string; chunk: ArrayBuffer | Buffer | Uint8Array }) => {
       if (!payload?.zoneId || !payload.chunk) return;
       const rec = owned.get(payload.zoneId);
-      if (!rec) return;
+      if (!rec) {
+        if (!chunkSeen) console.warn(`[broadcast] chunk without owned rec zone=${payload.zoneId}`);
+        return;
+      }
       const src = payload.chunk as ArrayBuffer | Buffer | Uint8Array;
       const buf =
         Buffer.isBuffer(src) ? src :
         src instanceof Uint8Array ? Buffer.from(src.buffer, src.byteOffset, src.byteLength) :
         Buffer.from(new Uint8Array(src));
+      if (!chunkSeen) {
+        chunkSeen = true;
+        console.log(`[broadcast] first socket chunk zone=${payload.zoneId} kind=${rec.kind} bytes=${buf.length}`);
+      }
       pushChunk(payload.zoneId, rec.kind, buf);
     });
 
