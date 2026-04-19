@@ -9,7 +9,7 @@ import {
   joinZoneRoom,
   broadcastConfig,
 } from "./src/lib/deviceHub";
-import { pushChunk, startRelay, stopRelay, type RelayKind } from "./src/lib/broadcast";
+import { announceRelaysForZone, pushChunk, startRelay, stopRelay, type RelayKind } from "./src/lib/broadcast";
 import { sendToZone } from "./src/lib/deviceHub";
 
 const dev = process.env.NODE_ENV !== "production";
@@ -22,7 +22,6 @@ if (!DEVICE_API_KEY) {
   console.warn("[server] DEVICE_API_KEY is not set — WebSocket auth will reject all devices.");
 }
 
-// Production safety: hard-fail if SKIP_AUTH is enabled in prod.
 if (!dev && process.env.SKIP_AUTH === "true") {
   console.error("[server] FATAL: SKIP_AUTH=true in production. Refusing to start.");
   process.exit(1);
@@ -144,12 +143,9 @@ app.prepare().then(() => {
     });
   });
 
-  // expose hub to API routes via global (Next.js server runs in same process)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (global as any).__io = io;
 
-  // Browser broadcast namespace — uploads MediaRecorder chunks per zone.
-  // Auth: Logto cookie presence (skipped when SKIP_AUTH=true).
   const broadcastNs = io.of("/broadcast");
   broadcastNs.use((socket, next) => {
     if (process.env.SKIP_AUTH === "true") return next();
@@ -159,17 +155,16 @@ app.prepare().then(() => {
     next(new Error("unauthorized"));
   });
   broadcastNs.on("connection", (socket) => {
-    // Per-socket map: zoneId → { kind, mime }. The socket owns the relay
-    // lifecycle so tab refresh / network drop deterministically cleans up.
-    const owned = new Map<string, { kind: RelayKind; mime: string }>();
+    // Per-socket: zoneId → { kind, mime, relayId }
+    const owned = new Map<string, { kind: RelayKind; mime: string; relayId: string }>();
 
-    function zoneLiveUrl(req: import("http").IncomingMessage, zoneId: string, kind: RelayKind) {
+    function zoneLiveUrl(req: import("http").IncomingMessage, zoneId: string, relayId: string) {
       const host = req.headers.host || `localhost:${port}`;
       const proto = (req.headers["x-forwarded-proto"] as string) || "http";
       const base =
         process.env.LOGTO_BASE_URL ||
         (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : `${proto}://${host}`);
-      return `${base.replace(/\/$/, "")}/api/zones/${zoneId}/live?m=${kind}`;
+      return `${base.replace(/\/$/, "")}/api/zones/${zoneId}/live?r=${relayId}`;
     }
 
     socket.on("broadcast:start", async (payload: { zoneId: string; mode?: RelayKind; mime?: string }) => {
@@ -177,13 +172,14 @@ app.prepare().then(() => {
       const kind: RelayKind = payload.mode === "announce" ? "announce" : "stream";
       const mime = typeof payload.mime === "string" ? payload.mime : "audio/webm";
 
-      startRelay(payload.zoneId, kind, mime);
-      owned.set(payload.zoneId, { kind, mime });
+      const relayId = startRelay(payload.zoneId, kind, mime);
+      owned.set(payload.zoneId, { kind, mime, relayId });
+      console.log(`[broadcast] socket ${socket.id} started relay=${relayId} zone=${payload.zoneId} kind=${kind}`);
 
       try {
         const zone = await prisma.zone.findUnique({ where: { id: payload.zoneId } });
         if (!zone) return;
-        const url = zoneLiveUrl(socket.request, payload.zoneId, kind);
+        const url = zoneLiveUrl(socket.request, payload.zoneId, relayId);
         sendToZone(payload.zoneId, { type: "stop" });
         sendToZone(payload.zoneId, { type: "play", url });
         sendToZone(payload.zoneId, {
@@ -208,13 +204,15 @@ app.prepare().then(() => {
         Buffer.from(new Uint8Array(src));
       if (!chunkSeen) {
         chunkSeen = true;
-        console.log(`[broadcast] first socket chunk zone=${payload.zoneId} kind=${rec.kind} bytes=${buf.length}`);
+        console.log(`[broadcast] first socket chunk zone=${payload.zoneId} relay=${rec.relayId} bytes=${buf.length}`);
       }
-      pushChunk(payload.zoneId, rec.kind, buf);
+      pushChunk(rec.relayId, rec.kind, buf);
     });
 
-    async function teardown(zid: string, kind: RelayKind) {
-      stopRelay(zid, kind);
+    async function teardown(zid: string, kind: RelayKind, relayId: string) {
+      stopRelay(relayId, kind);
+      // Only restore Pi to native stream if no other announces remain for this zone
+      if (kind === "announce" && announceRelaysForZone(zid).length > 0) return;
       try {
         const zone = await prisma.zone.findUnique({ where: { id: zid } });
         if (!zone) return;
@@ -231,18 +229,17 @@ app.prepare().then(() => {
       const rec = owned.get(payload.zoneId);
       if (!rec) return;
       owned.delete(payload.zoneId);
-      await teardown(payload.zoneId, rec.kind);
+      await teardown(payload.zoneId, rec.kind, rec.relayId);
     });
 
     socket.on("disconnect", async () => {
       for (const [zid, rec] of owned.entries()) {
-        await teardown(zid, rec.kind);
+        await teardown(zid, rec.kind, rec.relayId);
       }
       owned.clear();
     });
   });
 
-  // Bind to 0.0.0.0 so the container's external network (Railway, Docker) can reach us.
   httpServer.listen(port, "0.0.0.0", () => {
     console.log(`> AHD Radio DJ ready on 0.0.0.0:${port}`);
     console.log(`> WebSocket path: /ws`);

@@ -1,114 +1,126 @@
 "use client";
 
-// Plays a zone's current audio source through this browser's output.
-// Priority: active Durchsage > Tab-Audio > zone.streamUrl. Applies the
-// zone's master volume so the slider affects all listeners consistently.
+type Source = { url: string; relayId?: string; kind?: string };
 
 type State = {
   zoneId: string;
-  url: string | null;
+  sources: Source[];
   live: boolean;
-  volume: number; // 0-100
+  volume: number;
 };
 
-let audioEl: HTMLAudioElement | null = null;
+const audioElements = new Map<string, HTMLAudioElement>();
 let state: State | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 const listeners = new Set<() => void>();
 
 function notify() { for (const fn of listeners) fn(); }
 
-async function recover() {
-  if (!state) return;
-  const next = await resolveSource(state.zoneId);
-  await swap(state.zoneId, next);
-}
-
-function ensureEl() {
-  if (audioEl) return audioEl;
-  const el = new Audio();
-  el.preload = "none";
-  el.crossOrigin = "anonymous";
-  el.addEventListener("error", () => { recover(); });
-  el.addEventListener("ended", () => { recover(); });
-  audioEl = el;
-  return el;
-}
+function keyFor(src: Source): string { return src.relayId || src.url; }
 
 async function resolveSource(
   zoneId: string,
-): Promise<{ url: string; live: boolean; volume: number } | null> {
+): Promise<{ sources: Source[]; live: boolean; volume: number } | null> {
   try {
     const r = await fetch(`/api/zones/${zoneId}/current-source`, { cache: "no-store" });
     if (!r.ok) return null;
-    const data = (await r.json()) as { url: string | null; live: boolean; volume?: number };
+    const data = await r.json();
     const vol = typeof data.volume === "number" ? data.volume : 80;
-    if (!data.url) return null;
-    return { url: data.url, live: data.live, volume: vol };
+    const sources: Source[] =
+      Array.isArray(data.sources) && data.sources.length > 0
+        ? data.sources
+        : data.url
+          ? [{ url: data.url }]
+          : [];
+    return { sources, live: data.live ?? false, volume: vol };
   } catch { return null; }
 }
 
-async function swap(
+function sourcesChanged(a: Source[], b: Source[]): boolean {
+  if (a.length !== b.length) return true;
+  const aKeys = new Set(a.map(keyFor));
+  for (const s of b) if (!aKeys.has(keyFor(s))) return true;
+  return false;
+}
+
+async function applyState(
   zoneId: string,
-  next: { url: string; live: boolean; volume: number } | null,
+  next: { sources: Source[]; live: boolean; volume: number } | null,
 ) {
-  const el = ensureEl();
-  const prevUrl = state?.url ?? null;
-  const nextUrl = next?.url ?? null;
-  const nextVol = next?.volume ?? state?.volume ?? 80;
+  if (!state || state.zoneId !== zoneId) return;
 
-  state = { zoneId, url: nextUrl, live: next?.live ?? false, volume: nextVol };
+  const nextSources = next?.sources ?? [];
+  const nextVol = next?.volume ?? state.volume;
 
-  // Apply zone volume to the local element (0..1).
-  el.volume = Math.max(0, Math.min(1, nextVol / 100));
+  if (sourcesChanged(state.sources, nextSources)) {
+    state.sources = nextSources;
+    state.live = next?.live ?? false;
+    state.volume = nextVol;
 
-  if (prevUrl !== nextUrl) {
-    if (nextUrl) {
-      el.src = nextUrl;
-      try { await el.play(); }
-      catch (e) { console.warn("[speaker] play failed", e); }
-    } else {
-      el.pause();
-      el.removeAttribute("src");
-      el.load();
+    const nextKeys = new Set(nextSources.map(keyFor));
+    for (const [key, el] of audioElements) {
+      if (!nextKeys.has(key)) {
+        el.pause();
+        el.removeAttribute("src");
+        el.load();
+        audioElements.delete(key);
+      }
     }
+
+    for (const src of nextSources) {
+      const key = keyFor(src);
+      if (!audioElements.has(key)) {
+        const el = new Audio();
+        el.preload = "none";
+        el.crossOrigin = "anonymous";
+        el.volume = Math.max(0, Math.min(1, nextVol / 100));
+        el.src = src.url;
+        el.addEventListener("error", () => recover());
+        el.addEventListener("ended", () => recover());
+        audioElements.set(key, el);
+        try { await el.play(); } catch (e) { console.warn("[speaker] play failed", src.url, e); }
+      }
+    }
+  } else {
+    state.live = next?.live ?? state.live;
+    state.volume = nextVol;
+  }
+
+  for (const el of audioElements.values()) {
+    el.volume = Math.max(0, Math.min(1, nextVol / 100));
   }
   notify();
 }
 
+async function recover() {
+  if (!state) return;
+  const next = await resolveSource(state.zoneId);
+  await applyState(state.zoneId, next);
+}
+
 export async function startSpeakerMode(zoneId: string) {
   if (state && state.zoneId !== zoneId) stopSpeakerMode();
-  ensureEl();
+
+  state = { zoneId, sources: [], live: false, volume: 80 };
 
   const initial = await resolveSource(zoneId);
-  await swap(zoneId, initial);
+  await applyState(zoneId, initial);
 
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = setInterval(async () => {
     if (!state || state.zoneId !== zoneId) return;
     const current = await resolveSource(zoneId);
-    const nextUrl = current?.url ?? null;
-    const nextVol = current?.volume ?? state.volume;
-    if (nextUrl !== state.url) {
-      await swap(zoneId, current);
-    } else {
-      // URL unchanged — apply live + volume updates.
-      state.live = current?.live ?? state.live;
-      if (nextVol !== state.volume) {
-        state.volume = nextVol;
-        if (audioEl) audioEl.volume = Math.max(0, Math.min(1, nextVol / 100));
-      }
-      notify();
-    }
+    await applyState(zoneId, current);
   }, 2500);
 }
 
 export function stopSpeakerMode() {
-  if (audioEl) {
-    audioEl.pause();
-    audioEl.removeAttribute("src");
-    audioEl.load();
+  for (const el of audioElements.values()) {
+    el.pause();
+    el.removeAttribute("src");
+    el.load();
   }
+  audioElements.clear();
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   state = null;
   notify();
@@ -116,7 +128,7 @@ export function stopSpeakerMode() {
 
 export function activeSpeakerZone() { return state?.zoneId ?? null; }
 export function activeSpeakerIsLive() { return state?.live ?? false; }
-export function activeSpeakerHasSource() { return !!state?.url; }
+export function activeSpeakerHasSource() { return (state?.sources.length ?? 0) > 0; }
 
 export function subscribeSpeaker(fn: () => void) {
   listeners.add(fn);

@@ -238,9 +238,9 @@ function ZoneCard(props: {
   const tabActive = liveHere && liveMode === "stream";
   const announceActive = liveHere && liveMode === "announce";
 
-  // Disable zone-local buttons when a global announce is running (covers every zone)
-  // or when *another* zone is broadcasting.
-  const disableZoneActions = anyLive && !liveHere;
+  // Disable Tab-Audio when this device is already broadcasting something.
+  // Durchsage is always allowed (parallel announces supported).
+  const disableTabAudio = anyLive && !tabActive;
 
   return (
     <div className={`card space-y-5 ${liveHere ? "ring-2 ring-brand-500" : ""}`}>
@@ -294,7 +294,7 @@ function ZoneCard(props: {
           <button
             onClick={() => props.onBroadcast("tab", "stream")}
             className="btn-primary"
-            disabled={disableZoneActions}
+            disabled={disableTabAudio}
           >
             <MonitorPlay className="h-4 w-4" aria-hidden /> Tab-Audio senden
           </button>
@@ -307,7 +307,7 @@ function ZoneCard(props: {
           <button
             onClick={() => props.onBroadcast("microphone", "announce")}
             className="btn bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
-            disabled={disableZoneActions}
+            disabled={tabActive}
           >
             <Megaphone className="h-4 w-4" aria-hidden /> Durchsage beginnen
           </button>

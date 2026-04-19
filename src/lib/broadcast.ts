@@ -4,6 +4,7 @@ type ChunkSink = { write: (c: Buffer) => boolean | void; end: () => void };
 export type RelayKind = "stream" | "announce";
 
 type Relay = {
+  relayId: string;
   zoneId: string;
   kind: RelayKind;
   ffmpeg: ChildProcessWithoutNullStreams;
@@ -15,9 +16,10 @@ type Relay = {
 // isolated server-components module context under dev/Turbopack) share the
 // same maps as the custom server.ts that spawns ffmpeg.
 type BroadcastGlobal = {
-  streamRelays: Map<string, Relay>;
-  announceRelays: Map<string, Relay>;
+  streamRelays: Map<string, Relay>;   // key: zoneId (one stream per zone)
+  announceRelays: Map<string, Relay>; // key: relayId (multiple announces per zone)
   lastAnnounceEndedAt: number;
+  relaySeq: number;
 };
 const _g = globalThis as unknown as { __ahdBroadcast?: BroadcastGlobal };
 if (!_g.__ahdBroadcast) {
@@ -25,14 +27,15 @@ if (!_g.__ahdBroadcast) {
     streamRelays: new Map(),
     announceRelays: new Map(),
     lastAnnounceEndedAt: 0,
+    relaySeq: 0,
   };
 }
 const streamRelays = _g.__ahdBroadcast.streamRelays;
 const announceRelays = _g.__ahdBroadcast.announceRelays;
 
-const ANNOUNCE_COOLDOWN_MS = 5000;
 function getLastAnnounceEndedAt(): number { return _g.__ahdBroadcast!.lastAnnounceEndedAt; }
 function setLastAnnounceEndedAt(v: number) { _g.__ahdBroadcast!.lastAnnounceEndedAt = v; }
+function nextRelayId(): string { return `ann_${Date.now()}_${++_g.__ahdBroadcast!.relaySeq}`; }
 
 const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
 
@@ -45,17 +48,9 @@ function inputFormat(mime: string | undefined): string {
   return "webm";
 }
 
-function spawnFfmpeg(zoneId: string, kind: RelayKind, mime?: string): ChildProcessWithoutNullStreams {
+function spawnFfmpeg(zoneId: string, kind: RelayKind, relayId: string, mime?: string): ChildProcessWithoutNullStreams {
   const fmt = inputFormat(mime);
-  // Balance live latency with enough header probing to extract Opus/AAC
-  // stream parameters (too small and ffmpeg errors out with "Invalid data",
-  // too large and it buffers seconds before first MP3 byte).
-  // Defaults for live streaming. probesize is the real lever here — ffmpeg
-  // needs the full EBML/moov header before it opens the decoder. MediaRecorder
-  // emits the init segment in the first chunk, so a moderate probesize is
-  // enough. Removed -analyzeduration 0 / -probesize 32 which made ffmpeg
-  // give up before the header arrived ("Read error at pos 0 EBML header
-  // parsing failed").
+  const tag = `${zoneId}/${kind}/${relayId}`;
   const args = [
     "-hide_banner", "-loglevel", "info",
     "-fflags", "+nobuffer+genpts+discardcorrupt",
@@ -72,25 +67,28 @@ function spawnFfmpeg(zoneId: string, kind: RelayKind, mime?: string): ChildProce
     "pipe:1",
   ];
   const proc = spawn(FFMPEG, args, { stdio: ["pipe", "pipe", "pipe"] });
-  console.log(`[relay ${zoneId}/${kind}] ffmpeg spawn -f ${fmt} mime=${mime || "<none>"}`);
+  console.log(`[relay ${tag}] ffmpeg spawn -f ${fmt} mime=${mime || "<none>"}`);
   proc.stderr.on("data", (d) => {
     const line = d.toString().trim();
-    if (line) console.error(`[ffmpeg ${zoneId}/${kind}] ${line}`);
+    if (line) console.error(`[ffmpeg ${tag}] ${line}`);
   });
   proc.stdin.on("error", (e) => {
-    // EPIPE is expected when the process dies before we write; noisy otherwise.
     if ((e as NodeJS.ErrnoException).code !== "EPIPE") {
-      console.error(`[ffmpeg ${zoneId}/${kind}] stdin error`, e);
+      console.error(`[ffmpeg ${tag}] stdin error`, e);
     }
   });
   proc.on("exit", (code) => {
-    console.warn(`[ffmpeg ${zoneId}/${kind}] exited code=${code}`);
+    console.warn(`[ffmpeg ${tag}] exited code=${code}`);
   });
   return proc;
 }
 
-function mapFor(kind: RelayKind) {
-  return kind === "announce" ? announceRelays : streamRelays;
+export function announceRelaysForZone(zoneId: string): Relay[] {
+  const out: Relay[] = [];
+  for (const r of announceRelays.values()) {
+    if (r.zoneId === zoneId) out.push(r);
+  }
+  return out;
 }
 
 function closeSubscribers(r: Relay) {
@@ -100,94 +98,103 @@ function closeSubscribers(r: Relay) {
   r.subscribers.clear();
 }
 
-// When the effective output mode changes, force every current listener to
-// reconnect so they pick up the new relay cleanly (MP3 frame continuity).
 function closeAllListenersForZone(zoneId: string) {
-  const a = announceRelays.get(zoneId);
+  for (const r of announceRelaysForZone(zoneId)) closeSubscribers(r);
   const s = streamRelays.get(zoneId);
-  if (a) closeSubscribers(a);
   if (s) closeSubscribers(s);
 }
 
+// Parallel announces are allowed — no lock. Only a short cooldown after ALL
+// announces for any zone end, to prevent accidental double-start.
+const ANNOUNCE_COOLDOWN_MS = 2000;
 export function canStartAnnounce(): { ok: true } | { ok: false; reason: string; retryInMs?: number } {
-  if (announceRelays.size > 0) {
-    return { ok: false, reason: "Eine Durchsage läuft bereits." };
-  }
   const left = getLastAnnounceEndedAt() + ANNOUNCE_COOLDOWN_MS - Date.now();
   if (left > 0) {
-    return { ok: false, reason: `Bitte ${Math.ceil(left / 1000)}s bis zur nächsten Durchsage warten.`, retryInMs: left };
+    return { ok: false, reason: `Bitte ${Math.ceil(left / 1000)}s warten.`, retryInMs: left };
   }
   return { ok: true };
 }
 
-export function startRelay(zoneId: string, kind: RelayKind, mime?: string): Relay {
-  const map = mapFor(kind);
-  const existing = map.get(zoneId);
-  if (existing) {
-    closeSubscribers(existing);
-    try { existing.ffmpeg.stdin.end(); existing.ffmpeg.kill("SIGTERM"); } catch { /* noop */ }
-    map.delete(zoneId);
+export function startRelay(zoneId: string, kind: RelayKind, mime?: string): string {
+  if (kind === "stream") {
+    const existing = streamRelays.get(zoneId);
+    if (existing) {
+      closeSubscribers(existing);
+      try { existing.ffmpeg.stdin.end(); existing.ffmpeg.kill("SIGTERM"); } catch { /* noop */ }
+      streamRelays.delete(zoneId);
+    }
+    const relayId = zoneId;
+    const ffmpeg = spawnFfmpeg(zoneId, kind, relayId, mime);
+    const r: Relay = { relayId, zoneId, kind, ffmpeg, subscribers: new Set(), startedAt: Date.now() };
+    let loggedFirstOut = false;
+    ffmpeg.stdout.on("data", (chunk: Buffer) => {
+      if (!loggedFirstOut) { loggedFirstOut = true; console.log(`[relay ${zoneId}/stream] first MP3 bytes: ${chunk.length}`); }
+      for (const sub of r.subscribers) { try { sub.write(chunk); } catch { r.subscribers.delete(sub); } }
+    });
+    ffmpeg.stdout.on("end", () => closeSubscribers(r));
+    streamRelays.set(zoneId, r);
+    return relayId;
   }
 
-  const ffmpeg = spawnFfmpeg(zoneId, kind, mime);
-  const r: Relay = {
-    zoneId, kind, ffmpeg,
-    subscribers: new Set(),
-    startedAt: Date.now(),
-  };
-
+  // Announce: each broadcaster gets its own relay — parallel announces supported
+  const relayId = nextRelayId();
+  const ffmpeg = spawnFfmpeg(zoneId, kind, relayId, mime);
+  const r: Relay = { relayId, zoneId, kind, ffmpeg, subscribers: new Set(), startedAt: Date.now() };
   let loggedFirstOut = false;
   ffmpeg.stdout.on("data", (chunk: Buffer) => {
-    if (!loggedFirstOut) {
-      loggedFirstOut = true;
-      console.log(`[relay ${zoneId}/${kind}] first MP3 bytes: ${chunk.length}`);
-    }
-    for (const sub of r.subscribers) {
-      try { sub.write(chunk); } catch { r.subscribers.delete(sub); }
-    }
+    if (!loggedFirstOut) { loggedFirstOut = true; console.log(`[relay ${zoneId}/announce/${relayId}] first MP3 bytes: ${chunk.length}`); }
+    for (const sub of r.subscribers) { try { sub.write(chunk); } catch { r.subscribers.delete(sub); } }
   });
   ffmpeg.stdout.on("end", () => closeSubscribers(r));
-
-  map.set(zoneId, r);
-  // An announce becoming active promotes to top priority — force listeners to reconnect.
-  if (kind === "announce") closeAllListenersForZone(zoneId);
-  return r;
+  announceRelays.set(relayId, r);
+  closeAllListenersForZone(zoneId);
+  console.log(`[relay] announce started relayId=${relayId} zone=${zoneId} total=${announceRelaysForZone(zoneId).length}`);
+  return relayId;
 }
 
-export function stopRelay(zoneId: string, kind: RelayKind) {
-  const map = mapFor(kind);
-  const r = map.get(zoneId);
+export function stopRelay(relayId: string, kind: RelayKind) {
+  if (kind === "stream") {
+    const r = streamRelays.get(relayId);
+    if (!r) return false;
+    try { r.ffmpeg.stdin.end(); r.ffmpeg.kill("SIGTERM"); } catch { /* noop */ }
+    closeSubscribers(r);
+    streamRelays.delete(relayId);
+    return true;
+  }
+  const r = announceRelays.get(relayId);
   if (!r) return false;
+  const zoneId = r.zoneId;
   try { r.ffmpeg.stdin.end(); r.ffmpeg.kill("SIGTERM"); } catch { /* noop */ }
   closeSubscribers(r);
-  map.delete(zoneId);
-  if (kind === "announce") {
+  announceRelays.delete(relayId);
+  console.log(`[relay] announce stopped relayId=${relayId} zone=${zoneId} remaining=${announceRelaysForZone(zoneId).length}`);
+  if (announceRelaysForZone(zoneId).length === 0) {
     setLastAnnounceEndedAt(Date.now());
-    // Announce ending demotes back to stream (or native) — force re-subscribe.
-    closeAllListenersForZone(zoneId);
   }
+  closeAllListenersForZone(zoneId);
   return true;
 }
 
 export function stopAllRelaysForZone(zoneId: string) {
-  stopRelay(zoneId, "announce");
+  for (const r of announceRelaysForZone(zoneId)) stopRelay(r.relayId, "announce");
   stopRelay(zoneId, "stream");
 }
 
 const firstChunkLogged = new WeakSet<object>();
-export function pushChunk(zoneId: string, kind: RelayKind, chunk: Buffer) {
-  const r = mapFor(kind).get(zoneId);
+export function pushChunk(relayId: string, kind: RelayKind, chunk: Buffer) {
+  const map = kind === "stream" ? streamRelays : announceRelays;
+  const r = map.get(relayId);
   if (!r) return 0;
   if (!firstChunkLogged.has(r)) {
     firstChunkLogged.add(r);
-    console.log(`[relay ${zoneId}/${kind}] first input chunk: ${chunk.length} B`);
+    console.log(`[relay ${r.zoneId}/${kind}/${relayId}] first input chunk: ${chunk.length} B`);
   }
   try { r.ffmpeg.stdin.write(chunk); } catch { /* noop */ }
   return r.subscribers.size;
 }
 
 export function currentMode(zoneId: string): RelayKind | null {
-  if (announceRelays.has(zoneId)) return "announce";
+  if (announceRelaysForZone(zoneId).length > 0) return "announce";
   if (streamRelays.has(zoneId)) return "stream";
   return null;
 }
@@ -196,25 +203,42 @@ export function hasAnyRelay(zoneId: string) {
   return currentMode(zoneId) !== null;
 }
 
-export function attachSubscriber(zoneId: string, sink: ChunkSink): { kind: RelayKind } | null {
-  const kind = currentMode(zoneId);
-  if (!kind) return null;
-  const r = mapFor(kind).get(zoneId)!;
+export function hasRelay(relayId: string): boolean {
+  return announceRelays.has(relayId) || streamRelays.has(relayId);
+}
+
+export function attachToRelay(relayId: string, sink: ChunkSink): { kind: RelayKind } | null {
+  const r = announceRelays.get(relayId) || streamRelays.get(relayId);
+  if (!r) return null;
   r.subscribers.add(sink);
-  return { kind };
+  return { kind: r.kind };
+}
+
+export function attachSubscriber(zoneId: string, sink: ChunkSink): { kind: RelayKind } | null {
+  const announces = announceRelaysForZone(zoneId);
+  if (announces.length > 0) {
+    for (const r of announces) r.subscribers.add(sink);
+    return { kind: "announce" };
+  }
+  const stream = streamRelays.get(zoneId);
+  if (stream) { stream.subscribers.add(sink); return { kind: "stream" }; }
+  return null;
 }
 
 export function detachSubscriber(zoneId: string, sink: ChunkSink) {
-  for (const map of [announceRelays, streamRelays]) {
-    const r = map.get(zoneId);
-    if (!r) continue;
-    r.subscribers.delete(sink);
-  }
+  for (const r of announceRelaysForZone(zoneId)) r.subscribers.delete(sink);
+  const s = streamRelays.get(zoneId);
+  if (s) s.subscribers.delete(sink);
+}
+
+export function detachFromRelay(relayId: string, sink: ChunkSink) {
+  const r = announceRelays.get(relayId) || streamRelays.get(relayId);
+  if (r) r.subscribers.delete(sink);
 }
 
 export function relayStats() {
-  const out: { zoneId: string; kind: RelayKind; subscribers: number; startedAt: number }[] = [];
-  for (const r of announceRelays.values()) out.push({ zoneId: r.zoneId, kind: "announce", subscribers: r.subscribers.size, startedAt: r.startedAt });
-  for (const r of streamRelays.values()) out.push({ zoneId: r.zoneId, kind: "stream", subscribers: r.subscribers.size, startedAt: r.startedAt });
+  const out: { relayId: string; zoneId: string; kind: RelayKind; subscribers: number; startedAt: number }[] = [];
+  for (const r of announceRelays.values()) out.push({ relayId: r.relayId, zoneId: r.zoneId, kind: "announce", subscribers: r.subscribers.size, startedAt: r.startedAt });
+  for (const r of streamRelays.values()) out.push({ relayId: r.relayId, zoneId: r.zoneId, kind: "stream", subscribers: r.subscribers.size, startedAt: r.startedAt });
   return out;
 }
