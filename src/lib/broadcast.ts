@@ -52,7 +52,7 @@ function spawnFfmpeg(zoneId: string, kind: RelayKind, relayId: string, mime?: st
   const fmt = inputFormat(mime);
   const tag = `${zoneId}/${kind}/${relayId}`;
   const args = [
-    "-hide_banner", "-loglevel", "info",
+    "-hide_banner", "-loglevel", "warning",
     "-fflags", "+nobuffer+genpts+discardcorrupt",
     "-probesize", "2000000",
     "-analyzeduration", "2000000",
