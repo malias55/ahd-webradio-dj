@@ -125,7 +125,7 @@ export async function startBroadcast(opts: StartOpts): Promise<BroadcasterState>
     const buf = await ev.data.arrayBuffer();
     for (const zoneId of zoneIds) socket.emit("broadcast:chunk", { zoneId, chunk: buf });
   };
-  recorder.start(mode === "announce" ? 120 : 250);
+  recorder.start(mode === "announce" ? 60 : 200);
 
   active = { zoneIds, source, mode, stream: audioOnly, recorder, socket, analyser, audioCtx, startedAt: Date.now() };
 

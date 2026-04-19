@@ -53,9 +53,9 @@ function spawnFfmpeg(zoneId: string, kind: RelayKind, relayId: string, mime?: st
   const tag = `${zoneId}/${kind}/${relayId}`;
   const args = [
     "-hide_banner", "-loglevel", "warning",
-    "-fflags", "+nobuffer+genpts+discardcorrupt",
-    "-probesize", "2000000",
-    "-analyzeduration", "2000000",
+    "-fflags", "+nobuffer+genpts+discardcorrupt+flush_packets",
+    "-probesize", "32000",
+    "-analyzeduration", "0",
     "-f", fmt,
     "-i", "pipe:0",
     "-vn",
@@ -63,6 +63,7 @@ function spawnFfmpeg(zoneId: string, kind: RelayKind, relayId: string, mime?: st
     "-b:a", "128k",
     "-ar", "44100",
     "-ac", "2",
+    "-flush_packets", "1",
     "-f", "mp3",
     "pipe:1",
   ];
