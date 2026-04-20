@@ -24,10 +24,9 @@ A minimal Node.js client that connects a Raspberry Pi to the AHD Radio DJ server
 ```bash
 sudo apt update
 sudo apt install -y mpv nodejs npm
-cd /opt && sudo git clone <repo> ahd-radio-dj-pi
-cd ahd-radio-dj-pi/pi-client
-sudo npm install socket.io-client
-sudo cp client.js /opt/ahd-pi-client.js
+sudo git clone <repo> /opt/ahd-pi-client
+cd /opt/ahd-pi-client/pi-client
+sudo npm install
 sudo tee /etc/default/ahd-pi >/dev/null <<'EOF'
 AHD_SERVER=wss://radio-dj.doerrschuck.de/ws
 AHD_DEVICE_API_KEY=<same key as server .env>

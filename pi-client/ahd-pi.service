@@ -6,7 +6,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 EnvironmentFile=/etc/default/ahd-pi
-ExecStart=/usr/bin/node /opt/ahd-pi-client.js
+WorkingDirectory=/opt/ahd-pi-client/pi-client
+ExecStart=/usr/bin/node client.js
 Restart=always
 RestartSec=3
 User=pi

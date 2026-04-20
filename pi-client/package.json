@@ -1,0 +1,10 @@
+{
+  "name": "ahd-pi-client",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AHD Radio DJ — Raspberry Pi client",
+  "main": "client.js",
+  "dependencies": {
+    "socket.io-client": "^4.7.0"
+  }
+}

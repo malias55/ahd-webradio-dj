@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { pushConfigForZone } from "@/lib/serverActions";
+import { isAdmin } from "@/lib/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -13,8 +14,8 @@ export async function GET(_req: Request, { params }: Ctx) {
   return NextResponse.json(zone);
 }
 
-// PATCH only — edit stream URL, source, volume. Creating/deleting zones is done in Postgres.
 export async function PATCH(req: Request, { params }: Ctx) {
+  if (!(await isAdmin())) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const { id } = await params;
   const body = await req.json();
   const { defaultSource, streamUrl, volume } = body ?? {};

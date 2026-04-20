@@ -1,13 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { RefreshCw, Trash2, Volume2 } from "lucide-react";
+import { RefreshCw, Volume2 } from "lucide-react";
 import type { Device, Zone } from "@/types";
 
 export default function DevicesPage() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [zones, setZones] = useState<Zone[]>([]);
   const [loading, setLoading] = useState(true);
+  const [admin, setAdmin] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/me").then((r) => r.json()).then((d) => setAdmin(d.admin)).catch(() => {});
+  }, []);
 
   const reload = useCallback(async () => {
     try {
@@ -41,12 +46,6 @@ export default function DevicesPage() {
     await fetch(`/api/devices/${id}/identify`, { method: "POST" });
   };
 
-  const removeDevice = async (id: string) => {
-    if (!confirm("Gerät aus der Datenbank entfernen?")) return;
-    await fetch(`/api/devices/${id}`, { method: "DELETE" });
-    reload();
-  };
-
   return (
     <div className="space-y-5">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -72,7 +71,7 @@ export default function DevicesPage() {
           {/* Mobile: card list */}
           <div className="grid gap-3 md:hidden">
             {devices.map((d) => (
-              <DeviceCard key={d.id} d={d} zones={zones} onAssign={assign} onIdentify={identify} onRemove={removeDevice} />
+              <DeviceCard key={d.id} d={d} zones={zones} admin={admin} onAssign={assign} onIdentify={identify} />
             ))}
           </div>
 
@@ -97,21 +96,12 @@ export default function DevicesPage() {
                     <td className="px-4 py-3 font-mono text-xs text-neutral-500">{d.serial}</td>
                     <td className="px-4 py-3 text-neutral-500">{d.ip || "—"}</td>
                     <td className="px-4 py-3">
-                      <ZoneSelect value={d.zoneId} zones={zones} onChange={(v) => assign(d.id, v)} />
+                      <ZoneSelect value={d.zoneId} zones={zones} disabled={!admin} onChange={(v) => assign(d.id, v)} />
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <div className="flex justify-end gap-2">
-                        <button onClick={() => identify(d.id)} disabled={!d.online} className="btn-outline">
-                          <Volume2 className="h-4 w-4" aria-hidden /> Identifizieren
-                        </button>
-                        <button
-                          onClick={() => removeDevice(d.id)}
-                          className="btn-ghost text-red-600 hover:text-red-700 dark:text-red-400"
-                          aria-label="Gerät entfernen"
-                        >
-                          <Trash2 className="h-4 w-4" aria-hidden />
-                        </button>
-                      </div>
+                      <button onClick={() => identify(d.id)} disabled={!d.online} className="btn-outline">
+                        <Volume2 className="h-4 w-4" aria-hidden /> Identifizieren
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -125,13 +115,13 @@ export default function DevicesPage() {
 }
 
 function DeviceCard({
-  d, zones, onAssign, onIdentify, onRemove,
+  d, zones, admin, onAssign, onIdentify,
 }: {
   d: Device;
   zones: Zone[];
+  admin: boolean;
   onAssign: (id: string, zoneId: string | null) => void;
   onIdentify: (id: string) => void;
-  onRemove: (id: string) => void;
 }) {
   return (
     <div className="card space-y-3">
@@ -143,18 +133,10 @@ function DeviceCard({
         </div>
         <StatusBadge d={d} />
       </div>
-      <ZoneSelect value={d.zoneId} zones={zones} onChange={(v) => onAssign(d.id, v)} />
-      <div className="grid grid-cols-2 gap-2">
-        <button onClick={() => onIdentify(d.id)} disabled={!d.online} className="btn-outline">
-          <Volume2 className="h-4 w-4" aria-hidden /> Identifizieren
-        </button>
-        <button
-          onClick={() => onRemove(d.id)}
-          className="btn-ghost text-red-600 hover:text-red-700 dark:text-red-400"
-        >
-          <Trash2 className="h-4 w-4" aria-hidden /> Entfernen
-        </button>
-      </div>
+      <ZoneSelect value={d.zoneId} zones={zones} disabled={!admin} onChange={(v) => onAssign(d.id, v)} />
+      <button onClick={() => onIdentify(d.id)} disabled={!d.online} className="btn-outline w-full">
+        <Volume2 className="h-4 w-4" aria-hidden /> Identifizieren
+      </button>
     </div>
   );
 }
@@ -166,10 +148,10 @@ function StatusBadge({ d }: { d: Device }) {
 }
 
 function ZoneSelect({
-  value, zones, onChange,
-}: { value: string | null; zones: Zone[]; onChange: (v: string | null) => void }) {
+  value, zones, disabled, onChange,
+}: { value: string | null; zones: Zone[]; disabled?: boolean; onChange: (v: string | null) => void }) {
   return (
-    <select className="input" value={value ?? ""} onChange={(e) => onChange(e.target.value || null)}>
+    <select className="input" value={value ?? ""} disabled={disabled} onChange={(e) => onChange(e.target.value || null)}>
       <option value="">— keine —</option>
       {zones.map((z) => (<option key={z.id} value={z.id}>{z.name}</option>))}
     </select>

@@ -235,6 +235,7 @@ app.prepare().then(() => {
 
       trackSocket(serial, socket);
       await pushConfig(socket, serial);
+      io.emit("device:status", { serial, online: true });
     } catch (err) {
       console.error("[hub] connect error:", err);
       socket.disconnect(true);

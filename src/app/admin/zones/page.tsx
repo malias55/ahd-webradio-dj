@@ -7,6 +7,11 @@ import type { Zone } from "@/types";
 export default function ZonesPage() {
   const [zones, setZones] = useState<Zone[]>([]);
   const [loading, setLoading] = useState(true);
+  const [admin, setAdmin] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/me").then((r) => r.json()).then((d) => setAdmin(d.admin)).catch(() => {});
+  }, []);
 
   const reload = useCallback(async () => {
     try {
@@ -49,7 +54,7 @@ export default function ZonesPage() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
           {zones.map((z) => (
-            <ZoneCard key={z.id} zone={z} onUpdate={update} />
+            <ZoneCard key={z.id} zone={z} admin={admin} onUpdate={update} />
           ))}
         </div>
       )}
@@ -58,9 +63,10 @@ export default function ZonesPage() {
 }
 
 function ZoneCard({
-  zone, onUpdate,
+  zone, admin, onUpdate,
 }: {
   zone: Zone;
+  admin: boolean;
   onUpdate: (id: string, patch: Partial<Zone>) => void;
 }) {
   const [streamUrl, setStreamUrl] = useState(zone.streamUrl ?? "");
@@ -80,6 +86,7 @@ function ZoneCard({
         <select
           className="input mt-1"
           value={zone.defaultSource}
+          disabled={!admin}
           onChange={(e) => onUpdate(zone.id, { defaultSource: e.target.value })}
         >
           <option value="azuracast">AzuraCast (Stream)</option>
@@ -94,15 +101,18 @@ function ZoneCard({
           <input
             className="input flex-1"
             value={streamUrl}
+            disabled={!admin}
             onChange={(e) => setStreamUrl(e.target.value)}
             placeholder="https://..."
           />
-          <button
-            className="btn-outline"
-            onClick={() => onUpdate(zone.id, { streamUrl: streamUrl || null })}
-          >
-            <Save className="h-4 w-4" aria-hidden /> Speichern
-          </button>
+          {admin && (
+            <button
+              className="btn-outline"
+              onClick={() => onUpdate(zone.id, { streamUrl: streamUrl || null })}
+            >
+              <Save className="h-4 w-4" aria-hidden /> Speichern
+            </button>
+          )}
         </div>
       </label>
 
@@ -115,9 +125,10 @@ function ZoneCard({
           min={0}
           max={100}
           defaultValue={zone.volume}
+          disabled={!admin}
           className="mt-2 w-full accent-brand-600"
-          onMouseUp={(e) => onUpdate(zone.id, { volume: Number((e.target as HTMLInputElement).value) })}
-          onTouchEnd={(e) => onUpdate(zone.id, { volume: Number((e.target as HTMLInputElement).value) })}
+          onMouseUp={(e) => admin && onUpdate(zone.id, { volume: Number((e.target as HTMLInputElement).value) })}
+          onTouchEnd={(e) => admin && onUpdate(zone.id, { volume: Number((e.target as HTMLInputElement).value) })}
         />
       </label>
     </div>

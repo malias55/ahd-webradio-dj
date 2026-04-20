@@ -5,101 +5,168 @@ export const dynamic = "force-static";
 export default function DocsPage() {
   return (
     <article className="prose prose-neutral max-w-none dark:prose-invert">
-      <h1 className="text-3xl font-bold tracking-tight">AHD Radio DJ — Dokumentation</h1>
+      <h1 className="text-3xl font-bold tracking-tight">Raspberry Pi verbinden</h1>
       <p className="text-neutral-600 dark:text-neutral-400">
-        Zentrale Audiosteuerung für Autohaus Dörrschuck. Server ist die Zentrale; Raspberry-Pi-Geräte sind dumme Clients.
+        Schritt-für-Schritt-Anleitung: Raspberry Pi als Lautsprecher an AHD Radio DJ anbinden.
       </p>
 
-      <Section title="Überblick">
+      <Section title="Voraussetzungen">
         <ul>
-          <li><strong>Native Stream</strong>: Pro Zone wird eine Stream-URL gepflegt (Standard: AzuraCast). Der Pi spielt sie automatisch.</li>
-          <li><strong>Tab-Audio</strong>: Web-App-Nutzer:in teilt einen Browser-Tab inkl. Audio → Live zur Zone gestreamt.</li>
-          <li><strong>Durchsage</strong>: Mikrofon der Web-App-Nutzer:in → kurze PA-Ansage mit niedriger Latenz.</li>
-          <li><strong>Automatik</strong>: Stoppt Tab-Audio/Durchsage (auch durch Tab-Schließen), fällt die Zone auf den nativen Stream zurück.</li>
+          <li>Raspberry Pi (beliebiges Modell mit Netzwerk und Audio-Ausgang)</li>
+          <li>Raspberry Pi OS installiert (Lite reicht)</li>
+          <li>Lautsprecher am 3,5-mm-Klinke oder HDMI</li>
+          <li>SSH-Zugang zum Pi</li>
+          <li>Der <code>DEVICE_API_KEY</code> aus den Railway-Umgebungsvariablen des Servers</li>
         </ul>
       </Section>
 
-      <Section title="Seiten">
-        <ul>
-          <li><Link href="/control" className="text-brand-600 underline">/control</Link> — Lautstärke pro Zone, Tab-Audio starten/stoppen, Durchsagen pro Zone oder an alle.</li>
-          <li><Link href="/admin/devices" className="text-brand-600 underline">/admin/devices</Link> — Geräte verbinden, Zonen zuordnen, identifizieren.</li>
-          <li><Link href="/admin/zones" className="text-brand-600 underline">/admin/zones</Link> — Pro Zone: Stream-URL, Quelle, Standard-Lautstärke. Zonen werden in Postgres angelegt, nicht hier.</li>
-        </ul>
+      <Section title="Schritt 1 — Software installieren">
+        <p>Per SSH auf dem Pi einloggen, dann:</p>
+        <Code>{`sudo apt update && sudo apt install -y mpv nodejs npm git`}</Code>
       </Section>
 
-      <Section title="Raspberry-Pi-Anschluss">
-        <p>Jeder Pi öffnet eine WebSocket-Verbindung:</p>
-        <Code>{`URL (Produktion): wss://radio-dj.doerrschuck.de/ws
-URL (lokal):      ws://<server-ip>:3000/ws`}</Code>
-        <p>Pflicht-Header beim Handshake:</p>
-        <Code>{`Authorization:     Bearer <DEVICE_API_KEY>
-X-Device-Serial:   <CPU-Serial aus /proc/cpuinfo>
-X-Device-Hostname: <os hostname>`}</Code>
+      <Section title="Schritt 2 — Repository klonen">
+        <Code>{`sudo git clone https://github.com/malias55/ahd-webradio-dj /opt/ahd-pi-client`}</Code>
+      </Section>
+
+      <Section title="Schritt 3 — Abhängigkeiten installieren">
+        <Code>{`cd /opt/ahd-pi-client/pi-client && sudo npm install`}</Code>
+      </Section>
+
+      <Section title="Schritt 4 — Konfiguration anlegen">
         <p>
-          Nach Handshake registriert der Server das Gerät automatisch (Status <code>unassigned</code>).
-          Sobald in <code>/admin/devices</code> eine Zone zugewiesen wird, schickt der Server <code>play</code>-Kommandos.
+          Den <code>DEVICE_API_KEY</code> aus den Railway-Umgebungsvariablen kopieren
+          und in folgendem Befehl einsetzen:
         </p>
-        <p>Reference-Client und systemd-Service liegen im Repo unter <code>pi-client/</code>.</p>
+        <Code>{`sudo tee /etc/default/ahd-pi >/dev/null <<'EOF'
+AHD_SERVER=wss://radio-dj.doerrschuck.de/ws
+AHD_DEVICE_API_KEY=<Key hier eintragen>
+EOF`}</Code>
+        <p className="mt-2">
+          Zum lokalen Testen stattdessen:
+        </p>
+        <Code>{`AHD_SERVER=ws://<server-ip>:3000/ws`}</Code>
       </Section>
 
-      <Section title="Kommandos (Server → Pi)">
-        <Code>{`{ type: "play", url: "https://..." }
-{ type: "stop" }
-{ type: "pause" }
-{ type: "resume" }
-{ type: "volume", value: 0..100 }
-{ type: "identify" }           // Test-Ton zur Identifikation`}</Code>
+      <Section title="Schritt 5 — Systemd-Service einrichten">
+        <p>Service-Datei erstellen:</p>
+        <Code>{`sudo tee /etc/systemd/system/ahd-pi.service >/dev/null <<'EOF'
+[Unit]
+Description=AHD Radio DJ Pi Client
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/default/ahd-pi
+WorkingDirectory=/opt/ahd-pi-client/pi-client
+ExecStart=/usr/bin/node client.js
+Restart=always
+RestartSec=3
+User=admin
+
+[Install]
+WantedBy=multi-user.target
+EOF`}</Code>
+        <p className="mt-2">
+          Falls der Pi-Benutzer nicht <code>admin</code> heißt, <code>User=admin</code> entsprechend anpassen.
+        </p>
+        <p className="mt-2">Service aktivieren und starten:</p>
+        <Code>{`sudo systemctl enable --now ahd-pi`}</Code>
       </Section>
 
-      <Section title="Ereignisse (Pi → Server)">
-        <Code>{`{ type: "heartbeat" }                             // alle 30 s
-{ type: "status", playing: true, source, volume } // optional
-{ type: "error-report", message: "..." }`}</Code>
+      <Section title="Schritt 6 — Prüfen ob es läuft">
+        <Code>{`sudo systemctl status ahd-pi`}</Code>
+        <p className="mt-2">Erwartete Ausgabe: <code>active (running)</code>. Detaillierte Logs:</p>
+        <Code>{`sudo journalctl -u ahd-pi --no-pager -n 20`}</Code>
+        <p className="mt-2">
+          In den Logs sollte stehen: <code>[ahd-pi] connected as ...</code>
+        </p>
       </Section>
 
-      <Section title="Zonen-Einstellungen (Postgres)">
-        <p>Zonen werden direkt in der Tabelle <code>zones</code> angelegt. Pflicht ist nur <code>name</code>. Beispiel:</p>
-        <Code>{`INSERT INTO zones (id, name, default_source, stream_url, volume, created_at)
-VALUES (gen_random_uuid()::text, 'Neue Zone', 'azuracast',
-        'https://radio.doerrschuck.de/listen/.../radio.mp3',
-        80, now());`}</Code>
-        <p>Die ID ist ein <code>cuid()</code>-String; jeder String mit passender Länge ist akzeptabel (oder <code>gen_random_uuid()::text</code>).</p>
-      </Section>
-
-      <Section title="Web-Audio: Tab vs. Mikrofon">
+      <Section title="Schritt 7 — Zone zuweisen">
         <p>
-          Beide nutzen dieselbe Pipeline (MediaRecorder → WebSocket → Server-Relay → HTTP-Live-Endpoint → mpv auf dem Pi).
-          Unterschied:
+          Nach dem ersten Verbinden erscheint der Pi unter{" "}
+          <Link href="/admin/devices" className="text-brand-600 underline">/admin/devices</Link>{" "}
+          mit Status <code>unassigned</code>.
         </p>
-        <ul>
-          <li><strong>Tab-Audio (Stream-Modus)</strong>: 250 ms Chunks, Zonen-Lautstärke. Für längere Wiedergabe.</li>
-          <li><strong>Durchsage (Announce-Modus)</strong>: 120 ms Chunks (niedrige Latenz), erzwingt mindestens 80 % Lautstärke, damit die Ansage durchkommt.</li>
-        </ul>
+        <ol className="mt-2 list-decimal pl-5">
+          <li>Gerät in der Liste finden (Hostname wird angezeigt)</li>
+          <li>Zone zuweisen</li>
+          <li>Der Pi beginnt sofort mit der Wiedergabe</li>
+        </ol>
       </Section>
 
-      <Section title="Datenbank-Konventionen">
-        <p>Tabellen und Spalten in Postgres sind durchgehend <code>snake_case</code>:</p>
-        <ul>
-          <li><code>zones</code>(id, name, default_source, stream_url, volume, created_at)</li>
-          <li><code>devices</code>(id, serial, hostname, ip, mac, model, zone_id, status, last_seen, created_at)</li>
-        </ul>
-        <p>Der App-Code (Prisma-Client + React) nutzt camelCase; das Mapping passiert in <code>prisma/schema.prisma</code> via <code>@map</code>/<code>@@map</code>.</p>
+      <Section title="Schritt 8 — Automatische Updates einrichten">
+        <p>
+          Der Pi kann sich täglich selbst aktualisieren.
+          Folgenden Cron-Job anlegen:
+        </p>
+        <Code>{`sudo tee /etc/cron.daily/ahd-update >/dev/null <<'CRON'
+#!/bin/bash
+cd /opt/ahd-pi-client && git pull --ff-only && cd pi-client && npm install --silent && systemctl restart ahd-pi
+CRON
+sudo chmod +x /etc/cron.daily/ahd-update`}</Code>
+        <p className="mt-2">Damit zieht der Pi jeden Tag automatisch die neueste Version und startet den Client neu.</p>
       </Section>
 
-      <Section title="Umgebungsvariablen">
-        <Code>{`DATABASE_URL=postgresql://...
-DEVICE_API_KEY=...        # für Pi-Auth
-AZURACAST_STREAM_URL=...  # optionaler Fallback
+      <Section title="Alte Installation entfernen">
+        <p>Falls vorher ein einfacher mpv-Stream-Service lief (<code>webradio.service</code>):</p>
+        <Code>{`sudo systemctl disable --now webradio.service
+sudo rm /etc/systemd/system/webradio.service
+sudo systemctl daemon-reload`}</Code>
+      </Section>
 
-# Logto Auth (Produktion)
-LOGTO_ENDPOINT=https://duxpom.logto.app/
-LOGTO_APP_ID=...
-LOGTO_APP_SECRET=...
-LOGTO_COOKIE_SECRET=...   # 32+ Zeichen
-LOGTO_BASE_URL=https://radio-dj.doerrschuck.de
+      <Section title="Audio-Ausgang wählen">
+        <p>Falls kein Ton kommt:</p>
+        <Code>{`# HDMI
+sudo raspi-config nonint do_audio 1
 
-# Nur lokal
-SKIP_AUTH=true`}</Code>
+# 3,5-mm-Klinke
+sudo raspi-config nonint do_audio 2
+
+# Automatisch
+sudo raspi-config nonint do_audio 0`}</Code>
+      </Section>
+
+      <Section title="Unnötige Dienste deaktivieren">
+        <p>Der Pi braucht kein Bluetooth oder Modem-Manager:</p>
+        <Code>{`sudo systemctl disable --now bluetooth.service ModemManager.service`}</Code>
+      </Section>
+
+      <Section title="Fehlerbehebung">
+        <Code>{`# Service-Status prüfen
+sudo systemctl status ahd-pi
+
+# Logs ansehen
+sudo journalctl -u ahd-pi -f
+
+# Client manuell testen
+cd /opt/ahd-pi-client/pi-client
+source /etc/default/ahd-pi && node client.js
+
+# mpv direkt testen
+mpv --no-video https://radio.doerrschuck.de/listen/fe4eea42-0571-4534-890e-d2a45fda8902/radio.mp3`}</Code>
+      </Section>
+
+      <Section title="Testen">
+        <ul>
+          <li>
+            <strong>Identifizieren</strong>: In{" "}
+            <Link href="/admin/devices" className="text-brand-600 underline">/admin/devices</Link>{" "}
+            auf &quot;Identifizieren&quot; klicken — der Pi spielt einen Test-Ton.
+          </li>
+          <li>
+            <strong>Lautstärke</strong>: In{" "}
+            <Link href="/control" className="text-brand-600 underline">/control</Link>{" "}
+            den Regler der zugewiesenen Zone bewegen.
+          </li>
+          <li>
+            <strong>Durchsage</strong>: In{" "}
+            <Link href="/control" className="text-brand-600 underline">/control</Link>{" "}
+            eine Durchsage starten — der Pi unterbricht den Stream und spielt die Ansage.
+          </li>
+        </ul>
       </Section>
     </article>
   );
