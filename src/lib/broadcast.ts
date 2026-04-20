@@ -3,12 +3,16 @@ import { spawn, type ChildProcessWithoutNullStreams } from "child_process";
 type ChunkSink = { write: (c: Buffer) => boolean | void; end: () => void };
 export type RelayKind = "stream" | "announce";
 
+const PREAMBLE_MAX_BYTES = 64 * 1024;
+
 type Relay = {
   relayId: string;
   zoneId: string;
   kind: RelayKind;
   ffmpeg: ChildProcessWithoutNullStreams;
   subscribers: Set<ChunkSink>;
+  preamble: Buffer[];
+  preambleBytes: number;
   startedAt: number;
   broadcasterEmail?: string;
   broadcasterName?: string;
@@ -153,10 +157,11 @@ export function startRelay(zoneId: string, kind: RelayKind, mime?: string): stri
     }
     const relayId = zoneId;
     const ffmpeg = spawnFfmpeg(zoneId, kind, relayId, mime);
-    const r: Relay = { relayId, zoneId, kind, ffmpeg, subscribers: new Set(), startedAt: Date.now() };
+    const r: Relay = { relayId, zoneId, kind, ffmpeg, subscribers: new Set(), preamble: [], preambleBytes: 0, startedAt: Date.now() };
     let loggedFirstOut = false;
     ffmpeg.stdout.on("data", (chunk: Buffer) => {
       if (!loggedFirstOut) { loggedFirstOut = true; console.log(`[relay ${zoneId}/stream] first MP3 bytes: ${chunk.length}`); }
+      if (r.preambleBytes < PREAMBLE_MAX_BYTES) { r.preamble.push(chunk); r.preambleBytes += chunk.length; }
       for (const sub of r.subscribers) { try { sub.write(chunk); } catch { r.subscribers.delete(sub); } }
     });
     ffmpeg.stdout.on("end", () => closeSubscribers(r));
@@ -167,10 +172,11 @@ export function startRelay(zoneId: string, kind: RelayKind, mime?: string): stri
   // Announce: each broadcaster gets its own relay — parallel announces supported
   const relayId = nextRelayId();
   const ffmpeg = spawnFfmpeg(zoneId, kind, relayId, mime);
-  const r: Relay = { relayId, zoneId, kind, ffmpeg, subscribers: new Set(), startedAt: Date.now() };
+  const r: Relay = { relayId, zoneId, kind, ffmpeg, subscribers: new Set(), preamble: [], preambleBytes: 0, startedAt: Date.now() };
   let loggedFirstOut = false;
   ffmpeg.stdout.on("data", (chunk: Buffer) => {
     if (!loggedFirstOut) { loggedFirstOut = true; console.log(`[relay ${zoneId}/announce/${relayId}] first MP3 bytes: ${chunk.length}`); }
+    if (r.preambleBytes < PREAMBLE_MAX_BYTES) { r.preamble.push(chunk); r.preambleBytes += chunk.length; }
     for (const sub of r.subscribers) { try { sub.write(chunk); } catch { r.subscribers.delete(sub); } }
   });
   ffmpeg.stdout.on("end", () => closeSubscribers(r));
@@ -235,9 +241,16 @@ export function hasRelay(relayId: string): boolean {
   return announceRelays.has(relayId) || streamRelays.has(relayId);
 }
 
+function sendPreamble(r: Relay, sink: ChunkSink) {
+  for (const buf of r.preamble) {
+    try { sink.write(buf); } catch { break; }
+  }
+}
+
 export function attachToRelay(relayId: string, sink: ChunkSink): { kind: RelayKind } | null {
   const r = announceRelays.get(relayId) || streamRelays.get(relayId);
   if (!r) return null;
+  sendPreamble(r, sink);
   r.subscribers.add(sink);
   return { kind: r.kind };
 }
@@ -245,11 +258,11 @@ export function attachToRelay(relayId: string, sink: ChunkSink): { kind: RelayKi
 export function attachSubscriber(zoneId: string, sink: ChunkSink): { kind: RelayKind } | null {
   const announces = announceRelaysForZone(zoneId);
   if (announces.length > 0) {
-    for (const r of announces) r.subscribers.add(sink);
+    for (const r of announces) { sendPreamble(r, sink); r.subscribers.add(sink); }
     return { kind: "announce" };
   }
   const stream = streamRelays.get(zoneId);
-  if (stream) { stream.subscribers.add(sink); return { kind: "stream" }; }
+  if (stream) { sendPreamble(stream, sink); stream.subscribers.add(sink); return { kind: "stream" }; }
   return null;
 }
 

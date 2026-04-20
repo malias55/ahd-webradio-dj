@@ -1,7 +1,7 @@
 "use client";
 
-const TARGET_LATENCY = 0.3;
-const MAX_DRIFT = 0.6;
+const TARGET_LATENCY = 1.0;
+const MAX_DRIFT = 3.0;
 
 type Source = { url: string; relayId?: string; kind?: string };
 
@@ -134,7 +134,7 @@ export async function startSpeakerMode(zoneId: string) {
     if (!state || state.zoneId !== zoneId) return;
     const current = await resolveSource(zoneId);
     await applyState(zoneId, current);
-  }, 1000);
+  }, 2000);
 
   if (syncTimer) clearInterval(syncTimer);
   syncTimer = setInterval(chaseLatency, 500);

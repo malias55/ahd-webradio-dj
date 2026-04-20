@@ -36,8 +36,7 @@ function ensureMpv() {
     "--volume=80",
     `--input-ipc-server=${IPC_PATH}`,
     "--cache=yes",
-    "--cache-secs=0.3",
-    "--cache-pause=no",
+    "--cache-secs=2",
     "--audio-client-name=ahd-radio-dj",
   ], { stdio: "ignore" });
   mpv.on("exit", () => { setTimeout(ensureMpv, 1000); });
@@ -105,7 +104,7 @@ async function announceStart(url, vol) {
   announceProc = spawn("mpv", [
     "--no-video", "--no-terminal",
     `--volume=${vol}`,
-    "--cache=yes", "--cache-secs=0.3", "--cache-pause=no",
+    "--cache=yes", "--cache-secs=2",
     url,
   ], { stdio: "ignore" });
   announceProc.on("exit", () => { announceProc = null; });
