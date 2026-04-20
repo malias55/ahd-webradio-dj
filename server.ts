@@ -306,15 +306,17 @@ app.prepare().then(() => {
         const origin = resolveOrigin(socket.request);
         const url = `${origin}/api/zones/${payload.zoneId}/live?r=${relayId}`;
         if (kind === "announce") {
-          sendToZone(payload.zoneId, {
+          const n = sendToZone(payload.zoneId, {
             type: "announce-start",
             url,
             volume: Math.max(80, zone.volume),
           });
+          console.log(`[broadcast] announce-start sent to ${n} device(s) zone=${payload.zoneId} url=${url}`);
         } else {
           sendToZone(payload.zoneId, { type: "stop" });
-          sendToZone(payload.zoneId, { type: "play", url });
+          const n = sendToZone(payload.zoneId, { type: "play", url });
           sendToZone(payload.zoneId, { type: "volume", value: zone.volume });
+          console.log(`[broadcast] stream play sent to ${n} device(s) zone=${payload.zoneId} url=${url}`);
         }
       } catch (err) { console.error("[broadcast] start failed", err); }
     });

@@ -126,7 +126,7 @@ export async function startSpeakerMode(zoneId: string) {
     if (!state || state.zoneId !== zoneId) return;
     const current = await resolveSource(zoneId);
     await applyState(zoneId, current);
-  }, 2500);
+  }, 1000);
 
   if (syncTimer) clearInterval(syncTimer);
   syncTimer = setInterval(chaseLatency, 500);
