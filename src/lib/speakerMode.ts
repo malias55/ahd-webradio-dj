@@ -13,6 +13,7 @@ type State = {
 };
 
 const audioElements = new Map<string, HTMLAudioElement>();
+const audioCreatedAt = new Map<string, number>();
 let state: State | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let syncTimer: ReturnType<typeof setInterval> | null = null;
@@ -21,13 +22,18 @@ const listeners = new Set<() => void>();
 function notify() { for (const fn of listeners) fn(); }
 
 function chaseLatency() {
-  for (const el of audioElements.values()) {
+  const now = Date.now();
+  for (const [key, el] of audioElements) {
     if (el.buffered.length === 0 || el.paused) continue;
-    const edge = el.buffered.end(el.buffered.length - 1);
-    const behind = edge - el.currentTime;
-    if (behind > MAX_DRIFT) {
-      el.currentTime = edge - TARGET_LATENCY;
-    }
+    const age = now - (audioCreatedAt.get(key) ?? now);
+    if (age < 3000) continue;
+    try {
+      const edge = el.buffered.end(el.buffered.length - 1);
+      const behind = edge - el.currentTime;
+      if (behind > MAX_DRIFT) {
+        el.currentTime = edge - TARGET_LATENCY;
+      }
+    } catch { /* buffered range may be empty */ }
   }
 }
 
@@ -79,6 +85,7 @@ async function applyState(
         el.removeAttribute("src");
         el.load();
         audioElements.delete(key);
+        audioCreatedAt.delete(key);
       }
     }
 
@@ -90,6 +97,7 @@ async function applyState(
         el.crossOrigin = "anonymous";
         el.volume = Math.max(0, Math.min(1, nextVol / 100));
         el.src = src.url;
+        audioCreatedAt.set(key, Date.now());
         el.addEventListener("error", () => recover());
         el.addEventListener("ended", () => recover());
         audioElements.set(key, el);
@@ -139,6 +147,7 @@ export function stopSpeakerMode() {
     el.load();
   }
   audioElements.clear();
+  audioCreatedAt.clear();
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   if (syncTimer) { clearInterval(syncTimer); syncTimer = null; }
   state = null;
