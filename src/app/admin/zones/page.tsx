@@ -115,7 +115,7 @@ function ZoneCard({
           )}
         </div>
         {zone.defaultSource === "azuracast" && (
-          <p className="mt-1 text-xs text-neutral-400">AzuraCast-URL wird vom Server vorgegeben und kann nicht ge��ndert werden.</p>
+          <p className="mt-1 text-xs text-neutral-400">AzuraCast-URL wird vom Server vorgegeben und kann nicht geändert werden.</p>
         )}
       </label>
 

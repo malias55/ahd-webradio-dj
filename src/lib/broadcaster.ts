@@ -146,16 +146,38 @@ export async function startBroadcast(opts: StartOpts): Promise<BroadcasterState>
   return active;
 }
 
+const ANNOUNCE_DRAIN_MS = 3000;
+
 export async function stopBroadcast() {
   if (!active) return;
   const { zoneIds, stream, recorder, socket, audioCtx, mode } = active;
+
+  if (mode === "announce") {
+    // Keep the relay open so buffered audio arrives at listeners.
+    // Stop the mic immediately (mute), but let the recorder flush remaining chunks.
+    active = null;
+    notify();
+    stream.getAudioTracks().forEach((t) => { t.enabled = false; });
+    await new Promise((r) => setTimeout(r, ANNOUNCE_DRAIN_MS));
+    try { recorder.state !== "inactive" && recorder.stop(); } catch { /* noop */ }
+    stream.getTracks().forEach((t) => t.stop());
+    try { await audioCtx.close(); } catch { /* noop */ }
+    for (const zoneId of zoneIds) socket.emit("broadcast:stop", { zoneId });
+    socket.close();
+    fetch(`/api/broadcast`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "stop", zoneIds, mode }),
+    }).catch(() => {});
+    return;
+  }
+
   try { recorder.state !== "inactive" && recorder.stop(); } catch { /* noop */ }
   stream.getTracks().forEach((t) => t.stop());
   try { await audioCtx.close(); } catch { /* noop */ }
   for (const zoneId of zoneIds) socket.emit("broadcast:stop", { zoneId });
   socket.close();
   active = null;
-  // POST is best-effort; socket disconnect already tears down server-side relay
   fetch(`/api/broadcast`, {
     method: "POST",
     headers: { "content-type": "application/json" },
