@@ -1,5 +1,8 @@
 "use client";
 
+const TARGET_LATENCY = 0.3;
+const MAX_DRIFT = 0.6;
+
 type Source = { url: string; relayId?: string; kind?: string };
 
 type State = {
@@ -12,9 +15,21 @@ type State = {
 const audioElements = new Map<string, HTMLAudioElement>();
 let state: State | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
+let syncTimer: ReturnType<typeof setInterval> | null = null;
 const listeners = new Set<() => void>();
 
 function notify() { for (const fn of listeners) fn(); }
+
+function chaseLatency() {
+  for (const el of audioElements.values()) {
+    if (el.buffered.length === 0 || el.paused) continue;
+    const edge = el.buffered.end(el.buffered.length - 1);
+    const behind = edge - el.currentTime;
+    if (behind > MAX_DRIFT) {
+      el.currentTime = edge - TARGET_LATENCY;
+    }
+  }
+}
 
 function keyFor(src: Source): string { return src.relayId || src.url; }
 
@@ -112,6 +127,9 @@ export async function startSpeakerMode(zoneId: string) {
     const current = await resolveSource(zoneId);
     await applyState(zoneId, current);
   }, 2500);
+
+  if (syncTimer) clearInterval(syncTimer);
+  syncTimer = setInterval(chaseLatency, 500);
 }
 
 export function stopSpeakerMode() {
@@ -122,6 +140,7 @@ export function stopSpeakerMode() {
   }
   audioElements.clear();
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  if (syncTimer) { clearInterval(syncTimer); syncTimer = null; }
   state = null;
   notify();
 }
