@@ -14,7 +14,24 @@ const DEVICE_DEFS: { serial: string; hostname: string; model: string; zoneName: 
   { serial: "DEMO-CPU-WS-02", hostname: "pi-werkstatt-2", model: "Pi 5",  zoneName: "Werkstatt Mainz",     ip: "10.0.2.12" },
 ];
 
+const USERS = [
+  { email: "info@autohaus-doerrschuck.de", name: "Admin", role: "admin" },
+  { email: "kunde@autohaus-doerrschuck.de", name: "Kunde", role: "user" },
+  { email: "service@autohaus-doerrschuck.de", name: "Service", role: "user" },
+];
+
 async function main() {
+  let userCount = 0;
+  for (const u of USERS) {
+    await prisma.user.upsert({
+      where: { email: u.email },
+      update: { name: u.name, role: u.role },
+      create: u,
+    });
+    userCount++;
+  }
+  console.log(`Users: ${userCount} upserted.`);
+
   const zones = await prisma.zone.findMany();
   const byName = new Map(zones.map((z) => [z.name, z.id]));
 

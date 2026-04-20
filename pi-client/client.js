@@ -65,6 +65,37 @@ async function identify() {
   if (currentUrl) await play(currentUrl);
 }
 
+// --- announce overlay (separate mpv process, doesn't interrupt main stream) ---
+let announceProc = null;
+let savedVolume = null;
+
+async function announceStart(url, vol) {
+  if (announceProc && !announceProc.killed) {
+    try { announceProc.kill("SIGTERM"); } catch {}
+  }
+  savedVolume = (savedVolume === null) ? 80 : savedVolume;
+  // Duck the main stream
+  await setVolume(10);
+  announceProc = spawn("mpv", [
+    "--no-video", "--no-terminal",
+    `--volume=${vol}`,
+    "--cache=yes", "--cache-secs=1",
+    url,
+  ], { stdio: "ignore" });
+  announceProc.on("exit", () => { announceProc = null; });
+}
+
+async function announceStop() {
+  if (announceProc && !announceProc.killed) {
+    try { announceProc.kill("SIGTERM"); } catch {}
+    announceProc = null;
+  }
+  if (savedVolume !== null) {
+    await setVolume(savedVolume);
+    savedVolume = null;
+  }
+}
+
 // --- connect ---
 ensureMpv();
 
@@ -96,12 +127,14 @@ socket.on("config", (cfg) => {
 socket.on("command", async (cmd) => {
   console.log("[ahd-pi] cmd:", cmd);
   switch (cmd.type) {
-    case "play":     await play(cmd.url); break;
-    case "stop":     await stop(); break;
-    case "pause":    await pause(true); break;
-    case "resume":   await pause(false); break;
-    case "volume":   await setVolume(cmd.value); break;
-    case "identify": await identify(); break;
+    case "play":           await play(cmd.url); break;
+    case "stop":           await stop(); break;
+    case "pause":          await pause(true); break;
+    case "resume":         await pause(false); break;
+    case "volume":         savedVolume = cmd.value; if (!announceProc) await setVolume(cmd.value); break;
+    case "identify":       await identify(); break;
+    case "announce-start": await announceStart(cmd.url, cmd.volume); break;
+    case "announce-stop":  await announceStop(); break;
   }
   socket.emit("status", { type: cmd.type, ts: Date.now() });
 });

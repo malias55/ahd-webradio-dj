@@ -6,7 +6,9 @@ type DeviceCommand =
   | { type: "volume"; value: number }
   | { type: "pause" }
   | { type: "resume" }
-  | { type: "identify" };
+  | { type: "identify" }
+  | { type: "announce-start"; url: string; volume: number }
+  | { type: "announce-stop" };
 
 type HubGlobal = {
   ioRef: SocketServer | null;

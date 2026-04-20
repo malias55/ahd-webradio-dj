@@ -6,6 +6,13 @@ export type Zone = {
   volume: number;
   devices?: Device[];
   liveBroadcast?: boolean;
+  streamInfo?: {
+    broadcasting: boolean;
+    kind?: "stream" | "announce";
+    email?: string;
+    name?: string;
+    tabTitle?: string;
+  };
   nowPlaying?: {
     online: boolean;
     title?: string;

@@ -54,6 +54,8 @@ type StartOpts = {
   zoneIds: string[];
   source: CaptureSource;
   mode: BroadcastMode;
+  email?: string;
+  name?: string;
 };
 
 export async function startBroadcast(opts: StartOpts): Promise<BroadcasterState> {
@@ -85,7 +87,13 @@ export async function startBroadcast(opts: StartOpts): Promise<BroadcasterState>
         : "Kein Mikrofon verfügbar.",
     );
   }
-  stream.getVideoTracks().forEach((t) => t.stop());
+  let tabTitle: string | undefined;
+  const videoTracks = stream.getVideoTracks();
+  if (source === "tab" && videoTracks.length > 0) {
+    const label = videoTracks[0].label;
+    if (label && label !== "Screen" && label !== "Window") tabTitle = label;
+  }
+  videoTracks.forEach((t) => t.stop());
   const audioOnly = new MediaStream(audioTracks);
 
   for (const t of audioTracks) {
@@ -126,7 +134,7 @@ export async function startBroadcast(opts: StartOpts): Promise<BroadcasterState>
     throw new Error(error || `HTTP ${resp.status}`);
   }
 
-  for (const zoneId of zoneIds) socket.emit("broadcast:start", { zoneId, mode, mime });
+  for (const zoneId of zoneIds) socket.emit("broadcast:start", { zoneId, mode, mime, email: opts.email, name: opts.name, tabTitle });
 
   recorder.ondataavailable = async (ev) => {
     if (!ev.data || ev.data.size === 0) return;

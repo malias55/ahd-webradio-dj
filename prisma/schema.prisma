@@ -9,6 +9,16 @@ datasource db {
   url      = env("PG_URL")
 }
 
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String?
+  role      String   @default("user") // admin | user
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("users")
+}
+
 model Device {
   id        String   @id @default(uuid())
   serial    String   @unique

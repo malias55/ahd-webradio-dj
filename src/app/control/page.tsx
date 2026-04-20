@@ -32,6 +32,11 @@ export default function ControlPage() {
   const [speakerZoneId, setSpeakerZoneId] = useState<string | null>(null);
   const [speakerLive, setSpeakerLive] = useState(false);
   const [speakerHasSource, setSpeakerHasSource] = useState(false);
+  const [me, setMe] = useState<{ admin: boolean; email?: string; name?: string }>({ admin: false });
+
+  useEffect(() => {
+    fetch("/api/me").then((r) => r.json()).then((d) => setMe({ admin: d.admin, email: d.email, name: d.name })).catch(() => {});
+  }, []);
 
   const reload = useCallback(async () => {
     try {
@@ -83,7 +88,8 @@ export default function ControlPage() {
 
   const doBroadcast = async (zoneId: string, source: CaptureSource, mode: BroadcastMode) => {
     try {
-      await startBroadcast({ zoneIds: [zoneId], source, mode });
+      if (speakerZoneId) stopSpeakerMode();
+      await startBroadcast({ zoneIds: [zoneId], source, mode, email: me.email, name: me.name });
     } catch (e) {
       alert((e as Error).message);
     }
@@ -101,9 +107,10 @@ export default function ControlPage() {
   const announceAll = async () => {
     if (liveState) { await endBroadcast(); return; }
     try {
+      if (speakerZoneId) stopSpeakerMode();
       const ids = zones.map((z) => z.id);
       if (ids.length === 0) return;
-      await startBroadcast({ zoneIds: ids, source: "microphone", mode: "announce" });
+      await startBroadcast({ zoneIds: ids, source: "microphone", mode: "announce", email: me.email, name: me.name });
     } catch (e) { alert((e as Error).message); }
   };
 
@@ -161,6 +168,8 @@ export default function ControlPage() {
               speakerElsewhere={speakerZoneId !== null && speakerZoneId !== z.id}
               speakerLive={speakerZoneId === z.id && speakerLive}
               speakerWaiting={speakerZoneId === z.id && !speakerHasSource}
+              isAdmin={me.admin}
+              myEmail={me.email}
               onVolume={(v) => updateVolume(z.id, v)}
               onBroadcast={(src, mode) => doBroadcast(z.id, src, mode)}
               onEndBroadcast={endBroadcast}
@@ -218,28 +227,31 @@ function ZoneCard(props: {
   speakerElsewhere: boolean;
   speakerLive: boolean;
   speakerWaiting: boolean;
+  isAdmin: boolean;
+  myEmail?: string;
   onVolume: (v: number) => void;
   onBroadcast: (src: CaptureSource, mode: BroadcastMode) => void;
   onEndBroadcast: () => void;
   onToggleSpeaker: () => void;
 }) {
-  const { zone, liveHere, liveMode, anyLive, globalAnnounce, speakerActive, speakerElsewhere, speakerLive, speakerWaiting } = props;
+  const { zone, liveHere, liveMode, anyLive, globalAnnounce, speakerActive, speakerElsewhere, speakerLive, speakerWaiting, isAdmin, myEmail } = props;
   const [volume, setVolume] = useState(zone.volume);
   useEffect(() => { setVolume(zone.volume); }, [zone.volume]);
 
   const onlineCount = zone.devices?.filter((d) => d.status === "online").length ?? 0;
   const totalCount = zone.devices?.length ?? 0;
-  // "aktiv" means the zone has audio in motion: live browser-broadcast OR
-  // Pi online OR AzuraCast native stream is reachable.
   const nativeOnline = !!zone.nowPlaying?.online;
   const zoneActive = onlineCount > 0 || !!zone.liveBroadcast || nativeOnline;
 
   const tabActive = liveHere && liveMode === "stream";
   const announceActive = liveHere && liveMode === "announce";
 
-  // Disable Tab-Audio when this device is already broadcasting something.
-  // Durchsage is always allowed (parallel announces supported).
-  const disableTabAudio = anyLive && !tabActive;
+  const si = zone.streamInfo;
+  const someoneElseStreaming = si?.broadcasting && si.kind === "stream" && si.email !== myEmail;
+  const canStopTab = isAdmin || (si?.email === myEmail);
+  const canStartTab = isAdmin || !someoneElseStreaming;
+
+  const disableTabAudio = (anyLive && !tabActive) || (!canStartTab);
 
   return (
     <div className={`card space-y-5 ${liveHere ? "ring-2 ring-brand-500" : ""}`}>
@@ -248,13 +260,19 @@ function ZoneCard(props: {
           <h2 className="text-lg font-semibold sm:text-xl">{zone.name}</h2>
           <p className="text-xs text-neutral-500">
             {onlineCount}/{totalCount} Geräte online
-            {liveHere && (
+            {(liveHere || si?.broadcasting) && (
               <span className="ml-2 inline-flex items-center gap-1 font-medium text-brand-600 dark:text-brand-400">
-                · {announceActive ? "LIVE-Durchsage" : "LIVE Tab-Audio"}
+                · {si?.kind === "announce" ? "LIVE-Durchsage" : "LIVE Tab-Audio"}
               </span>
             )}
           </p>
-          {zone.nowPlaying?.online && zone.nowPlaying?.title && !liveHere && (
+          {si?.broadcasting && si.kind === "stream" && (
+            <p className="mt-1 truncate text-xs text-neutral-600 dark:text-neutral-400">
+              Tab-Audio von {si.name || si.email || "Unbekannt"}
+              {si.tabTitle && <span className="ml-1 text-neutral-400">— {si.tabTitle}</span>}
+            </p>
+          )}
+          {!si?.broadcasting && zone.nowPlaying?.online && zone.nowPlaying?.title && (
             <p className="mt-1 truncate text-xs text-neutral-600 dark:text-neutral-400">
               ♪ {zone.nowPlaying.artist ? `${zone.nowPlaying.artist} – ` : ""}{zone.nowPlaying.title}
             </p>
@@ -285,8 +303,8 @@ function ZoneCard(props: {
       </div>
 
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        {tabActive ? (
-          <button onClick={props.onEndBroadcast} className="btn-danger">
+        {tabActive || (someoneElseStreaming && canStopTab) ? (
+          <button onClick={props.onEndBroadcast} className="btn-danger" disabled={!canStopTab}>
             <Square className="h-4 w-4" aria-hidden /> Tab-Audio beenden
           </button>
         ) : (
@@ -295,7 +313,8 @@ function ZoneCard(props: {
             className="btn-primary"
             disabled={disableTabAudio}
           >
-            <MonitorPlay className="h-4 w-4" aria-hidden /> Tab-Audio senden
+            <MonitorPlay className="h-4 w-4" aria-hidden />
+            {someoneElseStreaming ? "Tab-Audio übernehmen" : "Tab-Audio senden"}
           </button>
         )}
         {announceActive ? (

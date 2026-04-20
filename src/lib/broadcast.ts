@@ -10,6 +10,9 @@ type Relay = {
   ffmpeg: ChildProcessWithoutNullStreams;
   subscribers: Set<ChunkSink>;
   startedAt: number;
+  broadcasterEmail?: string;
+  broadcasterName?: string;
+  tabTitle?: string;
 };
 
 // State lives on globalThis so Next.js API routes (which may run in an
@@ -114,6 +117,30 @@ export function canStartAnnounce(): { ok: true } | { ok: false; reason: string; 
     return { ok: false, reason: `Bitte ${Math.ceil(left / 1000)}s warten.`, retryInMs: left };
   }
   return { ok: true };
+}
+
+export type RelayMeta = { broadcasterEmail?: string; broadcasterName?: string; tabTitle?: string };
+
+export function setRelayMeta(relayId: string, kind: RelayKind, meta: RelayMeta) {
+  const map = kind === "stream" ? streamRelays : announceRelays;
+  const r = map.get(relayId);
+  if (!r) return;
+  if (meta.broadcasterEmail) r.broadcasterEmail = meta.broadcasterEmail;
+  if (meta.broadcasterName) r.broadcasterName = meta.broadcasterName;
+  if (meta.tabTitle) r.tabTitle = meta.tabTitle;
+}
+
+export function getStreamInfo(zoneId: string): { broadcasting: boolean; kind?: RelayKind; email?: string; name?: string; tabTitle?: string } {
+  const announces = announceRelaysForZone(zoneId);
+  if (announces.length > 0) {
+    const r = announces[0];
+    return { broadcasting: true, kind: "announce", email: r.broadcasterEmail, name: r.broadcasterName };
+  }
+  const s = streamRelays.get(zoneId);
+  if (s) {
+    return { broadcasting: true, kind: "stream", email: s.broadcasterEmail, name: s.broadcasterName, tabTitle: s.tabTitle };
+  }
+  return { broadcasting: false };
 }
 
 export function startRelay(zoneId: string, kind: RelayKind, mime?: string): string {

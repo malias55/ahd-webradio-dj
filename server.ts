@@ -20,6 +20,7 @@ import {
   hasAnyRelay,
   hasRelay,
   pushChunk,
+  setRelayMeta,
   startRelay,
   stopRelay,
   type RelayKind,
@@ -283,27 +284,47 @@ app.prepare().then(() => {
   broadcastNs.on("connection", (socket) => {
     const owned = new Map<string, { kind: RelayKind; mime: string; relayId: string }>();
 
-    socket.on("broadcast:start", async (payload: { zoneId: string; mode?: RelayKind; mime?: string }) => {
+    socket.on("broadcast:start", async (payload: { zoneId: string; mode?: RelayKind; mime?: string; email?: string; name?: string; tabTitle?: string }) => {
       if (!payload?.zoneId) return;
       const kind: RelayKind = payload.mode === "announce" ? "announce" : "stream";
       const mime = typeof payload.mime === "string" ? payload.mime : "audio/webm";
 
       const relayId = startRelay(payload.zoneId, kind, mime);
       owned.set(payload.zoneId, { kind, mime, relayId });
-      console.log(`[broadcast] started relay=${relayId} zone=${payload.zoneId} kind=${kind}`);
+      if (payload.email || payload.name || payload.tabTitle) {
+        setRelayMeta(relayId, kind, {
+          broadcasterEmail: payload.email,
+          broadcasterName: payload.name,
+          tabTitle: payload.tabTitle,
+        });
+      }
+      console.log(`[broadcast] started relay=${relayId} zone=${payload.zoneId} kind=${kind} by=${payload.email || "unknown"}`);
 
       try {
         const zone = await prisma.zone.findUnique({ where: { id: payload.zoneId } });
         if (!zone) return;
         const origin = resolveOrigin(socket.request);
         const url = `${origin}/api/zones/${payload.zoneId}/live?r=${relayId}`;
-        sendToZone(payload.zoneId, { type: "stop" });
-        sendToZone(payload.zoneId, { type: "play", url });
-        sendToZone(payload.zoneId, {
-          type: "volume",
-          value: kind === "announce" ? Math.max(80, zone.volume) : zone.volume,
-        });
+        if (kind === "announce") {
+          sendToZone(payload.zoneId, {
+            type: "announce-start",
+            url,
+            volume: Math.max(80, zone.volume),
+          });
+        } else {
+          sendToZone(payload.zoneId, { type: "stop" });
+          sendToZone(payload.zoneId, { type: "play", url });
+          sendToZone(payload.zoneId, { type: "volume", value: zone.volume });
+        }
       } catch (err) { console.error("[broadcast] start failed", err); }
+    });
+
+    socket.on("broadcast:meta", (payload: { zoneId: string; tabTitle?: string }) => {
+      if (!payload?.zoneId) return;
+      const rec = owned.get(payload.zoneId);
+      if (rec && payload.tabTitle) {
+        setRelayMeta(rec.relayId, rec.kind, { tabTitle: payload.tabTitle });
+      }
     });
 
     let chunkSeen = false;
@@ -325,7 +346,13 @@ app.prepare().then(() => {
 
     async function teardown(zid: string, kind: RelayKind, relayId: string) {
       stopRelay(relayId, kind);
-      if (kind === "announce" && announceRelaysForZone(zid).length > 0) return;
+      if (kind === "announce") {
+        if (announceRelaysForZone(zid).length === 0) {
+          sendToZone(zid, { type: "announce-stop" });
+        }
+        return;
+      }
+      // Stream teardown — restore native source
       try {
         const zone = await prisma.zone.findUnique({ where: { id: zid } });
         if (!zone) return;
