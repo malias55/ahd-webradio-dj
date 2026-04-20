@@ -6,7 +6,6 @@ const { spawn } = require("child_process");
 const net = require("net");
 const fs = require("fs");
 const os = require("os");
-const path = require("path");
 
 const SERVER     = process.env.AHD_SERVER || "ws://localhost:3000/ws";
 const API_KEY    = process.env.AHD_DEVICE_API_KEY || "";
@@ -53,10 +52,18 @@ function mpvCommand(cmd) {
   });
 }
 
-async function play(url)       { await mpvCommand(["loadfile", url, "replace"]); }
-async function stop()          { await mpvCommand(["stop"]); }
+let currentUrl = null;
+
+async function play(url)       { currentUrl = url; await mpvCommand(["loadfile", url, "replace"]); }
+async function stop()          { currentUrl = null; await mpvCommand(["stop"]); }
 async function pause(v)        { await mpvCommand(["set_property", "pause", v]); }
 async function setVolume(v)    { await mpvCommand(["set_property", "volume", Math.max(0, Math.min(100, v))]); }
+
+async function identify() {
+  const tone = spawn("mpv", ["--no-video", "--no-terminal", "av://lavfi/sine=f=880:d=1.5"], { stdio: "ignore" });
+  await new Promise((resolve) => tone.on("exit", resolve));
+  if (currentUrl) await play(currentUrl);
+}
 
 // --- connect ---
 ensureMpv();
@@ -94,7 +101,7 @@ socket.on("command", async (cmd) => {
     case "pause":    await pause(true); break;
     case "resume":   await pause(false); break;
     case "volume":   await setVolume(cmd.value); break;
-    case "identify": await play(path.resolve(__dirname, "identify.mp3")); break;
+    case "identify": await identify(); break;
   }
   socket.emit("status", { type: cmd.type, ts: Date.now() });
 });
