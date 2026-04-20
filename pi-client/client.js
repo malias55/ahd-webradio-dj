@@ -36,7 +36,7 @@ function ensureMpv() {
     "--volume=80",
     `--input-ipc-server=${IPC_PATH}`,
     "--cache=yes",
-    "--cache-secs=2",
+    "--cache-secs=1",
     "--audio-client-name=ahd-radio-dj",
   ], { stdio: "ignore" });
   mpv.on("exit", () => { setTimeout(ensureMpv, 1000); });
