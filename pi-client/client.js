@@ -68,14 +68,38 @@ async function identify() {
 // --- announce overlay (separate mpv process, doesn't interrupt main stream) ---
 let announceProc = null;
 let savedVolume = null;
+let fadeTimer = null;
+
+async function fadeVolume(from, to, durationMs) {
+  if (fadeTimer) { clearInterval(fadeTimer); fadeTimer = null; }
+  const steps = 15;
+  const stepMs = durationMs / steps;
+  const delta = (to - from) / steps;
+  let current = from;
+  let step = 0;
+  return new Promise((resolve) => {
+    fadeTimer = setInterval(async () => {
+      step++;
+      current += delta;
+      if (step >= steps) {
+        clearInterval(fadeTimer);
+        fadeTimer = null;
+        await setVolume(Math.round(to));
+        resolve();
+      } else {
+        await setVolume(Math.round(current));
+      }
+    }, stepMs);
+  });
+}
 
 async function announceStart(url, vol) {
   if (announceProc && !announceProc.killed) {
     try { announceProc.kill("SIGTERM"); } catch {}
   }
-  savedVolume = (savedVolume === null) ? 80 : savedVolume;
-  // Duck the main stream
-  await setVolume(10);
+  if (savedVolume === null) savedVolume = 80;
+  const duckTo = Math.round(savedVolume * 0.2);
+  await fadeVolume(savedVolume, duckTo, 500);
   announceProc = spawn("mpv", [
     "--no-video", "--no-terminal",
     `--volume=${vol}`,
@@ -91,7 +115,8 @@ async function announceStop() {
     announceProc = null;
   }
   if (savedVolume !== null) {
-    await setVolume(savedVolume);
+    const duckFrom = Math.round(savedVolume * 0.2);
+    await fadeVolume(duckFrom, savedVolume, 800);
     savedVolume = null;
   }
 }
