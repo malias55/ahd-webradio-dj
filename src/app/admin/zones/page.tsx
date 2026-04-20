@@ -101,11 +101,11 @@ function ZoneCard({
           <input
             className="input flex-1"
             value={streamUrl}
-            disabled={!admin}
+            disabled={zone.defaultSource !== "custom_url" || !admin}
             onChange={(e) => setStreamUrl(e.target.value)}
             placeholder="https://..."
           />
-          {admin && (
+          {admin && zone.defaultSource === "custom_url" && (
             <button
               className="btn-outline"
               onClick={() => onUpdate(zone.id, { streamUrl: streamUrl || null })}
@@ -114,6 +114,9 @@ function ZoneCard({
             </button>
           )}
         </div>
+        {zone.defaultSource === "azuracast" && (
+          <p className="mt-1 text-xs text-neutral-400">AzuraCast-URL wird vom Server vorgegeben und kann nicht ge��ndert werden.</p>
+        )}
       </label>
 
       <label className="block">

@@ -21,7 +21,11 @@ export async function PATCH(req: Request, { params }: Ctx) {
   const { defaultSource, streamUrl, volume } = body ?? {};
   const data: Record<string, unknown> = {};
   if (typeof defaultSource === "string") data.defaultSource = defaultSource;
-  if (typeof streamUrl === "string" || streamUrl === null) data.streamUrl = streamUrl;
+  const effectiveSource = (typeof defaultSource === "string" ? defaultSource : null)
+    || (await prisma.zone.findUnique({ where: { id }, select: { defaultSource: true } }))?.defaultSource;
+  if (effectiveSource === "custom_url" && (typeof streamUrl === "string" || streamUrl === null)) {
+    data.streamUrl = streamUrl;
+  }
   if (typeof volume === "number") data.volume = Math.max(0, Math.min(100, Math.round(volume)));
 
   const zone = await prisma.zone.update({ where: { id }, data });
