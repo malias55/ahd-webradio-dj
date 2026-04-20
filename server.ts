@@ -84,23 +84,21 @@ function handleLive(req: IncomingMessage, res: ServerResponse) {
     else detachSubscriber(zoneId, sink);
   }
 
-  let attached: { kind: RelayKind } | null;
   if (relayId) {
     if (!hasRelay(relayId)) { res.writeHead(404).end("no active broadcast"); return; }
-    attached = attachToRelay(relayId, sink);
   } else {
     if (!hasAnyRelay(zoneId)) { res.writeHead(404).end("no active broadcast"); return; }
-    attached = attachSubscriber(zoneId, sink);
   }
-  if (!attached) { res.writeHead(404).end("no active broadcast"); return; }
 
   res.writeHead(200, {
     "Content-Type": "audio/mpeg",
     "Cache-Control": "no-cache, no-store",
     "X-Accel-Buffering": "no",
     "Connection": "keep-alive",
-    "X-Relay-Kind": attached.kind,
   });
+
+  const attached = relayId ? attachToRelay(relayId, sink) : attachSubscriber(zoneId, sink);
+  if (!attached) { res.end(); return; }
   console.log(`[live] subscriber attached zone=${zoneId} relay=${relayId || "zone"} kind=${attached.kind}`);
 
   req.on("close", () => {
