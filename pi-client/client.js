@@ -42,14 +42,22 @@ function ensureMpv() {
   mpv.on("exit", () => { setTimeout(ensureMpv, 1000); });
 }
 
-function mpvCommand(cmd) {
+function mpvCommandOnce(cmd) {
   return new Promise((resolve) => {
     const c = net.createConnection(IPC_PATH, () => {
       c.write(JSON.stringify({ command: cmd }) + "\n");
-      setTimeout(() => { c.end(); resolve(); }, 50);
+      setTimeout(() => { c.end(); resolve(true); }, 50);
     });
-    c.on("error", () => resolve());
+    c.on("error", () => resolve(false));
   });
+}
+
+async function mpvCommand(cmd) {
+  for (let i = 0; i < 10; i++) {
+    const ok = await mpvCommandOnce(cmd);
+    if (ok) return;
+    await new Promise((r) => setTimeout(r, 500));
+  }
 }
 
 let currentUrl = null;
