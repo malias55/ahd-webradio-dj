@@ -64,7 +64,14 @@ export async function startBroadcast(opts: StartOpts): Promise<BroadcasterState>
   const stream =
     source === "tab"
       ? await navigator.mediaDevices.getDisplayMedia({
-          audio: { suppressLocalAudioPlayback: true } as MediaTrackConstraints,
+          audio: {
+            suppressLocalAudioPlayback: true,
+            channelCount: 2,
+            sampleRate: 48000,
+            autoGainControl: false,
+            noiseSuppression: false,
+            echoCancellation: false,
+          } as MediaTrackConstraints,
           video: true,
         })
       : await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -86,7 +93,7 @@ export async function startBroadcast(opts: StartOpts): Promise<BroadcasterState>
   }
 
   const mime = pickMime();
-  const bps = source === "tab" ? 256_000 : 96_000;
+  const bps = source === "tab" ? 320_000 : 96_000;
   const recorder = new MediaRecorder(
     audioOnly,
     mime ? { mimeType: mime, audioBitsPerSecond: bps } : { audioBitsPerSecond: bps },
