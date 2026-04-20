@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Headphones, Megaphone, MonitorPlay, Square, Volume2 } from "lucide-react";
 import type { Zone, Device } from "@/types";
-import { patchZone, sendZoneCommand } from "@/lib/apiClient";
+import { sendZoneCommand } from "@/lib/apiClient";
 import {
   ANNOUNCE_MAX_MS,
   activeBroadcast,
@@ -78,7 +78,6 @@ export default function ControlPage() {
 
   const updateVolume = async (zoneId: string, v: number) => {
     await sendZoneCommand(zoneId, { type: "volume", value: v });
-    await patchZone(zoneId, { volume: v });
     reload();
   };
 
