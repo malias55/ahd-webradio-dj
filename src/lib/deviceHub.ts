@@ -8,45 +8,51 @@ type DeviceCommand =
   | { type: "resume" }
   | { type: "identify" };
 
-let ioRef: SocketServer | null = null;
-const socketsBySerial = new Map<string, Socket>();
+type HubGlobal = {
+  ioRef: SocketServer | null;
+  socketsBySerial: Map<string, Socket>;
+};
+
+const _g = globalThis as unknown as { __ahdDeviceHub?: HubGlobal };
+if (!_g.__ahdDeviceHub) {
+  _g.__ahdDeviceHub = { ioRef: null, socketsBySerial: new Map() };
+}
+const hub = _g.__ahdDeviceHub;
 
 export function registerHub(io: SocketServer) {
-  ioRef = io;
+  hub.ioRef = io;
 }
 
 export function trackSocket(serial: string, socket: Socket) {
-  socketsBySerial.set(serial, socket);
+  hub.socketsBySerial.set(serial, socket);
   socket.on("disconnect", () => {
-    if (socketsBySerial.get(serial) === socket) socketsBySerial.delete(serial);
+    if (hub.socketsBySerial.get(serial) === socket) hub.socketsBySerial.delete(serial);
   });
 }
 
 export function isOnline(serial: string) {
-  return socketsBySerial.has(serial);
+  return hub.socketsBySerial.has(serial);
 }
 
 export function onlineSerials() {
-  return Array.from(socketsBySerial.keys());
+  return Array.from(hub.socketsBySerial.keys());
 }
 
 export function sendToDevice(serial: string, cmd: DeviceCommand) {
-  const s = socketsBySerial.get(serial);
+  const s = hub.socketsBySerial.get(serial);
   if (!s) return false;
   s.emit("command", cmd);
   return true;
 }
 
 export function sendToZone(zoneId: string, cmd: DeviceCommand) {
-  if (!ioRef) return 0;
-  ioRef.to(`zone:${zoneId}`).emit("command", cmd);
-  // returns approximate count
-  const room = ioRef.sockets.adapter.rooms.get(`zone:${zoneId}`);
+  if (!hub.ioRef) return 0;
+  hub.ioRef.to(`zone:${zoneId}`).emit("command", cmd);
+  const room = hub.ioRef.sockets.adapter.rooms.get(`zone:${zoneId}`);
   return room ? room.size : 0;
 }
 
 export function joinZoneRoom(socket: Socket, zoneId: string | null) {
-  // leave all zone rooms first
   for (const room of socket.rooms) {
     if (room.startsWith("zone:")) socket.leave(room);
   }
@@ -54,7 +60,7 @@ export function joinZoneRoom(socket: Socket, zoneId: string | null) {
 }
 
 export function broadcastConfig(serial: string, payload: unknown) {
-  const s = socketsBySerial.get(serial);
+  const s = hub.socketsBySerial.get(serial);
   if (s) s.emit("config", payload);
 }
 
