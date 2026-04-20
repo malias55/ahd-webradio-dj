@@ -54,11 +54,12 @@ function mpvCommand(cmd) {
 }
 
 let currentUrl = null;
+let currentVolume = 80;
 
 async function play(url)       { currentUrl = url; await mpvCommand(["loadfile", url, "replace"]); }
 async function stop()          { currentUrl = null; await mpvCommand(["stop"]); }
 async function pause(v)        { await mpvCommand(["set_property", "pause", v]); }
-async function setVolume(v)    { await mpvCommand(["set_property", "volume", Math.max(0, Math.min(100, v))]); }
+async function setVolume(v)    { const clamped = Math.max(0, Math.min(100, Number(v) || 0)); await mpvCommand(["set_property", "volume", clamped]); }
 
 async function identify() {
   const tone = spawn("mpv", ["--no-video", "--no-terminal", "av://lavfi/sine=f=880:d=1.5"], { stdio: "ignore" });
@@ -68,7 +69,7 @@ async function identify() {
 
 // --- announce overlay (separate mpv process, doesn't interrupt main stream) ---
 let announceProc = null;
-let savedVolume = null;
+let preDuckVolume = null;
 let fadeTimer = null;
 
 async function fadeVolume(from, to, durationMs) {
@@ -98,9 +99,9 @@ async function announceStart(url, vol) {
   if (announceProc && !announceProc.killed) {
     try { announceProc.kill("SIGTERM"); } catch {}
   }
-  if (savedVolume === null) savedVolume = 80;
-  const duckTo = Math.round(savedVolume * 0.2);
-  await fadeVolume(savedVolume, duckTo, 500);
+  preDuckVolume = currentVolume;
+  const duckTo = Math.max(1, Math.round(preDuckVolume * 0.2));
+  await fadeVolume(preDuckVolume, duckTo, 500);
   announceProc = spawn("mpv", [
     "--no-video", "--no-terminal",
     `--volume=${vol}`,
@@ -115,10 +116,12 @@ async function announceStop() {
     try { announceProc.kill("SIGTERM"); } catch {}
     announceProc = null;
   }
-  if (savedVolume !== null) {
-    const duckFrom = Math.round(savedVolume * 0.2);
-    await fadeVolume(duckFrom, savedVolume, 800);
-    savedVolume = null;
+  if (preDuckVolume !== null) {
+    const restoreTo = preDuckVolume;
+    preDuckVolume = null;
+    const duckFrom = Math.max(1, Math.round(restoreTo * 0.2));
+    await fadeVolume(duckFrom, restoreTo, 800);
+    currentVolume = restoreTo;
   }
 }
 
@@ -146,8 +149,11 @@ socket.on("disconnect",    (r) => console.warn("[ahd-pi] disconnected:", r));
 
 socket.on("config", (cfg) => {
   console.log("[ahd-pi] config:", cfg);
-  if (cfg?.streamUrl) { play(cfg.streamUrl); setVolume(cfg.volume ?? 80); }
-  else stop();
+  if (cfg?.streamUrl) {
+    play(cfg.streamUrl);
+    currentVolume = cfg.volume ?? 80;
+    if (!announceProc) setVolume(currentVolume);
+  } else stop();
 });
 
 socket.on("command", async (cmd) => {
@@ -157,7 +163,7 @@ socket.on("command", async (cmd) => {
     case "stop":           await stop(); break;
     case "pause":          await pause(true); break;
     case "resume":         await pause(false); break;
-    case "volume":         savedVolume = cmd.value; if (!announceProc) await setVolume(cmd.value); break;
+    case "volume":         currentVolume = cmd.value; if (!announceProc) await setVolume(cmd.value); break;
     case "identify":       await identify(); break;
     case "announce-start": await announceStart(cmd.url, cmd.volume); break;
     case "announce-stop":  await announceStop(); break;
