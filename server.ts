@@ -349,6 +349,17 @@ app.prepare().then(() => {
       if (kind === "announce") {
         if (announceRelaysForZone(zid).length === 0) {
           sendToZone(zid, { type: "announce-stop" });
+          // If a tab-audio stream is still active, re-send play so devices reconnect
+          if (currentMode(zid) === "stream") {
+            const origin = resolveOrigin(socket.request);
+            const liveUrl = `${origin}/api/zones/${zid}/live?m=stream`;
+            sendToZone(zid, { type: "play", url: liveUrl });
+            try {
+              const zone = await prisma.zone.findUnique({ where: { id: zid } });
+              if (zone) sendToZone(zid, { type: "volume", value: zone.volume });
+            } catch {}
+            console.log(`[broadcast] restored stream after announce zone=${zid}`);
+          }
         }
         return;
       }

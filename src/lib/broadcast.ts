@@ -181,7 +181,6 @@ export function startRelay(zoneId: string, kind: RelayKind, mime?: string): stri
   });
   ffmpeg.stdout.on("end", () => closeSubscribers(r));
   announceRelays.set(relayId, r);
-  closeAllListenersForZone(zoneId);
   console.log(`[relay] announce started relayId=${relayId} zone=${zoneId} total=${announceRelaysForZone(zoneId).length}`);
   return relayId;
 }
@@ -205,7 +204,6 @@ export function stopRelay(relayId: string, kind: RelayKind) {
   if (announceRelaysForZone(zoneId).length === 0) {
     setLastAnnounceEndedAt(Date.now());
   }
-  closeAllListenersForZone(zoneId);
   return true;
 }
 
