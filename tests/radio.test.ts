@@ -136,6 +136,14 @@ test("German dry mix never overlaps any speech with any music or effect", () => 
     assert.ok(timeline.duration >= timeline.cues.at(-1)!.end);
   }
 });
+test("German stories use quiet pauses, with short accents only at service boundaries", () => {
+  const main = [{ kind: "intro" as const, duration: 10 }, { kind: "story" as const, duration: 30 }, { kind: "story" as const, duration: 30 }, { kind: "outro" as const, duration: 8 }];
+  assert.equal(dryNewsTimeline(main).cues.filter(c => c.kind === "divider").length, 0);
+  const full = dryNewsTimeline([...main, { kind: "weather", duration: 25 }, { kind: "traffic", duration: 30 }, { kind: "outro", duration: 10 }]);
+  const dividers = full.cues.filter(c => c.kind === "divider");
+  assert.equal(dividers.length, 2);
+  for (const cue of dividers) assert.ok(cue.end - cue.start <= 0.801);
+});
 const serviceSlot = new Date("2026-10-26T07:00:00Z"), serviceNow = new Date("2026-10-26T06:55:00Z");
 const currentWeather = { weather: { source_id: 1, timestamp: "2026-10-26T06:50:00Z", temperature: 12.4, icon: "cloudy", wind_speed_10: 10 }, sources: [{ id: 1, distance: 4000, station_name: "Mainz" }] };
 test("weather only reads fresh local measurements and distinguishes forecasts", () => {

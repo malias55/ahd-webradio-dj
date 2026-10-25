@@ -76,7 +76,7 @@ export default function RadioPage() {
       <p>{status.playing?.title || "Nächster Start: türkisches Magazin um 07:00 Uhr, Musik ab 08:00 Uhr."}</p>
       {status.nextNewsAt && <p className="text-sm">Nächste Ausgabe: {time(status.nextNewsAt)} · {status.nextPresenter}{status.preparing ? " · wird vorbereitet" : ""}</p>}
       <div className="grid gap-2 text-sm sm:grid-cols-2"><p>07 Uhr · Türkçe mit Cavit<br />08, 10, 12, 14, 16 Uhr · neue Hauptnachrichten mit Elias<br />09, 11, 13, 15, 17 Uhr · Hauptteil wiederholt</p><p>08–17 Uhr · stündlich neues Wetter und Verkehr mit Jane<br />Mainz und Umgebung · A60 / A63 / A643</p></div>
-      <p className="text-xs text-neutral-500">Deutsche Ortszeit. Die Hauptnachrichten werden alle zwei Stunden erstellt; Wetter und Verkehr jede Stunde aktualisiert. Deutsche Sprache ohne Musikbett, Jingles nur dazwischen. Nachrichten und Moderationsstimmen sind KI-generiert.</p>
+      <p className="text-xs text-neutral-500">Deutsche Ortszeit. Die Hauptnachrichten werden alle zwei Stunden erstellt; Wetter und Verkehr jede Stunde aktualisiert. Deutsche Sprache ohne Musikbett. Zwischen Meldungen kurze Pausen; leiser Klavierklang nur zum Wetter und Verkehr. Nachrichten und Moderationsstimmen sind KI-generiert.</p>
       {status.error && <p className="text-sm text-amber-700 dark:text-amber-400" role="status">{status.error}</p>}
     </div>
     <div className="card space-y-4"><h2 className="font-semibold">Hörbeispiele</h2>{examples.map(a => <div key={a.id} className="space-y-2 border-b border-neutral-200 pb-4 dark:border-neutral-800"><h3 className="font-medium">{a.title}</h3><AudioDetails asset={a} /></div>)}</div>

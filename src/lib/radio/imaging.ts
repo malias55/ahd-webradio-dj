@@ -1,9 +1,15 @@
 import { prisma } from "../prisma";
 import { composeMusic, soundEffect, speech, presenterForSlot, presenterForHour, servicePresenter } from "./providers";
-import { normalizeAudio, withJob } from "./store";
+import { command, normalizeAudio, withJob } from "./store";
+import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 export const IMAGING_VERSION = "v1";
 export const STATION_ID_VERSION = "dry-v2";
+export const GERMAN_DIVIDER_VERSION = "felt-piano-v2";
+export const GERMAN_DIVIDER_SECONDS = 0.8;
+export const GERMAN_DIVIDER_KEY = `imaging:${GERMAN_DIVIDER_VERSION}:divider`;
 export const IMAGING_ROLES = ["news-open", "news-bed", "news-close", "station-bed", "sweep", "divider"] as const;
 export type ImagingRole = typeof IMAGING_ROLES[number];
 const signature = "Original coherent sonic branding for Autohaus Doerrschuck Radio in Mainz. Warm premium lounge jazz, D major, 96 BPM, memorable three-note rising Rhodes and soft vibraphone motif. Welcoming, confident, sunny and understated. Pure instrumental. No speech, no singing, no urgent news alarm, no dramatic impacts, no harsh treble.";
@@ -21,6 +27,46 @@ export async function imagingAsset(role: ImagingRole) {
   return prisma.radioAsset.findUniqueOrThrow({ where: { key: imagingKey(role) }, select: { id: true, duration: true, title: true, kind: true } });
 }
 
+export async function germanDividerAsset() {
+  return prisma.radioAsset.findUniqueOrThrow({ where: { key: GERMAN_DIVIDER_KEY }, select: { id: true, duration: true, title: true, kind: true } });
+}
+
+export const GERMAN_DIVIDER_PROMPT = "A single soft felt-piano D major add9 chord, gently touched in a low-mid register. Warm rounded wooden tone, smooth attack, short natural decay ending in silence within one second. Dry studio recording. No chime, bell, vibraphone, beep, high sparkle, swoosh, percussion, impact, voices, reverb wash or other sounds.";
+
+// A short accent must not be loudness-normalized like an entire speech clip.
+// Shape its attack/tail and set a conservative RMS and peak ceiling instead.
+export async function masterGermanDivider(raw: Uint8Array) {
+  const dir = await mkdtemp(join(tmpdir(), "ahd-soft-divider-"));
+  try {
+    const input = join(dir, "raw.mp3"), pcm = join(dir, "soft.pcm"), output = join(dir, "divider.mp3");
+    await writeFile(input, raw);
+    await command(process.env.FFMPEG_PATH || "ffmpeg", ["-v", "error", "-nostdin", "-i", input,
+      "-af", `highpass=f=90,lowpass=f=2600,silenceremove=start_periods=1:start_duration=0.005:start_threshold=-55dB,atrim=duration=${GERMAN_DIVIDER_SECONDS},apad=whole_dur=${GERMAN_DIVIDER_SECONDS},afade=t=in:d=0.025,afade=t=out:st=0.45:d=0.35`,
+      "-ar", "44100", "-ac", "2", "-f", "f32le", "-y", pcm]);
+    const samples = await readFile(pcm);
+    let peak = 0, energy = 0;
+    for (let i = 0; i < samples.length; i += 4) { const value = samples.readFloatLE(i); peak = Math.max(peak, Math.abs(value)); energy += value * value; }
+    const rms = Math.sqrt(energy / (samples.length / 4));
+    if (!Number.isFinite(rms) || rms < 0.00001) throw new Error("Der erzeugte Übergang enthält keinen brauchbaren Klang");
+    const gain = Math.min(10 ** (-24 / 20) / rms, 10 ** (-16 / 20) / peak);
+    await command(process.env.FFMPEG_PATH || "ffmpeg", ["-v", "error", "-nostdin", "-f", "f32le", "-ar", "44100", "-ac", "2", "-i", pcm,
+      "-af", `volume=${gain}`, "-c:a", "libmp3lame", "-b:a", "128k", "-y", output]);
+    const duration = Number(await command(process.env.FFPROBE_PATH || "ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", output]));
+    return { audio: await readFile(output), duration };
+  } finally { await rm(dir, { recursive: true, force: true }); }
+}
+
+export async function generateGermanDivider() {
+  if (await prisma.radioAsset.findUnique({ where: { key: GERMAN_DIVIDER_KEY }, select: { id: true } })) return;
+  await withJob(GERMAN_DIVIDER_KEY, async () => {
+    if (await prisma.radioAsset.findUnique({ where: { key: GERMAN_DIVIDER_KEY }, select: { id: true } })) return;
+    const raw = await soundEffect(GERMAN_DIVIDER_PROMPT, 1.2), audio = await masterGermanDivider(raw);
+    await prisma.radioAsset.create({ data: { key: GERMAN_DIVIDER_KEY, kind: "imaging", title: "Mainz Moment · Leiser Klavier-Übergang", ...audio,
+      metadata: { role: "divider", version: GERMAN_DIVIDER_VERSION, language: "de", generated: true, prompt: GERMAN_DIVIDER_PROMPT,
+        lowPassHz: 2600, targetRmsDbfs: -24, peakCeilingDbfs: -16, audibleSeconds: GERMAN_DIVIDER_SECONDS, usage: "Nur Wechsel zu Wetter und Verkehr; keine Effekte zwischen einzelnen Meldungen" } } });
+  });
+}
+
 export async function generateImaging() {
   for (const brief of IMAGING_BRIEF) {
     const key = imagingKey(brief.role);
@@ -32,6 +78,7 @@ export async function generateImaging() {
         metadata: { role: brief.role, version: IMAGING_VERSION, generated: true, prompt: brief.prompt } } });
     });
   }
+  await generateGermanDivider();
 }
 
 export const STATION_LINE = "Autohaus Dörrschuck Radio. Entspannt ankommen. Gute Musik. Gute Fahrt.";

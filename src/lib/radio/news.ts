@@ -4,12 +4,12 @@ import { prisma } from "../prisma";
 import { edenJson, presenterForSlot, servicePresenter, speech, type ModelCall } from "./providers";
 import { withJob } from "./store";
 import { mixBulletin, mixDryBulletin, joinNewsParts, prependInvocation, type Cue } from "./mix";
-import { IMAGING_VERSION } from "./imaging";
+import { IMAGING_VERSION, GERMAN_DIVIDER_VERSION } from "./imaging";
 import { isNewsSlot, stationTime, newsLanguage } from "./config";
 import { collectHourlyService, serviceFreshForSlot } from "./service";
 import type { RadioAsset } from "@prisma/client";
 
-export const GERMAN_NEWS_VERSION = "dry-service-combustion-v2";
+export const GERMAN_NEWS_VERSION = "dry-service-combustion-v3";
 export const GERMAN_EDITORIAL_VERSION = "combustion-aware-v1";
 
 export const DEFAULT_FEEDS = [
@@ -220,7 +220,7 @@ export async function renderBulletin(slot: Date, content: EditorialContent, exam
     metadata: { voiceId: presenter.voiceId, presenter: presenter.name, language, gender: presenter.gender, aiGenerated: true, backgroundMusic: language === "tr", editorialVersion: language === "de" ? GERMAN_EDITORIAL_VERSION : null,
       sources: content.sources, stories: content.stories, modelCalls: content.modelCalls, editionSlot: content.editionSlot, example,
       authorModel: process.env.EDENAI_MODEL || "gpt-6-luna", reviewModel: process.env.EDENAI_REVIEW_MODEL || process.env.EDENAI_MODEL || "gpt-6-luna",
-      ttsModel: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2", imagingVersion: IMAGING_VERSION, timeline,
+      ttsModel: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2", imagingVersion: IMAGING_VERSION, dividerVersion: language === "de" ? GERMAN_DIVIDER_VERSION : IMAGING_VERSION, timeline,
       region: language === "tr" ? "Türkiye / Almanya" : process.env.NEWS_REGION || "Mainz und Rheinhessen" } };
 }
 
@@ -246,7 +246,7 @@ export async function renderGermanHourly(slot: Date, main: MainAudio | null, exa
     sources: [...mainSources, ...service.sources.map((s, i) => ({ ...s, id: maxId + i + 1, local: true }))],
     modelCalls: !example && isRepeatSlot(slot) ? [] : m.modelCalls || [], authorModel: m.authorModel || null, reviewModel: m.reviewModel || null,
     serviceTextMethod: "deterministic-from-structured-data", ttsModel: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2",
-    imagingVersion: IMAGING_VERSION, region: "Mainz und Rheinhessen", timeline: [...(m.timeline || []), ...rendered.timeline.map(c => ({ ...c, start: c.start + offset, end: c.end + offset }))],
+    imagingVersion: IMAGING_VERSION, dividerVersion: GERMAN_DIVIDER_VERSION, region: "Mainz und Rheinhessen", timeline: [...(m.timeline || []), ...rendered.timeline.map(c => ({ ...c, start: c.start + offset, end: c.end + offset }))],
   } };
 }
 
