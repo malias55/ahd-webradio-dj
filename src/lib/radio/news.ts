@@ -9,7 +9,8 @@ import { isNewsSlot, stationTime, newsLanguage } from "./config";
 import { collectHourlyService, serviceFreshForSlot } from "./service";
 import type { RadioAsset } from "@prisma/client";
 
-export const GERMAN_NEWS_VERSION = "dry-service-v1";
+export const GERMAN_NEWS_VERSION = "dry-service-combustion-v2";
+export const GERMAN_EDITORIAL_VERSION = "combustion-aware-v1";
 
 export const DEFAULT_FEEDS = [
   "https://www.swr.de/~rss/swraktuell/rheinland-pfalz/mainz/index.xml",
@@ -107,6 +108,26 @@ Wenn ausreichend geeignete Fakten vorliegen, vier bis sechs unterschiedliche The
 Der lokale Feed ist als local=true markiert. Nutze mindestens eine geeignete lokale Meldung, wenn vorhanden; sonst keinen lokalen Bezug erfinden.
 Keine Floskeln zwischen jedem Satz; natürliche, ruhige und leicht verständliche Moderation.`;
 
+export const GERMAN_TOPIC_POLICY = `REDAKTIONELLE THEMENAUSWAHL FÜR DAS DEUTSCHE PROGRAMM:
+Das Autohaus verkauft überwiegend Fahrzeuge mit Verbrennungsmotor. Wähle passende, sachliche Themen aus, ohne aus Nachrichten Verkaufswerbung zu machen.
+Bevorzuge belegte lokale Kultur, Ausflugsziele, Freizeit, Reisen, Handwerk, Fahrzeugpflege, Fahrkultur und praktische Alltagsthemen. Nicht jedes Thema muss ein Auto erwähnen; ein angenehmes, glaubwürdiges Magazin genügt.
+Keine lobenden Nachrichten über Elektromobilität: Beiträge über Elektroautos, deren Absatz- oder Reichweitenrekorde, Antriebswende, Ladeinfrastruktur oder Traktionsbatterien ganz auslassen. Ebenso keine Energiespeicher- oder Energiewende-Erfolgsmeldung mit einem werbenden Bezug auf Elektrofahrzeuge auswählen. Vermeintlich positive Elektroauto-Nachrichten nicht lediglich umformulieren oder den Elektro-Bezug aus ihrer Begründung entfernen, sondern ein anderes Thema wählen.
+Keine Abwertung von Elektrofahrzeugen oder ihren Fahrern. Keine erfundenen Vorteile von Verbrennern und keine unbelegten Aussagen über Kosten, Umwelt, Sicherheit, Zuverlässigkeit, Reichweite oder Vorschriften. Keine gegenteiligen Fakten verschweigen, um einen Fahrzeugvergleich oder ein ausgewähltes Thema positiv umzudeuten; stattdessen ein anderes, passendes Thema wählen.
+Keine kitschigen Fahrfreiheits-Floskeln, Kaufappelle, erfundenen Angebote oder Behauptungen über den Bestand des Autohauses. Das Ziel ist eine passende Themenauswahl, kein Motoren-Lob und keine versteckte Produktwerbung.
+Wetter und Verkehr bleiben unabhängig von Verkaufsinteressen sachlich und vollständig im erfassten Gebiet.`;
+
+// Exclude explicit electric-mobility material before drafting, including articles
+// whose feed summary hides that angle. Author and reviewer also receive the
+// semantic policy above; a keyword check alone cannot identify every framing.
+export function germanTopicAllowed(value: string) {
+  const normalized = value.normalize("NFKC").replace(/[‐‑–—]/g, "-");
+  return !/\b(?:elektro[ -]?(?:auto\w*|fahrzeug\w*|mobilit\w*|antrieb\w*)|e[ -](?:auto\w*|mobilit\w*|fahrzeug\w*)|elektrisch(?:e|en|er|es)?\s+(?:autos?|fahrzeug\w*|pkws?)|stromer(?:n|s)?|batterieelektr\w*|lade(?:säul\w*|infrastruktur\w*|park\w*|station\w*)|schnelllad\w*|wallbox\w*|traktionsbatter\w*|batteriespeicher\w*|electric\s+(?:vehicle\w*|car\w*)|BEVs?)\b/iu.test(normalized);
+}
+
+export function sourcesForProgramme(sources: NewsSource[], language: "de" | "tr") {
+  return language === "tr" ? sources : sources.filter(s => germanTopicAllowed([s.title, s.summary, s.articleText || ""].join(" ")));
+}
+
 export function validateStories(value: unknown, sources: NewsSource[]): Story[] {
   const stories = (value as { stories?: unknown })?.stories;
   if (!Array.isArray(stories) || stories.length < 1 || stories.length > 6) throw new Error("Invalid news stories");
@@ -142,11 +163,13 @@ export type EditorialContent = { stories: Story[]; sources: SourceReference[]; e
 
 export async function editorialContent(slot: Date): Promise<EditorialContent> {
   const editionSlot = newsEditionSlot(slot), language = newsLanguage(slot);
-  const sources = await Promise.all((await collectSources(new Date(), language)).slice(0, 36).map(enrichSource));
+  const candidates = sourcesForProgramme(await collectSources(new Date(), language), language);
+  const sources = sourcesForProgramme(await Promise.all(candidates.slice(0, 36).map(enrichSource)), language);
+  if (!sources.length) throw new Error("Keine aktuellen Quellen passend zur redaktionellen Themenauswahl verfügbar.");
   const recent = await prisma.radioAsset.findMany({ where: { kind: { in: ["news", "news-main"] }, slot: { lt: slot, gte: new Date(slot.getTime() - 8 * 3_600_000) } }, orderBy: { slot: "desc" }, take: 4, select: { metadata: true } });
   const previouslyUsed = [...new Set(recent.flatMap(a => ((a.metadata as { sources?: SourceReference[] })?.sources || []).map(s => s.url)))];
   const policy = language === "tr" ? `${NEWS_POLICY}\nABWEICHEND: Die gesamte Ausgabe muss auf natürlichem Türkisch sein. Zielgruppe: Türkischsprachige Menschen in Deutschland. Schwerpunkt Türkei, Kultur, Wissenschaft, Mobilität und deutsch-türkischer Austausch; passende globale positive Meldungen sind optional. Ein lokaler Mainz-Bezug ist hier nicht erforderlich. Deutsch-türkische Bezüge nur, wenn tatsächlich belegt; keine Beziehungen erfinden. Keine deutsche Moderation oder Quellen-URLs aussprechen. Geeignete DAAD-Informationen zum deutsch-türkischen Bildungs- und Kulturaustausch bevorzugen; Beiträge über 72 Stunden nur ausdrücklich als Hintergrund behandeln.` : NEWS_POLICY;
-  const editorialPolicy = language === "tr" ? policy : `${policy}\nABWEICHENDE LÄNGE für den deutschen Hauptteil: 220–270 Wörter für die Meldungen, höchstens 290. Wetter und Verkehr werden separat ergänzt, hier nicht schreiben. Vier kurze unterschiedliche Meldungen bevorzugen. Keine Uhrzeit oder Tageszeit nennen, da dieser Hauptteil in der Folgestunde wiederverwendet wird.`;
+  const editorialPolicy = language === "tr" ? policy : `${policy}\n${GERMAN_TOPIC_POLICY}\nABWEICHENDE LÄNGE für den deutschen Hauptteil: 220–270 Wörter für die Meldungen, höchstens 290. Wetter und Verkehr werden separat ergänzt, hier nicht schreiben. Vier kurze unterschiedliche Meldungen bevorzugen. Keine Uhrzeit oder Tageszeit nennen, da dieser Hauptteil in der Folgestunde wiederverwendet wird.`;
   const context = { language, region: language === "tr" ? "Türkiye, Almanya ve dünyadan" : process.env.NEWS_REGION || "Mainz und Rheinhessen", sendetermin: slot.toISOString(), sources, previouslyUsed,
     instruction: "Bevorzuge geeignete neue Themen gegenüber bereits behandelten Quellen. Bei unveränderter Nachrichtenlage darf eine weiterhin aktuelle Meldung wiederkehren; nicht als neue Entwicklung darstellen." };
   const modelCalls: ModelCall[] = [];
@@ -154,6 +177,10 @@ export async function editorialContent(slot: Date): Promise<EditorialContent> {
   for (let attempt = 0; attempt < 2; attempt++) {
     const draft = await edenJson(`${editorialPolicy}\nAntworte ausschließlich als JSON: {"stories":[{"text":"...", "sourceIds":[1]}]}. Nur Meldungen, keine Einleitung oder Schluss. Keine verallgemeinernden Ergänzungen wie „jedes Jahr“, wenn die Quelle nur ein einzelnes Ereignis beschreibt.`, { ...context, correction: feedback }, false, modelCalls);
     stories = validateStories(draft, sources);
+    if (language === "de" && stories.some(s => !germanTopicAllowed(s.text))) {
+      feedback = "Elektromobilität und ihre Erfolgsmeldungen vollständig auslassen. Andere belegte Themen wählen; keine Elektro-Meldung umdeuten und keine Vorteile von Verbrennern erfinden.";
+      continue;
+    }
     if (language === "de" && stories.map(s => s.text).join(" ").split(/\s+/).length > 290) {
       feedback = "Hauptnachrichten auf höchstens 290 Wörter kürzen, um Platz für Wetter und Verkehr zu lassen.";
       continue;
@@ -188,7 +215,7 @@ export async function renderBulletin(slot: Date, content: EditorialContent, exam
   }
   if (audio.duration > 260) throw new Error("Die fertige Ausgabe überschreitet das Sendezeitfenster.");
   return { ...audio, script: `${language === "tr" ? TURKISH_OPENING : ""}${paragraphs.join("\n\n")}`,
-    metadata: { voiceId: presenter.voiceId, presenter: presenter.name, language, gender: presenter.gender, aiGenerated: true, backgroundMusic: language === "tr",
+    metadata: { voiceId: presenter.voiceId, presenter: presenter.name, language, gender: presenter.gender, aiGenerated: true, backgroundMusic: language === "tr", editorialVersion: language === "de" ? GERMAN_EDITORIAL_VERSION : null,
       sources: content.sources, stories: content.stories, modelCalls: content.modelCalls, editionSlot: content.editionSlot, example,
       authorModel: process.env.EDENAI_MODEL || "gpt-6-luna", reviewModel: process.env.EDENAI_REVIEW_MODEL || process.env.EDENAI_MODEL || "gpt-6-luna",
       ttsModel: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2", imagingVersion: IMAGING_VERSION, timeline,
@@ -209,7 +236,7 @@ export async function renderGermanHourly(slot: Date, main: MainAudio | null, exa
   const offset = main ? main.duration + 0.45 : 0;
   const mainSources = m.sources || [], maxId = Math.max(0, ...mainSources.map(s => s.id));
   return { ...audio, script: [main?.script, ...paragraphs].filter(Boolean).join("\n\n"), metadata: {
-    programmeVersion: GERMAN_NEWS_VERSION, language: "de", aiGenerated: true, backgroundMusic: false, example,
+    programmeVersion: GERMAN_NEWS_VERSION, editorialVersion: GERMAN_EDITORIAL_VERSION, language: "de", aiGenerated: true, backgroundMusic: false, example,
     presenter: main ? "Elias · Jane (Wetter und Verkehr)" : "Jane · Wetter und Verkehr", mainAssetId: main?.id || null,
     mainReused: !!main && !example && isRepeatSlot(slot), mainUnavailable: !main, editionSlot: m.editionSlot || newsEditionSlot(slot).toISOString(),
     mainCreatedFor: main?.slot?.toISOString() || null, serviceRefreshHours: 1, service,

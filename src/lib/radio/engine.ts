@@ -4,7 +4,7 @@ import { prisma } from "../prisma";
 import { isOnAir, isMusicHours, upcomingNewsSlot, radioEnabled, stationTime, newsLanguage } from "./config";
 import { assetFile, pruneCache } from "./store";
 import { presenterForSlot } from "./providers";
-import { prepareNews, bulletinForSlot, isRepeatSlot } from "./news";
+import { prepareNews, bulletinForSlot, isRepeatSlot, GERMAN_NEWS_VERSION } from "./news";
 import { stationIdAsset, IMAGING_VERSION } from "./imaging";
 import { trackPlayback } from "./audit";
 
@@ -25,7 +25,7 @@ const state = globalRadio.__ahdRadio ??= {
 };
 
 export function radioStatus() {
-  return { programmeVersion: "dry-service-v1", imagingVersion: IMAGING_VERSION, presenter: presenterForSlot(new Date()).name, newsRefreshHours: 2, serviceRefreshHours: 1, started: state.started, onAir: isOnAir(), playing: state.playing, startedAt: state.startedAt || null,
+  return { programmeVersion: GERMAN_NEWS_VERSION, imagingVersion: IMAGING_VERSION, presenter: presenterForSlot(new Date()).name, newsRefreshHours: 2, serviceRefreshHours: 1, started: state.started, onAir: isOnAir(), playing: state.playing, startedAt: state.startedAt || null,
     listeners: state.listeners.size, preparing: state.preparing, error: state.error,
     nextNewsAt: upcomingNewsSlot()?.toISOString() ?? null, timezone: "Europe/Berlin", hours: "07:00 Türkçe · 08:00–18:00 Musik", newsHours: "07:00 Türkçe · 08:00–17:00 Deutsch" };
 }

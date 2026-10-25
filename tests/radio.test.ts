@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { isOnAir, upcomingNewsSlot, nativeSource, stationTime, isMusicHours, newsLanguage, stationDayBounds } from "../src/lib/radio/config";
-import { parseFeed, validateStories, articleText } from "../src/lib/radio/news";
+import { parseFeed, validateStories, articleText, germanTopicAllowed, sourcesForProgramme } from "../src/lib/radio/news";
 import { authCookies, userForCookie } from "../src/lib/session";
 
 test("Berlin opening hours and last bulletin in winter", () => {
@@ -37,6 +37,22 @@ test("bulletins need valid source IDs and bounded reuse", () => {
   assert.throws(() => validateStories({ stories: [{ text: "Hallo", sourceIds: [] }] }, sources));
   assert.throws(() => validateStories({ stories: [{ text: "Wort ".repeat(101), sourceIds: [1] }] }, sources));
   assert.equal(validateStories({ stories: [{ text: "Neue Ausstellung in Mainz.", sourceIds: [1] }] }, sources).length, 1);
+});
+test("German curation excludes electric-mobility promotion without excluding ordinary car or local topics", () => {
+  for (const text of ["Elektroautos mit neuem Reichweitenrekord", "Mehr E‑Autos in Mainz", "Erfolge der E-Mobilität", "Neue Elektro-Mobilität", "Ladesäulen und Ladeinfrastruktur wachsen", "Batteriespeicher lädt 1.000 Elektrofahrzeuge", "Elektrische Autos erreichen Rekordabsatz", "Beliebte Stromer im Aufwind", "Neue BEVs und Wallboxen"])
+    assert.equal(germanTopicAllowed(text), false, text);
+  for (const text of ["Oldtimer-Ausstellung in Mainz", "Handwerk und Fahrzeugpflege", "Ausflugsziele in Rheinhessen", "Neue Technik zur Stromerzeugung", "Verkehr auf der A60", "Ein Theater bekommt neue Beleuchtung"])
+    assert.equal(germanTopicAllowed(text), true, text);
+});
+test("German source selection checks full articles and leaves the Turkish programme unchanged", () => {
+  const base = { summary: "Aktuelles aus Mainz", url: "https://www.swr.de/test", publishedAt: "2026-10-25T12:00:00Z", local: true };
+  const sources = [
+    { ...base, id: 1, title: "Neue Anlage in Mainz", articleText: "Die Anlage könnte 1.000 Elektroautos laden." },
+    { ...base, id: 2, title: "Neue Ausstellung in Mainz", articleText: "Ein lokaler Künstler zeigt seine Arbeiten." },
+    { ...base, id: 3, title: "Neue Schnellladestationen", articleText: "Es gibt zusätzliche Ladepunkte." },
+  ];
+  assert.deepEqual(sourcesForProgramme(sources, "de").map(s => s.id), [2]);
+  assert.deepEqual(sourcesForProgramme(sources, "tr").map(s => s.id), [1, 2, 3]);
 });
 test("cookie presence alone never grants central access", async () => {
   assert.equal(authCookies("irrelevant=secret; logto_old=fake"), "");
