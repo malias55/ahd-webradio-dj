@@ -75,3 +75,16 @@ export async function mixStationId(voice: Buffer, bedId: string) {
     return normalizeAudio(await readFile(output), duration + 1);
   } finally { await rm(dir, { recursive: true, force: true }); }
 }
+
+// The requested Turkish invocation is heard dry, before any music or jingle.
+export async function prependInvocation(invocation: Buffer, programme: Uint8Array) {
+  const dir = await mkdtemp(join(tmpdir(), "ahd-invocation-"));
+  try {
+    const voice = await normalizeAudio(invocation, 30);
+    const intro = join(dir, "invocation.mp3"), body = join(dir, "body.mp3"), output = join(dir, "joined.wav");
+    await writeFile(intro, voice.audio); await writeFile(body, programme);
+    await command(process.env.FFMPEG_PATH || "ffmpeg", ["-v", "error", "-nostdin", "-i", intro, "-i", body,
+      "-filter_complex", "[0:a]apad=pad_dur=0.35[a];[a][1:a]concat=n=2:v=0:a=1[out]", "-map", "[out]", "-ar", "44100", "-ac", "2", "-y", output]);
+    return { ...(await normalizeAudio(await readFile(output), 270)), offset: voice.duration + 0.35 };
+  } finally { await rm(dir, { recursive: true, force: true }); }
+}

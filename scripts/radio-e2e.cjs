@@ -39,9 +39,11 @@ async function main(){
  assert.equal((await fetch(`${origin}/api/radio`,{method:'POST',headers:{cookie,Origin:'https://untrusted.invalid','Content-Type':'application/json'},body:JSON.stringify({action:'music'})})).status,403);
  assert.equal((await fetch(`${origin}/api/radio`,{method:'POST',headers:{cookie,Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({action:'music'})})).status,409);
  const radio=await fetch(`${origin}/api/radio`,{headers:{cookie}}).then(r=>r.json());assert.ok(radio.assets.filter(a=>a.kind==='music').length>=3);
- const source=await fetch(`${origin}/api/zones/${zone.id}/current-source`,{headers:{cookie}}).then(r=>r.json());assert.equal(source.url,`${origin}/api/radio/stream`);
+ const expectedSource=radio.onAir?`${origin}/api/radio/stream`:null;
+ const source=await fetch(`${origin}/api/zones/${zone.id}/current-source`,{headers:{cookie}}).then(r=>r.json());assert.equal(source.url,expectedSource);
  console.log('PASS central SSO, forged-cookie rejection, source resolution, saved music');
- console.log('Radio stream bytes:',await receive(`${origin}/api/radio/stream`));
+ if(radio.onAir)console.log('Radio stream bytes:',await receive(`${origin}/api/radio/stream`));
+ else assert.equal((await fetch(`${origin}/api/radio/stream`)).status,503);
  broadcaster=await connect('/broadcast',{extraHeaders:{Cookie:cookie}});
  const commands=[];
  const serial=`E2E-${Date.now()}`;
@@ -59,14 +61,14 @@ async function main(){
  for(let i=0;i<100&&!commands.some(c=>c.type==='announce-start');i++)await sleep(100);
  const start=commands.find(c=>c.type==='announce-start');assert.ok(start,'Pi receives announcement overlay');
  const announcement=receive(start.url,2500);
- const musicDuring=receive(`${origin}/api/radio/stream`,2500);
+ const musicDuring=radio.onAir?receive(`${origin}/api/radio/stream`,2500):Promise.resolve(0);
  const bytes=readFileSync(tone);
  for(let i=0;i<bytes.length;i+=2048){broadcaster.emit('broadcast:chunk',{zoneId:zone.id,chunk:bytes.subarray(i,i+2048)});await sleep(50);}
  console.log('Announcement and background bytes:',await Promise.all([announcement,musicDuring]));
  broadcaster.emit('broadcast:stop',{zoneId:zone.id});for(let i=0;i<100&&!commands.some(c=>c.type==='announce-stop');i++)await sleep(100);
  assert.ok(commands.some(c=>c.type==='announce-stop'),'Pi unducks after announcement');
- const restored=await fetch(`${origin}/api/zones/${zone.id}/current-source`,{headers:{cookie}}).then(r=>r.json());assert.equal(restored.url,`${origin}/api/radio/stream`);
- console.log('PASS real FFmpeg announcement, concurrent music, Pi overlay commands and return to radio');
+ const restored=await fetch(`${origin}/api/zones/${zone.id}/current-source`,{headers:{cookie}}).then(r=>r.json());assert.equal(restored.url,expectedSource);
+ console.log(radio.onAir?'PASS real FFmpeg announcement, concurrent programme and return to radio':'PASS real FFmpeg announcement, Pi overlay commands and scheduled silence outside programme hours');
  await db.device.deleteMany({where:{serial}});
 }
 main().catch(e=>{console.error(e);process.exitCode=1}).finally(async()=>{

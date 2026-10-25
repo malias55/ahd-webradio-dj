@@ -11,14 +11,36 @@ export function stationTime(date = new Date()) {
 }
 
 export function radioEnabled() { return process.env.RADIO_ENABLED !== "false"; }
-export function isOnAir(date = new Date()) {
+export function isMusicHours(date = new Date()) {
   const { hour } = stationTime(date);
   return radioEnabled() && hour >= 8 && hour < 18;
+}
+export function isTurkishNewsWindow(date = new Date()) {
+  const { hour, minute } = stationTime(date);
+  return radioEnabled() && hour === 7 && minute < 5;
+}
+export function isOnAir(date = new Date()) { return isMusicHours(date) || isTurkishNewsWindow(date); }
+export function newsLanguage(slot: Date): "de" | "tr" { return stationTime(slot).hour === 7 ? "tr" : "de"; }
+
+export function stationDayBounds(day: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error("Ungültiges Datum");
+  const nominal = new Date(`${day}T00:00:00Z`);
+  if (!Number.isFinite(nominal.getTime()) || nominal.toISOString().slice(0, 10) !== day) throw new Error("Ungültiges Datum");
+  const midnight = (base: Date) => {
+    let candidate = base.getTime();
+    for (let i = 0; i < 3; i++) {
+      const local = stationTime(new Date(candidate));
+      const wall = Date.parse(`${local.date}T${String(local.hour).padStart(2, "0")}:${String(local.minute).padStart(2, "0")}:00Z`);
+      candidate -= wall - base.getTime();
+    }
+    return new Date(candidate);
+  };
+  return { start: midnight(nominal), end: midnight(new Date(nominal.getTime() + 86400_000)) };
 }
 
 export function isNewsSlot(date: Date) {
   const t = stationTime(date);
-  return t.hour >= 8 && t.hour < 18 && t.minute === 0 && t.second === 0;
+  return t.hour >= 7 && t.hour < 18 && t.minute === 0 && t.second === 0;
 }
 
 export function upcomingNewsSlot(date = new Date()): Date | null {

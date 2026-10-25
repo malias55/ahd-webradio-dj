@@ -45,7 +45,7 @@ export async function stationIdAsset(slot: Date) {
 
 export async function generateStationIds(render: (voice: Buffer, bedId: string) => Promise<{ audio: Uint8Array<ArrayBuffer>; duration: number }>) {
   const bed = await imagingAsset("station-bed");
-  for (const hour of [8, 9]) {
+  for (const hour of [8, 10]) {
     const presenter = presenterForHour(hour);
     const key = `station-id:${IMAGING_VERSION}:${presenter.gender}:${presenter.voiceId}`;
     if (await prisma.radioAsset.findUnique({ where: { key }, select: { id: true } })) continue;

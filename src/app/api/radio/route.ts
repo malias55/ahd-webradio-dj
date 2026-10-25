@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { radioStatus } from "@/lib/radio/engine";
 import { generateMusic } from "@/lib/radio/providers";
 import { prepareNews } from "@/lib/radio/news";
-import { upcomingNewsSlot, publicOrigin } from "@/lib/radio/config";
+import { upcomingNewsSlot, publicOrigin, stationTime, stationDayBounds } from "@/lib/radio/config";
 import { normalizeAudio } from "@/lib/radio/store";
 import { randomUUID } from "node:crypto";
 import { presenterForSlot } from "@/lib/radio/providers";
@@ -13,14 +13,19 @@ export const dynamic = "force-dynamic";
 const jobs = globalThis as unknown as { __radioActions?: Set<string> };
 const actions = jobs.__radioActions ??= new Set();
 
-export async function GET() {
+export async function GET(req: Request) {
   if (!(await isAuthorized())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const [assets, failures] = await Promise.all([
-    prisma.radioAsset.findMany({ orderBy: { createdAt: "desc" }, take: 150,
+  const day = new URL(req.url).searchParams.get("day") || stationTime().date;
+  let range;
+  try { range = stationDayBounds(day); } catch { return NextResponse.json({ error: "Ungültiges Datum" }, { status: 400 }); }
+  const [assets, jobs, playbacks] = await Promise.all([
+    prisma.radioAsset.findMany({ where: { OR: [{ kind: { not: "news" } }, { kind: "news", createdAt: { gte: range.start, lt: range.end } }] }, orderBy: { createdAt: "desc" }, take: 150,
       select: { id: true, kind: true, title: true, duration: true, slot: true, script: true, metadata: true, createdAt: true } }),
-    prisma.radioJob.findMany({ where: { status: "failed" }, orderBy: { updatedAt: "desc" }, take: 5, select: { key: true, error: true, attempts: true, updatedAt: true } }),
+    prisma.radioJob.findMany({ where: { updatedAt: { gte: range.start, lt: range.end } }, orderBy: { updatedAt: "desc" }, take: 50, select: { key: true, status: true, error: true, attempts: true, updatedAt: true } }),
+    prisma.radioPlayback.findMany({ where: { startedAt: { gte: range.start, lt: range.end } }, orderBy: { startedAt: "desc" }, take: 500 }),
   ]);
-  return NextResponse.json({ ...radioStatus(), assets, failures, actions: [...actions],
+  const failures = jobs.filter(j => j.status === "failed").slice(0, 5);
+  return NextResponse.json({ ...radioStatus(), day, assets, failures, jobs, playbacks, actions: [...actions],
     configured: { elevenlabs: !!process.env.ELEVENLABS_API_KEY, edenai: !!process.env.EDENAI_API_KEY },
     region: process.env.NEWS_REGION || "Mainz und Rheinhessen", model: process.env.EDENAI_MODEL || "gpt-6-luna",
     newsRefreshHours: 2, nextPresenter: upcomingNewsSlot() ? presenterForSlot(upcomingNewsSlot()!).name : null });

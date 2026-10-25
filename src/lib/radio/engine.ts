@@ -1,11 +1,12 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import type { ServerResponse } from "node:http";
 import { prisma } from "../prisma";
-import { isOnAir, upcomingNewsSlot, radioEnabled, stationTime } from "./config";
+import { isOnAir, isMusicHours, upcomingNewsSlot, radioEnabled, stationTime, newsLanguage } from "./config";
 import { assetFile, pruneCache } from "./store";
 import { presenterForSlot } from "./providers";
-import { prepareNews } from "./news";
+import { prepareNews, bulletinForSlot, isRepeatSlot } from "./news";
 import { stationIdAsset, IMAGING_VERSION } from "./imaging";
+import { trackPlayback } from "./audit";
 
 type Item = { id: string; title: string; duration: number; kind: string };
 type RadioState = {
@@ -15,6 +16,7 @@ type RadioState = {
   lastPrepAt: number; preparing: boolean; error: string | null; lastMusicId?: string;
   musicQueue: Item[]; selecting: boolean; shutdown: boolean;
   musicSinceId: number;
+  finishPlayback?: (status: "completed" | "interrupted" | "failed", error?: string) => Promise<void>;
 };
 const globalRadio = globalThis as unknown as { __ahdRadio?: RadioState };
 const state = globalRadio.__ahdRadio ??= {
@@ -23,9 +25,9 @@ const state = globalRadio.__ahdRadio ??= {
 };
 
 export function radioStatus() {
-  return { imagingVersion: IMAGING_VERSION, presenter: presenterForSlot(new Date()).name, newsRefreshHours: 2, started: state.started, onAir: isOnAir(), playing: state.playing, startedAt: state.startedAt || null,
+  return { programmeVersion: "tr-repeat-audit-v1", imagingVersion: IMAGING_VERSION, presenter: presenterForSlot(new Date()).name, newsRefreshHours: 2, started: state.started, onAir: isOnAir(), playing: state.playing, startedAt: state.startedAt || null,
     listeners: state.listeners.size, preparing: state.preparing, error: state.error,
-    nextNewsAt: upcomingNewsSlot()?.toISOString() ?? null, timezone: "Europe/Berlin", hours: "08:00–18:00", newsHours: "08:00–17:00" };
+    nextNewsAt: upcomingNewsSlot()?.toISOString() ?? null, timezone: "Europe/Berlin", hours: "07:00 Türkçe · 08:00–18:00 Musik", newsHours: "07:00 Türkçe · 08:00–17:00 Deutsch" };
 }
 
 export function attachRadio(res: ServerResponse) {
@@ -46,10 +48,12 @@ function stopTrack() {
   const proc = state.process;
   state.process = null;
   state.playing = null;
+  void state.finishPlayback?.("interrupted");
+  state.finishPlayback = undefined;
   proc?.kill("SIGKILL");
 }
 
-async function play(item: Item | null) {
+async function play(item: Item | null, scheduledFor?: Date) {
   stopTrack();
   const revision = state.revision;
   const file = item ? await assetFile(item.id) : null;
@@ -63,14 +67,19 @@ async function play(item: Item | null) {
   state.playing = item;
   if (item?.kind === "news") state.musicSinceId = 0;
   state.startedAt = Date.now();
+  const audit = item ? trackPlayback(item, item.kind === "news" && scheduledFor ? newsLanguage(scheduledFor) : item.kind === "music" || item.kind === "imaging" ? "zxx" : "de", scheduledFor, state.listeners.size) : null;
+  state.finishPlayback = audit?.finish;
+  proc.stdout.once("data", () => { void audit?.started().catch(report); });
   proc.stdout.on("data", publish);
   let failed = false;
   proc.stderr.on("data", () => { failed = true; });
-  proc.on("error", () => { state.error = "Audiowiedergabe fehlgeschlagen; FFmpeg prüfen."; });
+  proc.on("error", () => { state.error = "Audiowiedergabe fehlgeschlagen; FFmpeg prüfen."; void audit?.finish("failed", state.error); });
   proc.on("close", code => {
     if (revision !== state.revision || state.shutdown) return;
     state.process = null;
     state.playing = null;
+    state.finishPlayback = undefined;
+    void audit?.finish(code === 0 ? "completed" : "failed", code === 0 ? undefined : `FFmpeg beendet (${code})`);
     if (code !== 0 || failed) state.error = "Audio konnte nicht vollständig abgespielt werden.";
     setTimeout(() => { void nextMusic().catch(report); }, code === 0 ? 0 : 5000);
   });
@@ -82,7 +91,7 @@ function report(error: unknown) {
 }
 
 async function nextMusic() {
-  if (state.selecting || state.process || !isOnAir() || state.shutdown) return;
+  if (state.selecting || state.process || !isMusicHours() || state.shutdown) return;
   state.selecting = true;
   const revision = state.revision;
   try {
@@ -122,9 +131,13 @@ async function tick(onBoundary: () => Promise<void>) {
   const hour = new Date(Math.floor(now.getTime() / 3_600_000) * 3_600_000);
   if (active && now.getTime() - hour.getTime() < 1500 && state.lastNewsSlot !== hour.toISOString()) {
     state.lastNewsSlot = hour.toISOString();
-    const news = await prisma.radioAsset.findUnique({ where: { key: `news:${hour.toISOString()}` }, select: { id: true, title: true, duration: true, kind: true } });
-    if (news && isOnAir() && Date.now() - hour.getTime() < 5000) await play(news);
-    else state.error = "Zur vollen Stunde keine geprüfte Nachrichtenausgabe bereit; Musik läuft weiter.";
+    const news = await bulletinForSlot(hour);
+    if (news && isOnAir() && Date.now() - hour.getTime() < 5000) await play(news, hour);
+    else {
+      state.error = "Zur vollen Stunde keine geprüfte Nachrichtenausgabe bereit.";
+      await prisma.radioPlayback.create({ data: { title: "Nachrichtenausgabe nicht gesendet", language: newsLanguage(hour), kind: "news", status: "skipped", scheduledFor: hour,
+        repeated: isRepeatSlot(hour), endedAt: new Date(), listeners: state.listeners.size, error: state.error } });
+    }
   }
   if (active && !state.process) await nextMusic();
 
@@ -145,23 +158,26 @@ export function startRadio(onBoundary: () => Promise<void>) {
     try { await tick(onBoundary); } catch (error) { report(error); }
     if (!state.shutdown) state.timer = setTimeout(loop, 250 - Date.now() % 250);
   };
-  void loop();
   const cleanup = async () => {
-    // Retain only seven days of bulletins; music is permanent.
-    const cutoff = new Date(Date.now() - 7 * 86400_000);
+    // Keep fortnightly news audio and a compact 90-day transmission journal.
+    const cutoff = new Date(Date.now() - 14 * 86400_000), logCutoff = new Date(Date.now() - 90 * 86400_000);
     await prisma.radioAsset.deleteMany({ where: { kind: "news", createdAt: { lt: cutoff } } });
     await pruneCache();
-    await prisma.radioJob.deleteMany({ where: { key: { startsWith: "news:" }, updatedAt: { lt: cutoff } } });
+    await prisma.radioJob.deleteMany({ where: { updatedAt: { lt: logCutoff }, status: { not: "running" } } });
+    await prisma.radioPlayback.deleteMany({ where: { startedAt: { lt: logCutoff } } });
   };
+  void prisma.radioPlayback.updateMany({ where: { status: { in: ["playing", "starting"] }, endedAt: null }, data: { status: "interrupted", endedAt: new Date(), error: "Service wurde neu gestartet" } }).catch(report).finally(() => { void loop(); });
   void cleanup().catch(report);
   const retention = setInterval(() => void cleanup().catch(report), 86400_000);
   retention.unref();
 }
 
-export function stopRadio() {
+export async function stopRadio() {
   state.shutdown = true;
   if (state.timer) clearTimeout(state.timer);
+  const finishing = state.finishPlayback?.("interrupted");
   stopTrack();
   for (const res of state.listeners) res.end();
   state.listeners.clear();
+  await finishing;
 }

@@ -61,9 +61,30 @@ model RadioAsset {
   metadata  Json?
   slot      DateTime?
   createdAt DateTime @default(now()) @map("created_at")
+  playbacks RadioPlayback[]
 
   @@index([kind, slot])
   @@map("radio_assets")
+}
+
+model RadioPlayback {
+  id           String    @id @default(uuid())
+  assetId      String?   @map("asset_id")
+  asset        RadioAsset? @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  title        String
+  language     String    @default("de")
+  kind         String
+  startedAt    DateTime  @default(now()) @map("started_at")
+  endedAt      DateTime? @map("ended_at")
+  status       String    @default("playing")
+  scheduledFor DateTime? @map("scheduled_for")
+  repeated     Boolean   @default(false)
+  listeners    Int       @default(0)
+  error        String?
+
+  @@index([startedAt])
+  @@index([assetId])
+  @@map("radio_playbacks")
 }
 
 model RadioJob {

@@ -172,7 +172,7 @@ app.prepare().then(() => {
 
     if (pathname === RADIO_STREAM_PATH) {
       if (req.method !== "GET") { res.writeHead(405).end(); return; }
-      if (!isOnAir()) { res.writeHead(503, { "Retry-After": "60", "Cache-Control": "no-store" }).end("Radio sendet von 08 bis 18 Uhr (Europe/Berlin)."); return; }
+      if (!isOnAir()) { res.writeHead(503, { "Retry-After": "60", "Cache-Control": "no-store" }).end("Radio: 07 Uhr Türkçe, Musik von 08 bis 18 Uhr (Europe/Berlin)."); return; }
       res.writeHead(200, { "Content-Type": "audio/mpeg", "Cache-Control": "no-cache, no-store", "X-Accel-Buffering": "no", "Connection": "keep-alive" });
       res.flushHeaders();
       attachRadio(res);
@@ -407,5 +407,5 @@ app.prepare().then(() => {
   });
 });
 
-process.on("SIGTERM", () => { stopRadio(); process.exit(0); });
-process.on("SIGINT", () => { stopRadio(); process.exit(0); });
+process.on("SIGTERM", async () => { await stopRadio(); process.exit(0); });
+process.on("SIGINT", async () => { await stopRadio(); process.exit(0); });

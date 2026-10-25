@@ -6,10 +6,11 @@ export function presenterForSlot(slot: Date) {
   return presenterForHour(stationTime(slot).hour);
 }
 export function presenterForHour(hour: number) {
-  const male = hour % 2 === 0;
+  if (hour === 7) return { gender: "male" as const, name: "Cavit", language: "tr" as const, voiceId: process.env.ELEVENLABS_TURKISH_VOICE_ID || "Q2IX97JeHBY3vNGzgM5s", assistant: "yapay zekâ haber sunucunuz" };
+  const male = Math.floor((hour - 8) / 2) % 2 === 0;
   return male
-    ? { gender: "male" as const, name: "Elias", voiceId: process.env.ELEVENLABS_MALE_VOICE_ID || "1h6gHcRvQugDNZgdAo9N", assistant: "Ihr KI-Nachrichtenassistent" }
-    : { gender: "female" as const, name: "Jane", voiceId: process.env.ELEVENLABS_FEMALE_VOICE_ID || "hOBDmVrVUuqtp1I3KsIq", assistant: "Ihre KI-Nachrichtenassistentin" };
+    ? { gender: "male" as const, name: "Elias", language: "de" as const, voiceId: process.env.ELEVENLABS_MALE_VOICE_ID || "1h6gHcRvQugDNZgdAo9N", assistant: "Ihr KI-Nachrichtenassistent" }
+    : { gender: "female" as const, name: "Jane", language: "de" as const, voiceId: process.env.ELEVENLABS_FEMALE_VOICE_ID || "hOBDmVrVUuqtp1I3KsIq", assistant: "Ihre KI-Nachrichtenassistentin" };
 }
 
 export function composeMusic(prompt: string, seconds: number) {
@@ -54,14 +55,15 @@ export async function germanVoice() {
   return suitable[0].voice_id;
 }
 
-export async function speech(text: string, voiceId: string) {
+export async function speech(text: string, voiceId: string, language: "de" | "tr" = "de") {
   return eleven(`/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`, {
-    text, model_id: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2", language_code: "de",
+    text, model_id: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2", language_code: language,
     voice_settings: { stability: 0.65, similarity_boost: 0.75, style: 0.15, use_speaker_boost: true },
   });
 }
 
-export async function edenJson(system: string, input: unknown, review = false): Promise<unknown> {
+export type ModelCall = { requestedModel: string; resolvedModel: string; purpose: string; inputTokens: number | null; outputTokens: number | null; costUsd: number | null };
+export async function edenJson(system: string, input: unknown, review = false, calls?: ModelCall[]): Promise<unknown> {
   if (!process.env.EDENAI_API_KEY) throw new Error("EDENAI_API_KEY fehlt");
   const model = review ? (process.env.EDENAI_REVIEW_MODEL || process.env.EDENAI_MODEL || "gpt-6-luna") : (process.env.EDENAI_MODEL || "gpt-6-luna");
   const schema = review ? {
@@ -74,12 +76,13 @@ export async function edenJson(system: string, input: unknown, review = false): 
   const r = await fetch("https://api.edenai.run/v3/chat/completions", {
     method: "POST", headers: { Authorization: `Bearer ${process.env.EDENAI_API_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({ model, messages: [{ role: "system", content: system }, { role: "user", content: JSON.stringify(input) }],
-      response_format: { type: "json_schema", json_schema: { name: review ? "editorial_review" : "radio_news", strict: true, schema } }, max_completion_tokens: 3200 }), signal: AbortSignal.timeout(90_000),
+      response_format: { type: "json_schema", json_schema: { name: review ? "editorial_review" : "radio_news", strict: true, schema } }, max_completion_tokens: review ? 3200 : 6000 }), signal: AbortSignal.timeout(90_000),
   });
   if (!r.ok) throw new Error(`Eden AI HTTP ${r.status} (${model})`);
-  const j = await r.json() as { choices?: { message?: { content?: string } }[] };
+  const j = await r.json() as { choices?: { message?: { content?: string }; finish_reason?: string }[]; model?: string; usage?: { prompt_tokens?: number; completion_tokens?: number }; cost?: number };
+  calls?.push({ requestedModel: model, resolvedModel: j.model || model, purpose: review ? "review" : "author", inputTokens: j.usage?.prompt_tokens ?? null, outputTokens: j.usage?.completion_tokens ?? null, costUsd: j.cost ?? null });
   const content = j.choices?.[0]?.message?.content;
-  if (!content) throw new Error("Eden AI returned no text");
+  if (!content) throw new Error(`${review ? "Prüfung" : "Redaktion"}: Eden AI lieferte keinen Text (${model}, ${j.choices?.[0]?.finish_reason || "ohne Status"})`);
   try { return JSON.parse(content.replace(/^```(?:json)?\s*/, "").replace(/\s*```$/, "")); }
   catch { throw new Error(`${review ? "Quellenprüfung" : "Redaktion"}: ungültige strukturierte Antwort (${model})`); }
 }

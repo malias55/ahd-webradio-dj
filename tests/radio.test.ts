@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isOnAir, upcomingNewsSlot, nativeSource, stationTime } from "../src/lib/radio/config";
+import { isOnAir, upcomingNewsSlot, nativeSource, stationTime, isMusicHours, newsLanguage, stationDayBounds } from "../src/lib/radio/config";
 import { parseFeed, validateStories, articleText } from "../src/lib/radio/news";
 import { authCookies, userForCookie } from "../src/lib/session";
 
@@ -10,13 +10,13 @@ test("Berlin opening hours and last bulletin in winter", () => {
   assert.equal(isOnAir(new Date("2026-10-26T16:59:59Z")), true);
   assert.equal(isOnAir(new Date("2026-10-26T17:00:00Z")), false);
   assert.equal(upcomingNewsSlot(new Date("2026-10-26T15:59:59Z"))?.toISOString(), "2026-10-26T16:00:00.000Z");
-  assert.equal(upcomingNewsSlot(new Date("2026-10-26T16:00:01Z"))?.toISOString(), "2026-10-27T07:00:00.000Z");
+  assert.equal(upcomingNewsSlot(new Date("2026-10-26T16:00:01Z"))?.toISOString(), "2026-10-27T06:00:00.000Z");
 });
 test("summer time and both DST transition days", () => {
   assert.equal(isOnAir(new Date("2026-07-15T06:00:00Z")), true);
   assert.equal(isOnAir(new Date("2026-07-15T16:00:00Z")), false);
-  assert.equal(upcomingNewsSlot(new Date("2026-03-28T17:01:00Z"))?.toISOString(), "2026-03-29T06:00:00.000Z");
-  assert.equal(upcomingNewsSlot(new Date("2026-10-24T16:01:00Z"))?.toISOString(), "2026-10-25T07:00:00.000Z");
+  assert.equal(upcomingNewsSlot(new Date("2026-03-28T17:01:00Z"))?.toISOString(), "2026-03-29T05:00:00.000Z");
+  assert.equal(upcomingNewsSlot(new Date("2026-10-24T16:01:00Z"))?.toISOString(), "2026-10-25T06:00:00.000Z");
   assert.equal(stationTime(new Date("2026-10-25T07:00:00Z")).hour, 8);
 });
 test("legacy zones never contact the retired stream; silent zones stay silent", () => {
@@ -53,16 +53,16 @@ test("article extraction excludes players, scripts and unrelated content", () =>
 });
 
 import { presenterForSlot } from "../src/lib/radio/providers";
-import { newsEditionSlot, reusableEdition } from "../src/lib/radio/news";
+import { newsEditionSlot, bulletinKey, isRepeatSlot, TURKISH_OPENING } from "../src/lib/radio/news";
 import { newsTimeline } from "../src/lib/radio/mix";
 
-test("presenters alternate by Berlin hour and reset male at 08:00 every day", () => {
+test("presenters follow the requested two-hour blocks starting male at 08:00", () => {
   for (const offset of [1, 2]) {
     for (let hour = 8; hour <= 17; hour++) {
       const date = new Date(`2026-${offset === 1 ? '10-26' : '07-15'}T${String(hour - offset).padStart(2, '0')}:00:00Z`);
       const presenter = presenterForSlot(date);
-      assert.equal(presenter.gender, hour % 2 === 0 ? "male" : "female");
-      assert.equal(presenter.voiceId, hour % 2 === 0 ? "1h6gHcRvQugDNZgdAo9N" : "hOBDmVrVUuqtp1I3KsIq");
+      assert.equal(presenter.gender, [8,9,12,13,16,17].includes(hour) ? "male" : "female");
+      assert.equal(presenter.voiceId, [8,9,12,13,16,17].includes(hour) ? "1h6gHcRvQugDNZgdAo9N" : "hOBDmVrVUuqtp1I3KsIq");
     }
   }
 });
@@ -71,15 +71,30 @@ test("hourly broadcasts group into fresh two-hour editions", () => {
   assert.equal(newsEditionSlot(new Date("2026-10-26T08:00:00Z")).toISOString(), "2026-10-26T07:00:00.000Z");
   assert.equal(newsEditionSlot(new Date("2026-10-26T16:00:00Z")).toISOString(), "2026-10-26T15:00:00.000Z");
 });
-test("intermediate hour reuses only its own verified edition with valid sources", () => {
-  const editionSlot = "2026-10-26T07:00:00.000Z";
-  const source = { id: 1, title: "Mainz", url: "https://news.example", publishedAt: "2026-10-26T06:00:00Z", local: true };
-  const meta = { stories: [{ text: "Eine neue Ausstellung in Mainz.", sourceIds: [1] }], sources: [source], editionSlot };
-  const slot = new Date("2026-10-26T08:00:00Z");
-  const content = reusableEdition(meta, slot);
-  assert.equal(content?.reused, true); assert.equal(content?.editionSlot, editionSlot);
-  assert.equal(reusableEdition({ ...meta, editionSlot: "2026-10-25T07:00:00Z" }, slot), null);
-  assert.throws(() => reusableEdition({ ...meta, stories: [{ text: "Falsch", sourceIds: [99] }] }, slot));
+test("every repeat resolves to the exact original audio key", () => {
+  for (let hour = 8; hour <= 16; hour += 2) {
+    const original = new Date(`2026-10-26T${String(hour - 1).padStart(2, '0')}:00:00Z`);
+    const repeat = new Date(original.getTime() + 3600_000);
+    assert.equal(bulletinKey(original), bulletinKey(repeat));
+    assert.equal(isRepeatSlot(original), false); assert.equal(isRepeatSlot(repeat), true);
+  }
+});
+test("07:00 Turkish slot is separate and has no music rotation", () => {
+  const seven = new Date("2026-10-26T06:00:00Z");
+  assert.equal(newsLanguage(seven), "tr"); assert.equal(isOnAir(seven), true); assert.equal(isMusicHours(seven), false);
+  assert.equal(presenterForSlot(seven).voiceId, "Q2IX97JeHBY3vNGzgM5s");
+  assert.equal(newsEditionSlot(seven).toISOString(), seven.toISOString());
+  assert.equal(isRepeatSlot(seven), false);
+  assert.equal(isOnAir(new Date("2026-10-26T06:05:00Z")), false);
+  assert.equal(TURKISH_OPENING, "Rahman ve Rahim olan Allah in adiyla. ");
+});
+test("journal day filters use Berlin midnight even across DST", () => {
+  const winter = stationDayBounds("2026-10-26");
+  assert.equal(winter.start.toISOString(), "2026-10-25T23:00:00.000Z");
+  const spring = stationDayBounds("2026-03-29"), autumn = stationDayBounds("2026-10-25");
+  assert.equal(spring.end.getTime() - spring.start.getTime(), 23 * 3600_000);
+  assert.equal(autumn.end.getTime() - autumn.start.getTime(), 25 * 3600_000);
+  assert.throws(() => stationDayBounds("2026-02-30"));
 });
 test("radio mix places speech after the sonic logo and separates the stories", () => {
   const { cues, duration } = newsTimeline([12, 35, 40, 10]);
