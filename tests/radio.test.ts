@@ -51,3 +51,41 @@ test("article extraction excludes players, scripts and unrelated content", () =>
   const html = '<article><div itemprop="articleBody"><p>In Mainz eröffnet eine Ausstellung.</p><figure><p>Unrelated video</p></figure><script>ignore()</script><p>Der Eintritt ist frei.</p></div></article>';
   assert.equal(articleText(html), 'In Mainz eröffnet eine Ausstellung. Der Eintritt ist frei.');
 });
+
+import { presenterForSlot } from "../src/lib/radio/providers";
+import { newsEditionSlot, reusableEdition } from "../src/lib/radio/news";
+import { newsTimeline } from "../src/lib/radio/mix";
+
+test("presenters alternate by Berlin hour and reset male at 08:00 every day", () => {
+  for (const offset of [1, 2]) {
+    for (let hour = 8; hour <= 17; hour++) {
+      const date = new Date(`2026-${offset === 1 ? '10-26' : '07-15'}T${String(hour - offset).padStart(2, '0')}:00:00Z`);
+      const presenter = presenterForSlot(date);
+      assert.equal(presenter.gender, hour % 2 === 0 ? "male" : "female");
+      assert.equal(presenter.voiceId, hour % 2 === 0 ? "1h6gHcRvQugDNZgdAo9N" : "hOBDmVrVUuqtp1I3KsIq");
+    }
+  }
+});
+test("hourly broadcasts group into fresh two-hour editions", () => {
+  assert.equal(newsEditionSlot(new Date("2026-10-26T07:00:00Z")).toISOString(), "2026-10-26T07:00:00.000Z");
+  assert.equal(newsEditionSlot(new Date("2026-10-26T08:00:00Z")).toISOString(), "2026-10-26T07:00:00.000Z");
+  assert.equal(newsEditionSlot(new Date("2026-10-26T16:00:00Z")).toISOString(), "2026-10-26T15:00:00.000Z");
+});
+test("intermediate hour reuses only its own verified edition with valid sources", () => {
+  const editionSlot = "2026-10-26T07:00:00.000Z";
+  const source = { id: 1, title: "Mainz", url: "https://news.example", publishedAt: "2026-10-26T06:00:00Z", local: true };
+  const meta = { stories: [{ text: "Eine neue Ausstellung in Mainz.", sourceIds: [1] }], sources: [source], editionSlot };
+  const slot = new Date("2026-10-26T08:00:00Z");
+  const content = reusableEdition(meta, slot);
+  assert.equal(content?.reused, true); assert.equal(content?.editionSlot, editionSlot);
+  assert.equal(reusableEdition({ ...meta, editionSlot: "2026-10-25T07:00:00Z" }, slot), null);
+  assert.throws(() => reusableEdition({ ...meta, stories: [{ text: "Falsch", sourceIds: [99] }] }, slot));
+});
+test("radio mix places speech after the sonic logo and separates the stories", () => {
+  const { cues, duration } = newsTimeline([12, 35, 40, 10]);
+  assert.equal(cues.find(c => c.kind === "intro")?.start, 3.2);
+  assert.equal(cues.filter(c => c.kind === "divider").length, 1);
+  const speech = cues.filter(c => ["intro", "story", "outro"].includes(c.kind));
+  for (let i = 1; i < speech.length; i++) assert.ok(speech[i].start > speech[i - 1].end);
+  assert.equal(cues.at(-1)?.end, duration);
+});

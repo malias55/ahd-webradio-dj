@@ -1,5 +1,28 @@
 import { prisma } from "../prisma";
 import { normalizeAudio, withJob } from "./store";
+import { stationTime } from "./config";
+
+export function presenterForSlot(slot: Date) {
+  return presenterForHour(stationTime(slot).hour);
+}
+export function presenterForHour(hour: number) {
+  const male = hour % 2 === 0;
+  return male
+    ? { gender: "male" as const, name: "Elias", voiceId: process.env.ELEVENLABS_MALE_VOICE_ID || "1h6gHcRvQugDNZgdAo9N", assistant: "Ihr KI-Nachrichtenassistent" }
+    : { gender: "female" as const, name: "Jane", voiceId: process.env.ELEVENLABS_FEMALE_VOICE_ID || "hOBDmVrVUuqtp1I3KsIq", assistant: "Ihre KI-Nachrichtenassistentin" };
+}
+
+export function composeMusic(prompt: string, seconds: number) {
+  return eleven("/v1/music?output_format=mp3_44100_128", {
+    prompt, music_length_ms: Math.round(seconds * 1000), model_id: process.env.ELEVENLABS_MUSIC_MODEL || "music_v2", force_instrumental: true,
+  }, 360_000);
+}
+
+export function soundEffect(text: string, seconds: number) {
+  return eleven("/v1/sound-generation?output_format=mp3_44100_128", {
+    text, duration_seconds: seconds, prompt_influence: 0.65, model_id: "eleven_text_to_sound_v2",
+  });
+}
 
 async function eleven(path: string, body: unknown, timeout = 120_000) {
   if (!process.env.ELEVENLABS_API_KEY) throw new Error("ELEVENLABS_API_KEY fehlt");

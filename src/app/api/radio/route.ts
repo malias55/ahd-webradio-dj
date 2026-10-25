@@ -7,6 +7,7 @@ import { prepareNews } from "@/lib/radio/news";
 import { upcomingNewsSlot, publicOrigin } from "@/lib/radio/config";
 import { normalizeAudio } from "@/lib/radio/store";
 import { randomUUID } from "node:crypto";
+import { presenterForSlot } from "@/lib/radio/providers";
 
 export const dynamic = "force-dynamic";
 const jobs = globalThis as unknown as { __radioActions?: Set<string> };
@@ -15,13 +16,14 @@ const actions = jobs.__radioActions ??= new Set();
 export async function GET() {
   if (!(await isAuthorized())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const [assets, failures] = await Promise.all([
-    prisma.radioAsset.findMany({ orderBy: { createdAt: "desc" }, take: 100,
+    prisma.radioAsset.findMany({ orderBy: { createdAt: "desc" }, take: 150,
       select: { id: true, kind: true, title: true, duration: true, slot: true, script: true, metadata: true, createdAt: true } }),
     prisma.radioJob.findMany({ where: { status: "failed" }, orderBy: { updatedAt: "desc" }, take: 5, select: { key: true, error: true, attempts: true, updatedAt: true } }),
   ]);
   return NextResponse.json({ ...radioStatus(), assets, failures, actions: [...actions],
     configured: { elevenlabs: !!process.env.ELEVENLABS_API_KEY, edenai: !!process.env.EDENAI_API_KEY },
-    region: process.env.NEWS_REGION || "Mainz und Rheinhessen", model: process.env.EDENAI_MODEL || "gpt-6-luna" });
+    region: process.env.NEWS_REGION || "Mainz und Rheinhessen", model: process.env.EDENAI_MODEL || "gpt-6-luna",
+    newsRefreshHours: 2, nextPresenter: upcomingNewsSlot() ? presenterForSlot(upcomingNewsSlot()!).name : null });
 }
 
 export async function POST(req: Request) {

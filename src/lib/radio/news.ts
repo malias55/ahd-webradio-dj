@@ -1,8 +1,10 @@
 import { XMLParser } from "fast-xml-parser";
 import { load } from "cheerio";
 import { prisma } from "../prisma";
-import { edenJson, germanVoice, speech } from "./providers";
+import { edenJson, presenterForSlot, speech } from "./providers";
 import { normalizeAudio, withJob } from "./store";
+import { mixBulletin } from "./mix";
+import { IMAGING_VERSION } from "./imaging";
 import { isNewsSlot, stationTime } from "./config";
 
 export const DEFAULT_FEEDS = [
@@ -13,7 +15,7 @@ export const DEFAULT_FEEDS = [
   "https://www.tagesschau.de/wissen/technologie/index~rss2.xml",
 ];
 export type NewsSource = { id: number; title: string; summary: string; articleText?: string; url: string; publishedAt: string; local: boolean };
-type Story = { text: string; sourceIds: number[] };
+export type Story = { text: string; sourceIds: number[] };
 export function plainText(value: unknown) {
   return String(value ?? "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
@@ -110,36 +112,63 @@ export function validateStories(value: unknown, sources: NewsSource[]): Story[] 
   return validated;
 }
 
+export function newsEditionSlot(slot: Date) {
+  return new Date(slot.getTime() - (stationTime(slot).hour % 2) * 3_600_000);
+}
+
+type SourceReference = Pick<NewsSource, "id" | "title" | "url" | "publishedAt" | "local">;
+type EditorialContent = { stories: Story[]; sources: SourceReference[]; editionSlot: string; reused: boolean };
+
+export function reusableEdition(metadata: unknown, slot: Date): EditorialContent | null {
+  const expected = newsEditionSlot(slot).toISOString();
+  const meta = metadata as { stories?: Story[]; sources?: SourceReference[]; editionSlot?: string } | null;
+  if (!meta?.stories?.length || !meta.sources?.length || meta.editionSlot !== expected) return null;
+  const stories = validateStories({ stories: meta.stories }, meta.sources.map(s => ({ ...s, summary: "" })));
+  return { stories, sources: meta.sources, editionSlot: expected, reused: true };
+}
+
+export async function editorialContent(slot: Date): Promise<EditorialContent> {
+  const editionSlot = newsEditionSlot(slot);
+  if (editionSlot.getTime() !== slot.getTime()) {
+    const previous = await prisma.radioAsset.findUnique({ where: { key: `news:${editionSlot.toISOString()}` }, select: { metadata: true } });
+    const cached = reusableEdition(previous?.metadata, slot);
+    if (cached) return cached;
+  }
+  // Every even hour gets a fresh editorial selection. If its bulletin failed,
+  // the following odd hour researches afresh instead of using yesterday's news.
+  const sources = await Promise.all((await collectSources()).slice(0, 36).map(enrichSource));
+  const recent = await prisma.radioAsset.findMany({ where: { kind: "news", slot: { lt: slot, gte: new Date(slot.getTime() - 8 * 3_600_000) } }, orderBy: { slot: "desc" }, take: 4, select: { metadata: true } });
+  const previouslyUsed = [...new Set(recent.flatMap(a => ((a.metadata as { sources?: SourceReference[] })?.sources || []).map(s => s.url)))];
+  const context = { region: process.env.NEWS_REGION || "Mainz und Rheinhessen", sendetermin: slot.toISOString(), sources, previouslyUsed,
+    instruction: "Bevorzuge geeignete neue Themen gegenüber bereits behandelten Quellen. Bei unveränderter Nachrichtenlage darf eine weiterhin aktuelle Meldung wiederkehren; nicht als neue Entwicklung darstellen." };
+  let stories: Story[] = [], feedback = "", approved = false;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const draft = await edenJson(`${NEWS_POLICY}\nAntworte ausschließlich als JSON: {"stories":[{"text":"...", "sourceIds":[1]}]}. Nur Meldungen, keine Einleitung oder Schluss. Keine verallgemeinernden Ergänzungen wie „jedes Jahr“, wenn die Quelle nur ein einzelnes Ereignis beschreibt.`, { ...context, correction: feedback });
+    stories = validateStories(draft, sources);
+    const review = await edenJson(`${NEWS_POLICY}\nDeine ausschließliche Aufgabe ist die Prüfung, nicht das Schreiben einer Moderation. Prüfe den Entwurf streng auf Quellenbelege, Aktualität und alle Regeln. Jede konkrete Aussage muss durch die angegebenen Quellen gedeckt sein. Antworte nur {"approved":true,"reason":"Geprüft"} oder {"approved":false,"reason":"kurze Begründung"}. Bei Zweifel ablehnen.`, { ...context, stories }, true) as { approved?: boolean; reason?: string };
+    if (review?.approved === true) { approved = true; break; }
+    feedback = review.reason?.slice(0, 500) || "Nur unmittelbar belegte, positive oder neutrale Fakten verwenden.";
+  }
+  if (!approved) throw new Error(`Redaktionelle Prüfung: ${feedback.slice(0, 250)}. Musik läuft weiter.`);
+  const used = new Set(stories.flatMap(s => s.sourceIds));
+  return { stories, sources: sources.filter(s => used.has(s.id)).map(({ id, title, url, publishedAt, local }) => ({ id, title, url, publishedAt, local })), editionSlot: editionSlot.toISOString(), reused: false };
+}
+
 export async function prepareNews(slot: Date) {
   if (!isNewsSlot(slot)) throw new Error("Nachrichten nur zur vollen Stunde von 08 bis 17 Uhr");
   const key = `news:${slot.toISOString()}`;
   return withJob(key, async () => {
     if (await prisma.radioAsset.findUnique({ where: { key }, select: { id: true } })) return;
-    const sources = await Promise.all((await collectSources()).slice(0, 36).map(enrichSource));
-    const context = { region: process.env.NEWS_REGION || "Mainz und Rheinhessen", sendetermin: slot.toISOString(), sources };
-    let stories: Story[] = [];
-    let feedback = "";
-    let approved = false;
-    // One correction pass, always followed by a fresh independent review.
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const draft = await edenJson(`${NEWS_POLICY}\nAntworte ausschließlich als JSON: {"stories":[{"text":"...", "sourceIds":[1]}]}. Nur Meldungen, keine Einleitung oder Schluss. Keine verallgemeinernden Ergänzungen wie „jedes Jahr“, wenn die Quelle nur ein einzelnes Ereignis beschreibt.`, { ...context, correction: feedback });
-      stories = validateStories(draft, sources);
-      const review = await edenJson(`${NEWS_POLICY}\nDeine ausschließliche Aufgabe ist die Prüfung, nicht das Schreiben einer Moderation. Prüfe den Entwurf streng auf Quellenbelege, Aktualität und alle Regeln. Jede konkrete Aussage muss durch die angegebenen Quellen gedeckt sein. Antworte nur {"approved":true,"reason":"Geprüft"} oder {"approved":false,"reason":"kurze Begründung"}. Bei Zweifel ablehnen.`, { ...context, stories }, true) as { approved?: boolean; reason?: string };
-      if (review?.approved === true) { approved = true; break; }
-      feedback = review.reason?.slice(0, 500) || "Nur unmittelbar belegte, positive oder neutrale Fakten verwenden.";
-    }
-    if (!approved) throw new Error(`Redaktionelle Prüfung: ${feedback.slice(0, 250)}. Musik läuft weiter.`);
-    const hour = stationTime(slot).hour;
-    const intro = `Es ist ${hour} Uhr. Hallo und herzlich willkommen bei Autohaus Dörrschuck Radio. Ich bin Mia, Ihre KI-Nachrichtenassistentin. Hier kommt unsere KI-generierte Auswahl freundlicher, aktueller Meldungen.`;
-    const script = `${intro}\n\n${stories.map(s => s.text).join("\n\n")}\n\nDas war unser Nachrichtenmagazin. Die Quellen finden Sie im Radio-Dashboard. Jetzt geht es entspannt mit Musik weiter.`;
-    const voiceId = await germanVoice();
-    // Split at paragraph boundaries to stay below per-request TTS character limits.
-    const chunks: Buffer[] = [];
-    for (const paragraph of script.split("\n\n")) chunks.push(await speech(paragraph, voiceId));
-    const audio = await normalizeAudio(Buffer.concat(chunks), 260);
-    if (audio.duration > 250) throw new Error("Nachrichten überschreiten vier Minuten. Ausgabe wird nicht gesendet.");
-    const used = new Set(stories.flatMap(s => s.sourceIds));
-    await prisma.radioAsset.create({ data: { key, kind: "news", title: `KI-Nachrichten · ${hour}:00 Uhr`, slot, script, ...audio,
-      metadata: { voiceId, aiGenerated: true, sources: sources.filter(s => used.has(s.id)).map(({ id, title, url, publishedAt, local }) => ({ id, title, url, publishedAt, local })), region: context.region } } });
+    const content = await editorialContent(slot);
+    const hour = stationTime(slot).hour, presenter = presenterForSlot(slot);
+    const intro = `Es ist ${hour} Uhr. Herzlich willkommen bei Autohaus Dörrschuck Radio. Ich bin ${presenter.name}, ${presenter.assistant}. Hier kommt unser KI-generiertes Magazin mit freundlichen Meldungen aus Mainz und darüber hinaus.`;
+    const outro = "Das war unser Nachrichtenmagazin. Alle Quellen finden Sie im Radio-Dashboard. Kommen Sie entspannt durch den Tag. Jetzt gibt es wieder gute Musik bei Autohaus Dörrschuck Radio.";
+    const paragraphs = [intro, ...content.stories.map(s => s.text), outro];
+    const segments = [];
+    for (let i = 0; i < paragraphs.length; i++) segments.push({ audio: await speech(paragraphs[i], presenter.voiceId), kind: i === 0 ? "intro" as const : i === paragraphs.length - 1 ? "outro" as const : "story" as const });
+    const { timeline, ...audio } = await mixBulletin(segments);
+    await prisma.radioAsset.create({ data: { key, kind: "news", title: `KI-Magazin · ${hour}:00 Uhr · ${presenter.name}`, slot, script: paragraphs.join("\n\n"), ...audio,
+      metadata: { voiceId: presenter.voiceId, presenter: presenter.name, gender: presenter.gender, aiGenerated: true, sources: content.sources, stories: content.stories,
+        editionSlot: content.editionSlot, reusedEdition: content.reused, imagingVersion: IMAGING_VERSION, timeline, region: process.env.NEWS_REGION || "Mainz und Rheinhessen" } } });
   });
 }

@@ -3,7 +3,9 @@ import type { ServerResponse } from "node:http";
 import { prisma } from "../prisma";
 import { isOnAir, upcomingNewsSlot, radioEnabled, stationTime } from "./config";
 import { assetFile, pruneCache } from "./store";
+import { presenterForSlot } from "./providers";
 import { prepareNews } from "./news";
+import { stationIdAsset, IMAGING_VERSION } from "./imaging";
 
 type Item = { id: string; title: string; duration: number; kind: string };
 type RadioState = {
@@ -12,15 +14,16 @@ type RadioState = {
   timer?: ReturnType<typeof setTimeout>; boundary?: string; lastNewsSlot?: string;
   lastPrepAt: number; preparing: boolean; error: string | null; lastMusicId?: string;
   musicQueue: Item[]; selecting: boolean; shutdown: boolean;
+  musicSinceId: number;
 };
 const globalRadio = globalThis as unknown as { __ahdRadio?: RadioState };
 const state = globalRadio.__ahdRadio ??= {
   started: false, onAir: false, playing: null, startedAt: 0, listeners: new Set(), process: null,
-  revision: 0, lastPrepAt: 0, preparing: false, error: null, musicQueue: [], selecting: false, shutdown: false,
+  revision: 0, lastPrepAt: 0, preparing: false, error: null, musicQueue: [], selecting: false, shutdown: false, musicSinceId: 0,
 };
 
 export function radioStatus() {
-  return { started: state.started, onAir: isOnAir(), playing: state.playing, startedAt: state.startedAt || null,
+  return { imagingVersion: IMAGING_VERSION, presenter: presenterForSlot(new Date()).name, newsRefreshHours: 2, started: state.started, onAir: isOnAir(), playing: state.playing, startedAt: state.startedAt || null,
     listeners: state.listeners.size, preparing: state.preparing, error: state.error,
     nextNewsAt: upcomingNewsSlot()?.toISOString() ?? null, timezone: "Europe/Berlin", hours: "08:00–18:00", newsHours: "08:00–17:00" };
 }
@@ -58,6 +61,7 @@ async function play(item: Item | null) {
     "-vn", "-id3v2_version", "0", "-write_xing", "0", "-flush_packets", "1", "-f", "mp3", "pipe:1"], { stdio: ["ignore", "pipe", "pipe"] });
   state.process = proc;
   state.playing = item;
+  if (item?.kind === "news") state.musicSinceId = 0;
   state.startedAt = Date.now();
   proc.stdout.on("data", publish);
   let failed = false;
@@ -82,6 +86,11 @@ async function nextMusic() {
   state.selecting = true;
   const revision = state.revision;
   try {
+    if ((state.musicSinceId || 0) >= 3) {
+      const ident = await stationIdAsset(new Date());
+      if (revision !== state.revision || state.process) return;
+      if (ident) { state.musicSinceId = 0; await play(ident); return; }
+    }
     if (!state.musicQueue.length) {
       const tracks = await prisma.radioAsset.findMany({ where: { kind: "music" }, select: { id: true, title: true, duration: true, kind: true } });
       // Fisher–Yates shuffle; avoid repeating the last song at a pool boundary.
@@ -91,7 +100,7 @@ async function nextMusic() {
     }
     if (revision !== state.revision || state.process) return;
     const item = state.musicQueue.shift() ?? null;
-    if (item) state.lastMusicId = item.id;
+    if (item) { state.lastMusicId = item.id; state.musicSinceId = (state.musicSinceId || 0) + 1; }
     await play(item);
   } finally { state.selecting = false; }
 }

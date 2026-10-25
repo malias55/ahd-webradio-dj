@@ -5,9 +5,11 @@ Musik, KI-Nachrichten und Live-Durchsagen unter https://radio.doerrschuck.de. Ei
 ## Programm
 
 - Täglich 08:00–18:00 Uhr in `Europe/Berlin`, einschließlich automatischer Sommer-/Winterzeit.
-- Nachrichten um 08:00, 09:00, …, 17:00 Uhr. Vorbereitung ab zehn Minuten vor dem Sendetermin. Um 18:00 Uhr endet die Musik; es gibt keine 18-Uhr-Ausgabe.
+- Nachrichten um 08:00, 09:00, …, 17:00 Uhr. Neue recherchierte und geprüfte Themenauswahl um 08, 10, 12, 14 und 16 Uhr; die Zwischenstunde übernimmt dieselbe Auswahl mit anderer Stimme und neuem Stundenintro. Fehlt die vorausgehende Ausgabe, wird für die Zwischenstunde neu recherchiert. Vorbereitung ab zehn Minuten vor dem Sendetermin. Um 18:00 Uhr endet die Musik; es gibt keine 18-Uhr-Ausgabe.
 - Positives/ neutrales Magazin aus Mainz/Rheinhessen plus geeignete überregionale Meldungen. Ziel: drei bis vier Minuten, bei wenig belegtem Material kürzer. Jede Ausgabe enthält einen hörbaren KI-Hinweis.
 - RSS-Meldungen der letzten 72 Stunden und die erreichbaren Artikeltexte der bekannten Verlage werden eingelesen, durch Eden AI redigiert und in einem zweiten Modellaufruf geprüft. Ungeeignete oder nicht belegte Ausgaben werden verworfen; gespeicherte alte Nachrichten werden nicht ersatzweise gesendet.
+- Die Stimmen wechseln nach deutscher Ortszeit: 08 Uhr Elias (männlich), 09 Uhr Jane (weiblich), danach weiter im Wechsel. Der erste Sprecher ist jeden Tag wieder männlich.
+- Wiederkehrendes Klangpaket: sechs einmalig bei ElevenLabs erzeugte Musik-/Effektbausteine, darunter Nachrichten-Opener, leises Nachrichtenbett mit automatischer Absenkung unter Sprache, Trenner und Schluss. Eine gespeicherte Senderkennung folgt ungefähr nach je drei Musiktiteln. Die Bausteine werden wiederverwendet und dabei nicht erneut generiert.
 - Nachrichten unterbrechen die Musik am Sendetermin. Die Übertragung beginnt serverseitig zur vollen Stunde; Browser, Netzwerk und Lautsprecher verursachen typischerweise zusätzliche Pufferlatenz.
 - Mikrofon-Durchsagen und Tab-Audio bleiben pro Zone verfügbar. Nach deren Ende kehrt die Zone zum zeitgesteuerten Programm zurück. Live-Durchsagen können auch außerhalb der Musikzeiten verwendet werden.
 
@@ -24,7 +26,8 @@ Audio liegt dauerhaft in der bestehenden PostgreSQL-Datenbank. Der lokale MP3-Ca
 | `PG_URL` | Bestehende PostgreSQL-Verbindung |
 | `DEVICE_API_KEY` | Gemeinsamer Geräteschlüssel |
 | `ELEVENLABS_API_KEY` | Musik, TTS und Lesen der Stimmen |
-| `ELEVENLABS_VOICE_ID` | Deutsche Moderationsstimme; produktiv Mona als „Mia“ |
+| `ELEVENLABS_MALE_VOICE_ID` | `1h6gHcRvQugDNZgdAo9N` (Elias), gerade Stunden ab 08 Uhr |
+| `ELEVENLABS_FEMALE_VOICE_ID` | `hOBDmVrVUuqtp1I3KsIq` (Jane), ungerade Stunden bis 17 Uhr |
 | `ELEVENLABS_MUSIC_MODEL` | Standard `music_v2` |
 | `ELEVENLABS_TTS_MODEL` | Standard `eleven_multilingual_v2` |
 | `EDENAI_API_KEY` | Redaktion und Quellenprüfung |
@@ -54,3 +57,13 @@ npm run dev
 ```
 
 `SKIP_AUTH=true` ist ausschließlich lokal erlaubt; der Produktionsserver verweigert damit den Start. `scripts/railway-local.py` stellt für lokale Prüfungen Railway-Variablen nur im Kindprozess bereit und verwendet die öffentliche Postgres-Verbindung. Es speichert und druckt keine Schlüssel. `scripts/radio-bootstrap.ts --music` erzeugt einen ersten Pool; `--news` erstellt eine Vorschau für die aktuelle Sendestunde und spielt sie nicht nachträglich aus.
+
+
+## Klangpaket und Beispiel
+
+```sh
+python3 scripts/railway-local.py npx tsx scripts/radio-imaging.ts
+python3 scripts/railway-local.py npx tsx scripts/radio-demo.ts
+```
+
+Diese Befehle verwenden vorhandene Bausteine erneut; nur fehlende Assets werden kostenpflichtig erzeugt. Eine gewünschte Neugestaltung erhält eine neue `IMAGING_VERSION`, statt die laufenden Dateien zu überschreiben. Das Hörbeispiel liegt im Dashboard unter „Radioklang und Hörbeispiel“ und lokal in `artifacts/ahd-radio-hoerbeispiel.mp3`. Die Demo zeigt beide Stimmen nacheinander; im regulären Betrieb moderiert jede volle Stunde genau eine der beiden Stimmen. Demo-Audio wird nicht automatisch ausgestrahlt. Nachrichtentexte, Stimme, Themenausgabe und Mischungstimeline werden zusammen gespeichert.
