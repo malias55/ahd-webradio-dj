@@ -1,8 +1,9 @@
 import { prisma } from "../prisma";
-import { composeMusic, soundEffect, speech, presenterForSlot, presenterForHour } from "./providers";
+import { composeMusic, soundEffect, speech, presenterForSlot, presenterForHour, servicePresenter } from "./providers";
 import { normalizeAudio, withJob } from "./store";
 
 export const IMAGING_VERSION = "v1";
+export const STATION_ID_VERSION = "dry-v2";
 export const IMAGING_ROLES = ["news-open", "news-bed", "news-close", "station-bed", "sweep", "divider"] as const;
 export type ImagingRole = typeof IMAGING_ROLES[number];
 const signature = "Original coherent sonic branding for Autohaus Doerrschuck Radio in Mainz. Warm premium lounge jazz, D major, 96 BPM, memorable three-note rising Rhodes and soft vibraphone motif. Welcoming, confident, sunny and understated. Pure instrumental. No speech, no singing, no urgent news alarm, no dramatic impacts, no harsh treble.";
@@ -36,7 +37,7 @@ export async function generateImaging() {
 export const STATION_LINE = "Autohaus Dörrschuck Radio. Entspannt ankommen. Gute Musik. Gute Fahrt.";
 export function stationIdKey(slot: Date) {
   const p = presenterForSlot(slot);
-  return `station-id:${IMAGING_VERSION}:${p.gender}:${p.voiceId}`;
+  return `station-id:${STATION_ID_VERSION}:${p.gender}:${p.voiceId}`;
 }
 
 export async function stationIdAsset(slot: Date) {
@@ -45,14 +46,13 @@ export async function stationIdAsset(slot: Date) {
 
 export async function generateStationIds(render: (voice: Buffer, bedId: string) => Promise<{ audio: Uint8Array<ArrayBuffer>; duration: number }>) {
   const bed = await imagingAsset("station-bed");
-  for (const hour of [8, 10]) {
-    const presenter = presenterForHour(hour);
-    const key = `station-id:${IMAGING_VERSION}:${presenter.gender}:${presenter.voiceId}`;
+  for (const presenter of [presenterForHour(8), servicePresenter()]) {
+    const key = `station-id:${STATION_ID_VERSION}:${presenter.gender}:${presenter.voiceId}`;
     if (await prisma.radioAsset.findUnique({ where: { key }, select: { id: true } })) continue;
     await withJob(key, async () => {
       const audio = await render(await speech(STATION_LINE, presenter.voiceId), bed.id);
       await prisma.radioAsset.create({ data: { key, kind: "station-id", title: `Senderkennung · ${presenter.name}`, script: STATION_LINE, ...audio,
-        metadata: { version: IMAGING_VERSION, voiceId: presenter.voiceId, presenter: presenter.name } } });
+        metadata: { version: STATION_ID_VERSION, voiceId: presenter.voiceId, presenter: presenter.name, backgroundMusic: false } } });
     });
   }
 }

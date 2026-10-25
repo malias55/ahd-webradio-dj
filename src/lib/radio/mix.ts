@@ -4,8 +4,84 @@ import { join } from "node:path";
 import { assetFile, command, normalizeAudio } from "./store";
 import { imagingAsset } from "./imaging";
 
-export type VoiceSegment = { audio: Buffer; kind: "intro" | "story" | "outro" };
+export type VoiceSegment = { audio: Buffer; kind: "intro" | "story" | "weather" | "traffic" | "outro" };
 export type Cue = { kind: string; start: number; end: number };
+
+export type DryMixOptions = { opener?: boolean; closer?: boolean; leadingDivider?: boolean };
+export function dryNewsTimeline(clips: { duration: number; kind: VoiceSegment["kind"] }[], options: DryMixOptions = {}) {
+  const cues: Cue[] = [];
+  let cursor = 0.25;
+  if (options.opener !== false) { cues.push({ kind: "opener", start: 0, end: 6 }); cursor = 6.3; }
+  else if (options.leadingDivider) { cues.push({ kind: "divider", start: 0, end: 1.1 }); cursor = 1.4; }
+  for (let i = 0; i < clips.length; i++) {
+    const clip = clips[i];
+    cues.push({ kind: clip.kind, start: cursor, end: cursor + clip.duration });
+    cursor += clip.duration;
+    if (i < clips.length - 1) {
+      if (clip.kind !== "intro" && clips[i + 1].kind !== "outro") {
+        cues.push({ kind: "divider", start: cursor + 0.25, end: cursor + 1.35 });
+        cursor += 1.6;
+      } else cursor += 0.5;
+    }
+  }
+  if (options.closer !== false) { cues.push({ kind: "closer", start: cursor + 0.3, end: cursor + 5.3 }); cursor += 5.3; }
+  return { cues, duration: cursor + 0.2 };
+}
+
+// German speech and imaging occupy disjoint intervals. No bed is even loaded.
+// Keep the original mixer below for the unchanged Turkish programme.
+export async function mixDryBulletin(segments: VoiceSegment[], options: DryMixOptions = {}) {
+  if (!segments.length) throw new Error("Leere Nachrichtenausgabe");
+  const dir = await mkdtemp(join(tmpdir(), "ahd-dry-news-"));
+  try {
+    const clips = [];
+    for (let i = 0; i < segments.length; i++) {
+      const normalized = await normalizeAudio(segments[i].audio);
+      const path = join(dir, `voice-${i}.mp3`);
+      await writeFile(path, normalized.audio);
+      clips.push({ path, duration: normalized.duration, kind: segments[i].kind });
+    }
+    const timeline = dryNewsTimeline(clips, options);
+    if (timeline.duration > 260) throw new Error("Nachrichten überschreiten das Sendezeitfenster");
+    const args = ["-v", "error", "-nostdin"], filters: string[] = [], stems: string[] = [];
+    for (const clip of clips) args.push("-i", clip.path);
+    const voiceCues = timeline.cues.filter(c => !["opener", "closer", "divider"].includes(c.kind));
+    voiceCues.forEach((cue, i) => {
+      filters.push(`[${i}:a]asetpts=PTS-STARTPTS,adelay=${Math.round(cue.start * 1000)}:all=1[v${i}]`);
+      stems.push(`v${i}`);
+    });
+    let input = clips.length;
+    for (const kind of ["opener", "closer", "divider"] as const) {
+      const cues = timeline.cues.filter(c => c.kind === kind);
+      if (!cues.length) continue;
+      const asset = await imagingAsset(kind === "opener" ? "news-open" : kind === "closer" ? "news-close" : "divider");
+      args.push("-i", await assetFile(asset.id));
+      cues.forEach((cue, i) => {
+        const label = `${kind}${i}`, length = cue.end - cue.start;
+        filters.push(`[${input}:a]atrim=duration=${length},asetpts=PTS-STARTPTS,volume=0.65,afade=t=out:st=${length - 0.15}:d=0.15,adelay=${Math.round(cue.start * 1000)}:all=1[${label}]`);
+        stems.push(label);
+      });
+      input++;
+    }
+    filters.push(`${stems.map(s => `[${s}]`).join("")}amix=inputs=${stems.length}:normalize=0,apad=whole_dur=${timeline.duration},atrim=duration=${timeline.duration},alimiter=limit=0.79:level=false:latency=true[out]`);
+    const output = join(dir, "dry.wav");
+    await command(process.env.FFMPEG_PATH || "ffmpeg", [...args, "-filter_complex", filters.join(";"), "-map", "[out]", "-ar", "44100", "-ac", "2", "-y", output]);
+    return { ...(await normalizeAudio(await readFile(output), 265)), timeline: timeline.cues };
+  } finally { await rm(dir, { recursive: true, force: true }); }
+}
+
+export async function joinNewsParts(main: Uint8Array, service: Uint8Array) {
+  const dir = await mkdtemp(join(tmpdir(), "ahd-news-join-"));
+  try {
+    const first = join(dir, "main.mp3"), second = join(dir, "service.mp3"), output = join(dir, "joined.wav");
+    await writeFile(first, main); await writeFile(second, service);
+    await command(process.env.FFMPEG_PATH || "ffmpeg", ["-v", "error", "-nostdin", "-i", first, "-i", second,
+      "-filter_complex", "[0:a]apad=pad_dur=0.45[a];[a][1:a]concat=n=2:v=0:a=1[out]", "-map", "[out]", "-ar", "44100", "-ac", "2", "-y", output]);
+    const result = await normalizeAudio(await readFile(output), 600);
+    if (result.duration > 260) throw new Error("Nachrichten mit Wetter und Verkehr überschreiten das Sendezeitfenster");
+    return result;
+  } finally { await rm(dir, { recursive: true, force: true }); }
+}
 
 export function newsTimeline(durations: number[]) {
   let cursor = 3.2;
@@ -68,9 +144,9 @@ export async function mixStationId(voice: Buffer, bedId: string) {
     const clip = await normalizeAudio(voice);
     const voicePath = join(dir, "voice.mp3"), output = join(dir, "mixed.wav");
     await writeFile(voicePath, clip.audio);
-    const duration = Math.max(12, clip.duration + 3.5);
-    await command(process.env.FFMPEG_PATH || "ffmpeg", ["-v", "error", "-nostdin", "-i", voicePath, "-stream_loop", "-1", "-i", await assetFile(bedId),
-      "-filter_complex", `[0:a]adelay=2000:all=1,apad=whole_dur=${duration},atrim=duration=${duration},asplit=2[v][trigger];[1:a]atrim=duration=${duration},volume=0.65,afade=t=out:st=${duration - 1.5}:d=1.5[bed];[bed][trigger]sidechaincompress=threshold=0.025:ratio=5:attack=12:release=450[ducked];[v][ducked]amix=inputs=2:normalize=0[out]`,
+    const closeStart = 3.3 + clip.duration + 0.3, duration = closeStart + 3;
+    await command(process.env.FFMPEG_PATH || "ffmpeg", ["-v", "error", "-nostdin", "-i", voicePath, "-i", await assetFile(bedId),
+      "-filter_complex", `[0:a]adelay=3300:all=1[v];[1:a]atrim=duration=3,asetpts=PTS-STARTPTS,volume=0.65,afade=t=out:st=2.8:d=0.2[open];[1:a]atrim=start=9:duration=3,asetpts=PTS-STARTPTS,volume=0.65,afade=t=out:st=2.8:d=0.2,adelay=${Math.round(closeStart * 1000)}:all=1[close];[v][open][close]amix=inputs=3:normalize=0,apad=whole_dur=${duration},atrim=duration=${duration}[out]`,
       "-map", "[out]", "-ar", "44100", "-ac", "2", "-y", output]);
     return normalizeAudio(await readFile(output), duration + 1);
   } finally { await rm(dir, { recursive: true, force: true }); }

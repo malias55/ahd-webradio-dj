@@ -5,13 +5,14 @@ Musik, KI-Nachrichten und Live-Durchsagen unter https://radio.doerrschuck.de. Ei
 ## Programm
 
 - Täglich um 07:00 Uhr ein türkisches Morgenmagazin; reguläre Musik 08:00–18:00 Uhr in `Europe/Berlin`, einschließlich automatischer Sommer-/Winterzeit. Für das Morgenmagazin ist 07:00–07:05 Uhr reserviert, anschließend Pause bis 08 Uhr.
-- Deutsche Originalausgaben um 08, 10, 12, 14 und 16 Uhr. Um 09, 11, 13, 15 und 17 Uhr wird exakt dieselbe gespeicherte Audiodatei der vorherigen Ausgabe abgespielt: identische UUID, keine neue Redaktion oder Sprachgenerierung. Fehlt die Originalausgabe, läuft Musik weiter; es wird keine Ersatz-Ausgabe für die Wiederholung erzeugt. Vorbereitung ab zehn Minuten vor dem Sendetermin.
+- Deutsche Hauptnachrichten mit Elias um 08, 10, 12, 14 und 16 Uhr. Um 09, 11, 13, 15 und 17 Uhr wird derselbe gespeicherte männliche Hauptteil wiederverwendet: identische Hauptteil-UUID, keine neue Redaktion oder männliche Sprachgenerierung. Jede volle Stunde erhält eine eigene fertige Ausgabe mit frisch abgerufenem Wetter und Verkehr, gesprochen von Jane. Vorbereitung ab zehn Minuten vor dem Sendetermin. Frühe manuelle Vorbereitung erstellt nur den Hauptteil; Servicedaten werden erst innerhalb dieser zehn Minuten abgerufen. Fehlt der Hauptteil, wird der stündliche Service mit einem hörbaren Hinweis separat gesendet.
 - Um 18:00 Uhr endet die Musik; es gibt keine 18-Uhr-Ausgabe.
 - Positives/ neutrales Magazin aus Mainz/Rheinhessen plus geeignete überregionale Meldungen. Ziel: drei bis vier Minuten, bei wenig belegtem Material kürzer. Jede Ausgabe enthält einen hörbaren KI-Hinweis.
 - RSS-Meldungen der letzten 72 Stunden und die erreichbaren Artikeltexte der bekannten Verlage werden eingelesen, durch Eden AI redigiert und in einem zweiten Modellaufruf geprüft. Ungeeignete oder nicht belegte Ausgaben werden verworfen; gespeicherte alte Nachrichten werden nicht ersatzweise gesendet.
-- Deutsche Stimmen: Elias um 08/09, 12/13 und 16/17 Uhr; Jane um 10/11 und 14/15 Uhr. Im Intro wird keine wechselnde Uhrzeit gesprochen.
+- Deutsche Stimmen: Elias spricht immer die Hauptnachrichten; Jane ausschließlich den stündlichen Wetter- und Verkehrsblock. Im wiederverwendbaren Hauptteil steht keine Uhrzeit. Das Wetter nennt den Messzeitpunkt, der Verkehr den Abrufzeitpunkt.
+- Wetter: [DWD-Daten über Bright Sky](https://brightsky.dev/), Beobachtungen im Umkreis von höchstens 30 km um Mainz und höchstens 90 Minuten alt, ergänzt um die verfügbare Dreistundenvorhersage. Verkehr: [Autobahn GmbH](https://verkehr.autobahn.de/o/autobahn/) für A60, A63 und A643 im Umkreis von 30 km, aktuelle Warnungen und aktive Sperrungen; zukünftige und abgelaufene Maßnahmen werden ausgeschlossen. Innerstädtische Straßen sind nicht abgedeckt. Die Durchsagen benennen diese begrenzte Abdeckung und melden Quellenausfälle ausdrücklich, statt freie Fahrt zu behaupten. Wetter und Verkehr werden aus strukturierten Daten formuliert, ohne zusätzliche Textmodell-Aufrufe. Abrufzeit, Messwerte, ausgewählte Meldungen, Datenlücken und Quellen liegen im Verlauf. Eine Ausgabe mit Servicedaten aus einer anderen Stunde oder einem mehr als zehn Minuten vor dem Sendetermin erfolgten Abruf wird nicht ausgestrahlt.
 - Um 07 Uhr spricht Cavit ausschließlich Türkisch. Die ersten gesprochenen Worte sind exakt `Rahman ve Rahim olan Allah in adiyla. `, ohne Musik darunter. Danach beginnt das Magazin über die Türkei, den deutsch-türkischen Austausch und passende globale Themen. TRT-RSS liefert aktuelle Meldungen; DAAD-Beiträge dürfen bis zu sieben Tage alt sein und werden dann als Hintergrund bezeichnet.
-- Wiederkehrendes Klangpaket: sechs einmalig bei ElevenLabs erzeugte Musik-/Effektbausteine, darunter Nachrichten-Opener, leises Nachrichtenbett mit automatischer Absenkung unter Sprache, Trenner und Schluss. Eine gespeicherte Senderkennung folgt ungefähr nach je drei Musiktiteln. Die Bausteine werden wiederverwendet und dabei nicht erneut generiert.
+- Wiederkehrendes Klangpaket: sechs einmalig bei ElevenLabs erzeugte Musik-/Effektbausteine. Bei deutschen Nachrichten sind Opener, Trenner und Schluss zeitlich vollständig von der Sprache getrennt; es gibt kein Musikbett unter Hauptnachrichten, Wetter oder Verkehr. Die türkische Mischung behält ihr leises Musikbett mit automatischer Absenkung. Auch deutsche Senderkennungen haben Musik nur vor und nach der Stimme (`dry-v2`); alte Kennungen bleiben gespeichert und werden nicht mehr verwendet. Eine gespeicherte Senderkennung folgt ungefähr nach je drei Musiktiteln. Die Bausteine werden wiederverwendet und dabei nicht erneut generiert.
 - Nachrichten unterbrechen die Musik am Sendetermin. Die Übertragung beginnt serverseitig zur vollen Stunde; Browser, Netzwerk und Lautsprecher verursachen typischerweise zusätzliche Pufferlatenz.
 - Mikrofon-Durchsagen und Tab-Audio bleiben pro Zone verfügbar. Nach deren Ende kehrt die Zone zum zeitgesteuerten Programm zurück. Live-Durchsagen können auch außerhalb der Musikzeiten verwendet werden.
 
@@ -19,7 +20,7 @@ Musik, KI-Nachrichten und Live-Durchsagen unter https://radio.doerrschuck.de. Ei
 
 Unter **Radioprogramm** stehen Musikpool, Audiodatei-Import, kostenpflichtige Musikgenerierung, Nachrichtentexte, Quellen, Vorschau und Fehlerstatus bereit. Musik wird ausschließlich auf ausdrücklichen Start erzeugt (drei Titel à drei Minuten, maximal 24 Titel); die Rotation selbst ruft keine Musik-API auf. Die Prompts orientieren sich an Showroom Velvet, Velvet Floorplan und Showroom Satin, ohne die ausgewählten Originaldateien zu ersetzen oder als diese auszugeben.
 
-Audio liegt dauerhaft in der bestehenden PostgreSQL-Datenbank. Der lokale MP3-Cache ist ersetzbar. Nachrichtenaudio bleibt 14 Tage erhalten, Erstellungsjobs und Ausstrahlungsprotokolle 90 Tage. Musik, Jingles und Hörbeispiele bleiben dauerhaft gespeichert. Generierungsjobs verwenden Datenbank-Leases und höchstens drei Versuche pro Schlüssel. Railway muss mit **einer Instanz, ohne App Sleeping und ohne Deployment-Überlappung** laufen.
+Audio liegt dauerhaft in der bestehenden PostgreSQL-Datenbank. Der lokale MP3-Cache ist ersetzbar. Nachrichtenaudio einschließlich der wiederverwendeten Hauptteile bleibt 14 Tage erhalten, Erstellungsjobs und Ausstrahlungsprotokolle 90 Tage. Musik, Jingles und Hörbeispiele bleiben dauerhaft gespeichert. Generierungsjobs verwenden Datenbank-Leases und höchstens drei Versuche pro Schlüssel. Railway muss mit **einer Instanz, ohne App Sleeping und ohne Deployment-Überlappung** laufen.
 
 ## Konfiguration im Hauptservice
 
@@ -28,8 +29,8 @@ Audio liegt dauerhaft in der bestehenden PostgreSQL-Datenbank. Der lokale MP3-Ca
 | `PG_URL` | Bestehende PostgreSQL-Verbindung |
 | `DEVICE_API_KEY` | Gemeinsamer Geräteschlüssel |
 | `ELEVENLABS_API_KEY` | Musik, TTS und Lesen der Stimmen |
-| `ELEVENLABS_MALE_VOICE_ID` | `1h6gHcRvQugDNZgdAo9N` (Elias), 08/09, 12/13, 16/17 Uhr |
-| `ELEVENLABS_FEMALE_VOICE_ID` | `hOBDmVrVUuqtp1I3KsIq` (Jane), 10/11 und 14/15 Uhr |
+| `ELEVENLABS_MALE_VOICE_ID` | `1h6gHcRvQugDNZgdAo9N` (Elias), alle deutschen Hauptnachrichten |
+| `ELEVENLABS_FEMALE_VOICE_ID` | `hOBDmVrVUuqtp1I3KsIq` (Jane), Wetter und Verkehr stündlich 08–17 Uhr |
 | `ELEVENLABS_TURKISH_VOICE_ID` | `Q2IX97JeHBY3vNGzgM5s` (Cavit), Türkçe 07 Uhr |
 | `NEWS_TR_FEED_URLS` | Optional: türkische RSS-Quellen, kommagetrennt |
 | `ELEVENLABS_MUSIC_MODEL` | Standard `music_v2` |
@@ -70,7 +71,7 @@ python3 scripts/railway-local.py npx tsx scripts/radio-imaging.ts
 python3 scripts/railway-local.py npx tsx scripts/radio-demo.ts
 ```
 
-Diese Befehle verwenden vorhandene Bausteine erneut; nur fehlende Assets werden kostenpflichtig erzeugt. Eine gewünschte Neugestaltung erhält eine neue `IMAGING_VERSION`, statt die laufenden Dateien zu überschreiben. Das Hörbeispiel liegt im Dashboard unter „Radioklang und Hörbeispiel“ und lokal in `artifacts/ahd-radio-hoerbeispiel.mp3`. Die Demo zeigt beide Stimmen nacheinander; im regulären Betrieb moderiert jede volle Stunde genau eine der beiden Stimmen. Demo-Audio wird nicht automatisch ausgestrahlt. Nachrichtentexte, Stimme, Themenausgabe und Mischungstimeline werden zusammen gespeichert.
+Diese Befehle verwenden vorhandene Bausteine erneut; nur fehlende Assets werden kostenpflichtig erzeugt. Eine gewünschte Neugestaltung erhält eine neue `IMAGING_VERSION`, statt die laufenden Dateien zu überschreiben. Das Hörbeispiel liegt im Dashboard unter „Radioklang und Hörbeispiel“ und lokal in `artifacts/ahd-radio-hoerbeispiel.mp3`. Die frühere Musikdemo zeigt beide Stimmen nacheinander. Das aktuelle deutsche Nachrichtenbeispiel zeigt Elias im Hauptteil und Jane mit frischem Wetter und Verkehr, ohne Musik unter Sprache. Demo-Audio wird nicht automatisch ausgestrahlt. Nachrichtentexte, Stimme, Themenausgabe und Mischungstimeline werden zusammen gespeichert.
 
 
 ## Tagesverlauf und Speicherung
@@ -82,4 +83,4 @@ python3 scripts/railway-local.py npx tsx scripts/radio-news-examples.ts
 python3 scripts/railway-local.py npx tsx scripts/radio-repeat-e2e.ts
 ```
 
-Die beiden Beispiele stehen im Dashboard und als `artifacts/nachrichten-mainz-de.mp3` und `artifacts/haberler-turkiye-tr.mp3` mit passenden `.txt`-Transkripten und `.json`-Metadaten bereit. Hörbeispiele werden nie automatisch ausgestrahlt. Der Wiederholungstest arbeitet mit einer isolierten, anschließend entfernten Datenbank-Fixture und prüft identische Audio-IDs ohne Modell-/TTS-Aufruf.
+Die beiden Beispiele stehen im Dashboard und als `artifacts/nachrichten-mainz-de.mp3` und `artifacts/haberler-turkiye-tr.mp3` mit passenden `.txt`-Transkripten und `.json`-Metadaten bereit. Hörbeispiele werden nie automatisch ausgestrahlt. Der Wiederholungstest arbeitet mit isolierten, anschließend entfernten Datenbank-Fixtures: derselbe Hauptteil, unterschiedliche stündliche Audiodateien und Wetterstände, ausschließlich weibliche TTS-Aufrufe, keine Modellaufrufe bei Wiederverwendung, Service auch bei fehlendem Hauptteil und ein persistiertes Ausstrahlungsprotokoll. Ein FFmpeg-Test misst mit einer synthetischen Stimme die tatsächlichen Sprachintervalle und prüft, dass dort keine Musik oder Effekte zugemischt sind.

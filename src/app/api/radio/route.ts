@@ -19,7 +19,7 @@ export async function GET(req: Request) {
   let range;
   try { range = stationDayBounds(day); } catch { return NextResponse.json({ error: "Ungültiges Datum" }, { status: 400 }); }
   const [assets, jobs, playbacks] = await Promise.all([
-    prisma.radioAsset.findMany({ where: { OR: [{ kind: { not: "news" } }, { kind: "news", createdAt: { gte: range.start, lt: range.end } }] }, orderBy: { createdAt: "desc" }, take: 150,
+    prisma.radioAsset.findMany({ where: { OR: [{ kind: { notIn: ["news", "news-main", "demo-part"] } }, { kind: { in: ["news", "news-main"] }, createdAt: { gte: range.start, lt: range.end } }] }, orderBy: { createdAt: "desc" }, take: 150,
       select: { id: true, kind: true, title: true, duration: true, slot: true, script: true, metadata: true, createdAt: true } }),
     prisma.radioJob.findMany({ where: { updatedAt: { gte: range.start, lt: range.end } }, orderBy: { updatedAt: "desc" }, take: 50, select: { key: true, status: true, error: true, attempts: true, updatedAt: true } }),
     prisma.radioPlayback.findMany({ where: { startedAt: { gte: range.start, lt: range.end } }, orderBy: { startedAt: "desc" }, take: 500 }),
@@ -28,7 +28,7 @@ export async function GET(req: Request) {
   return NextResponse.json({ ...radioStatus(), day, assets, failures, jobs, playbacks, actions: [...actions],
     configured: { elevenlabs: !!process.env.ELEVENLABS_API_KEY, edenai: !!process.env.EDENAI_API_KEY },
     region: process.env.NEWS_REGION || "Mainz und Rheinhessen", model: process.env.EDENAI_MODEL || "gpt-6-luna",
-    newsRefreshHours: 2, nextPresenter: upcomingNewsSlot() ? presenterForSlot(upcomingNewsSlot()!).name : null });
+    newsRefreshHours: 2, serviceRefreshHours: 1, nextPresenter: upcomingNewsSlot() ? `${presenterForSlot(upcomingNewsSlot()!).name}${stationTime(upcomingNewsSlot()!).hour === 7 ? "" : " · Jane für Wetter und Verkehr"}` : null });
 }
 
 export async function POST(req: Request) {

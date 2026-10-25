@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 import { prisma } from "../src/lib/prisma";
-import { presenterForHour, speech } from "../src/lib/radio/providers";
+import { presenterForHour, servicePresenter, speech } from "../src/lib/radio/providers";
 import { generateImaging, generateStationIds, imagingAsset, stationIdKey } from "../src/lib/radio/imaging";
 import { mixBulletin, mixStationId } from "../src/lib/radio/mix";
 import { assetFile, command, normalizeAudio } from "../src/lib/radio/store";
@@ -10,7 +10,7 @@ import { assetFile, command, normalizeAudio } from "../src/lib/radio/store";
 async function main() {
   await generateImaging();
   await generateStationIds(mixStationId);
-  const male = presenterForHour(8), female = presenterForHour(9);
+  const male = presenterForHour(8), female = servicePresenter();
   for (const p of [male, female]) await prisma.radioAsset.updateMany({ where: { kind: "station-id", metadata: { path: ["voiceId"], equals: p.voiceId } }, data: { title: `Senderkennung · ${p.name}` } });
   const key = `demo:imaging-v1:${male.voiceId}:${female.voiceId}`;
   const destination = resolve("artifacts/ahd-radio-hoerbeispiel.mp3");

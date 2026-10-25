@@ -7,10 +7,10 @@ export function presenterForSlot(slot: Date) {
 }
 export function presenterForHour(hour: number) {
   if (hour === 7) return { gender: "male" as const, name: "Cavit", language: "tr" as const, voiceId: process.env.ELEVENLABS_TURKISH_VOICE_ID || "Q2IX97JeHBY3vNGzgM5s", assistant: "yapay zekâ haber sunucunuz" };
-  const male = Math.floor((hour - 8) / 2) % 2 === 0;
-  return male
-    ? { gender: "male" as const, name: "Elias", language: "de" as const, voiceId: process.env.ELEVENLABS_MALE_VOICE_ID || "1h6gHcRvQugDNZgdAo9N", assistant: "Ihr KI-Nachrichtenassistent" }
-    : { gender: "female" as const, name: "Jane", language: "de" as const, voiceId: process.env.ELEVENLABS_FEMALE_VOICE_ID || "hOBDmVrVUuqtp1I3KsIq", assistant: "Ihre KI-Nachrichtenassistentin" };
+  return { gender: "male" as const, name: "Elias", language: "de" as const, voiceId: process.env.ELEVENLABS_MALE_VOICE_ID || "1h6gHcRvQugDNZgdAo9N", assistant: "Ihr KI-Nachrichtenassistent" };
+}
+export function servicePresenter() {
+  return { gender: "female" as const, name: "Jane", language: "de" as const, voiceId: process.env.ELEVENLABS_FEMALE_VOICE_ID || "hOBDmVrVUuqtp1I3KsIq", assistant: "Ihre KI-Moderatorin für Wetter und Verkehr" };
 }
 
 export function composeMusic(prompt: string, seconds: number) {

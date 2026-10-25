@@ -52,17 +52,18 @@ test("article extraction excludes players, scripts and unrelated content", () =>
   assert.equal(articleText(html), 'In Mainz eröffnet eine Ausstellung. Der Eintritt ist frei.');
 });
 
-import { presenterForSlot } from "../src/lib/radio/providers";
-import { newsEditionSlot, bulletinKey, isRepeatSlot, TURKISH_OPENING } from "../src/lib/radio/news";
-import { newsTimeline } from "../src/lib/radio/mix";
+import { presenterForSlot, servicePresenter } from "../src/lib/radio/providers";
+import { newsEditionSlot, bulletinKey, mainNewsKey, isRepeatSlot, TURKISH_OPENING } from "../src/lib/radio/news";
+import { newsTimeline, dryNewsTimeline } from "../src/lib/radio/mix";
 
-test("presenters follow the requested two-hour blocks starting male at 08:00", () => {
+test("German main news always uses Elias, weather and traffic use Jane", () => {
   for (const offset of [1, 2]) {
     for (let hour = 8; hour <= 17; hour++) {
       const date = new Date(`2026-${offset === 1 ? '10-26' : '07-15'}T${String(hour - offset).padStart(2, '0')}:00:00Z`);
       const presenter = presenterForSlot(date);
-      assert.equal(presenter.gender, [8,9,12,13,16,17].includes(hour) ? "male" : "female");
-      assert.equal(presenter.voiceId, [8,9,12,13,16,17].includes(hour) ? "1h6gHcRvQugDNZgdAo9N" : "hOBDmVrVUuqtp1I3KsIq");
+      assert.equal(presenter.gender, "male");
+      assert.equal(presenter.voiceId, "1h6gHcRvQugDNZgdAo9N");
+      assert.equal(servicePresenter().voiceId, "hOBDmVrVUuqtp1I3KsIq");
     }
   }
 });
@@ -71,11 +72,12 @@ test("hourly broadcasts group into fresh two-hour editions", () => {
   assert.equal(newsEditionSlot(new Date("2026-10-26T08:00:00Z")).toISOString(), "2026-10-26T07:00:00.000Z");
   assert.equal(newsEditionSlot(new Date("2026-10-26T16:00:00Z")).toISOString(), "2026-10-26T15:00:00.000Z");
 });
-test("every repeat resolves to the exact original audio key", () => {
+test("main audio key repeats, hourly service bulletin key always changes", () => {
   for (let hour = 8; hour <= 16; hour += 2) {
     const original = new Date(`2026-10-26T${String(hour - 1).padStart(2, '0')}:00:00Z`);
     const repeat = new Date(original.getTime() + 3600_000);
-    assert.equal(bulletinKey(original), bulletinKey(repeat));
+    assert.equal(mainNewsKey(original), mainNewsKey(repeat));
+    assert.notEqual(bulletinKey(original), bulletinKey(repeat));
     assert.equal(isRepeatSlot(original), false); assert.equal(isRepeatSlot(repeat), true);
   }
 });
@@ -103,4 +105,61 @@ test("radio mix places speech after the sonic logo and separates the stories", (
   const speech = cues.filter(c => ["intro", "story", "outro"].includes(c.kind));
   for (let i = 1; i < speech.length; i++) assert.ok(speech[i].start > speech[i - 1].end);
   assert.equal(cues.at(-1)?.end, duration);
+});
+
+import { weatherReport, trafficEvents, trafficReport, serviceFreshForSlot, collectHourlyService } from "../src/lib/radio/service";
+
+test("German dry mix never overlaps any speech with any music or effect", () => {
+  const clips = [{ kind: "intro" as const, duration: 12 }, { kind: "story" as const, duration: 35 }, { kind: "story" as const, duration: 30 }, { kind: "outro" as const, duration: 10 }];
+  for (const options of [{}, { closer: false }, { opener: false, leadingDivider: true }]) {
+    const timeline = dryNewsTimeline(clips, options);
+    const speech = timeline.cues.filter(c => !["opener", "closer", "divider"].includes(c.kind));
+    const music = timeline.cues.filter(c => ["opener", "closer", "divider"].includes(c.kind));
+    for (const voice of speech) for (const sound of music) assert.ok(voice.end <= sound.start || sound.end <= voice.start, `${voice.kind} overlaps ${sound.kind}`);
+    for (let i = 1; i < timeline.cues.length; i++) assert.ok(timeline.cues[i].start >= timeline.cues[i - 1].end);
+    assert.ok(timeline.duration >= timeline.cues.at(-1)!.end);
+  }
+});
+const serviceSlot = new Date("2026-10-26T07:00:00Z"), serviceNow = new Date("2026-10-26T06:55:00Z");
+const currentWeather = { weather: { source_id: 1, timestamp: "2026-10-26T06:50:00Z", temperature: 12.4, icon: "cloudy", wind_speed_10: 10 }, sources: [{ id: 1, distance: 4000, station_name: "Mainz" }] };
+test("weather only reads fresh local measurements and distinguishes forecasts", () => {
+  const forecast = { weather: [7, 8, 9, 10].map(hour => ({ timestamp: `2026-10-26T${String(hour).padStart(2, '0')}:00:00Z`, source_id: 2, temperature: 13, precipitation_probability: 10 })), sources: [{ id: 2, observation_type: "forecast", distance: 2100 }] };
+  const good = weatherReport(currentWeather, forecast, serviceNow, serviceSlot);
+  assert.equal(good.available, true); assert.match(good.text, /12 Grad/); assert.match(good.text, /drei Stunden/); assert.match(good.text, /10 Prozent/);
+  assert.equal(weatherReport(currentWeather, null, new Date("2026-10-26T09:00:00Z"), serviceSlot).available, false);
+  assert.equal(weatherReport({ ...currentWeather, sources: [{ id: 1, distance: 90000 }] }, null, serviceNow, serviceSlot).available, false);
+  assert.equal(weatherReport({ ...currentWeather, weather: { ...currentWeather.weather, temperature: null } }, null, serviceNow, serviceSlot).available, false);
+  assert.equal(weatherReport({ ...currentWeather, weather: { ...currentWeather.weather, timestamp: "2026-10-27T00:00:00Z" } }, null, serviceNow, serviceSlot).available, false);
+  assert.equal(weatherReport(null, forecast, serviceNow, serviceSlot).available, false);
+});
+test("traffic excludes future, finished and geographically unrelated closures", () => {
+  const event = { identifier: "local", coordinate: { lat: 49.98, long: 8.25 }, subtitle: "AS Mainz", startTimestamp: "2026-10-25T00:00:00+02:00", future: false, display_type: "CLOSURE_ENTRY_EXIT", description: ["Ende: 27.10.26 um 06:00 Uhr", "Abfahrt von der A60: AS Mainz"] };
+  const values = [event, { ...event, identifier: "future", future: true }, { ...event, identifier: "startFuture", startTimestamp: "2026-10-27T00:00:00Z" }, { ...event, identifier: "ended", description: ["Ende: 26.10.26 um 07:00 Uhr", "(Ende der Gesamtmaßnahme: 01.12.26)"] }, { ...event, identifier: "faraway", coordinate: { lat: 50.8, long: 8.25 } }];
+  const events = trafficEvents({ closure: values }, "A60", "closure", serviceSlot);
+  assert.equal(events.length, 1); assert.equal(events[0].id, "local"); assert.match(events[0].detail, /Abfahrt an der Anschlussstelle Mainz ist gesperrt/);
+  assert.throws(() => trafficEvents({}, "A60", "closure", serviceSlot));
+});
+test("partial or failed traffic feeds never imply clear roads", () => {
+  const partial = trafficReport([], 2, serviceNow), failed = trafficReport([], 0, serviceNow), complete = trafficReport([], 6, serviceNow);
+  assert.equal(partial.complete, false); assert.match(partial.text, /teilweise/); assert.doesNotMatch(partial.text, /störungsfrei|freie Fahrt/);
+  assert.equal(failed.available, false); assert.match(failed.text, /nicht abrufbar/);
+  assert.equal(complete.complete, true); assert.match(complete.text, /innerstädtische Verkehr.*nicht erfasst/);
+});
+test("hourly service must belong to the exact slot and be fetched within ten minutes", () => {
+  const m = (date: string, slot = serviceSlot.toISOString()) => ({ service: { fetchedAt: date, slot } });
+  assert.equal(serviceFreshForSlot(m(serviceNow.toISOString()), serviceSlot), true);
+  assert.equal(serviceFreshForSlot(m("2026-10-26T06:49:59Z"), serviceSlot), false);
+  assert.equal(serviceFreshForSlot(m("2026-10-26T07:01:00Z"), serviceSlot), false);
+  assert.equal(serviceFreshForSlot(m(serviceNow.toISOString(), "2026-10-26T08:00:00Z"), serviceSlot), false);
+  assert.equal(serviceFreshForSlot({}, serviceSlot), false);
+});
+test("source outages produce an explicit hourly fallback without model calls", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error("unavailable"); };
+  try {
+    const service = await collectHourlyService(serviceSlot, serviceNow);
+    assert.equal(service.weather.available, false); assert.equal(service.traffic.available, false);
+    assert.match(service.weather.text, /nicht verfügbar/); assert.match(service.traffic.text, /nicht abrufbar/);
+    assert.equal(service.errors.length, 7); assert.equal(service.sources.length, 0);
+  } finally { globalThis.fetch = original; }
 });

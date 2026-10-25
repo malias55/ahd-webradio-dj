@@ -25,7 +25,7 @@ const state = globalRadio.__ahdRadio ??= {
 };
 
 export function radioStatus() {
-  return { programmeVersion: "tr-repeat-audit-v1", imagingVersion: IMAGING_VERSION, presenter: presenterForSlot(new Date()).name, newsRefreshHours: 2, started: state.started, onAir: isOnAir(), playing: state.playing, startedAt: state.startedAt || null,
+  return { programmeVersion: "dry-service-v1", imagingVersion: IMAGING_VERSION, presenter: presenterForSlot(new Date()).name, newsRefreshHours: 2, serviceRefreshHours: 1, started: state.started, onAir: isOnAir(), playing: state.playing, startedAt: state.startedAt || null,
     listeners: state.listeners.size, preparing: state.preparing, error: state.error,
     nextNewsAt: upcomingNewsSlot()?.toISOString() ?? null, timezone: "Europe/Berlin", hours: "07:00 Türkçe · 08:00–18:00 Musik", newsHours: "07:00 Türkçe · 08:00–17:00 Deutsch" };
 }
@@ -161,7 +161,7 @@ export function startRadio(onBoundary: () => Promise<void>) {
   const cleanup = async () => {
     // Keep fortnightly news audio and a compact 90-day transmission journal.
     const cutoff = new Date(Date.now() - 14 * 86400_000), logCutoff = new Date(Date.now() - 90 * 86400_000);
-    await prisma.radioAsset.deleteMany({ where: { kind: "news", createdAt: { lt: cutoff } } });
+    await prisma.radioAsset.deleteMany({ where: { kind: { in: ["news", "news-main"] }, createdAt: { lt: cutoff } } });
     await pruneCache();
     await prisma.radioJob.deleteMany({ where: { updatedAt: { lt: logCutoff }, status: { not: "running" } } });
     await prisma.radioPlayback.deleteMany({ where: { startedAt: { lt: logCutoff } } });
