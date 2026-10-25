@@ -221,9 +221,10 @@ export async function renderGermanHourly(slot: Date, main: MainAudio | null, exa
   } };
 }
 
-export async function prepareNews(slot: Date, now = new Date()) {
+export async function prepareNews(slot: Date, simulatedNow?: Date) {
+  const startedAt = simulatedNow ?? new Date();
   if (!isNewsSlot(slot)) throw new Error("Nachrichten nur um 07 Uhr auf Türkisch und 08 bis 17 Uhr auf Deutsch");
-  if (newsLanguage(slot) === "de" && slot.getTime() < now.getTime()) throw new Error("Sendetermin verstrichen; keine nachträgliche Serviceausgabe");
+  if (newsLanguage(slot) === "de" && slot.getTime() < startedAt.getTime()) throw new Error("Sendetermin verstrichen; keine nachträgliche Serviceausgabe");
   const key = bulletinKey(slot);
   if (newsLanguage(slot) === "tr") {
     return withJob(key, async () => {
@@ -243,7 +244,11 @@ export async function prepareNews(slot: Date, now = new Date()) {
     }).catch(error => console.error("[radio main news]", error instanceof Error ? error.message : "failed"));
   }
   // Manual early preparation is allowed for main news; service is always fresh.
+  // Editorial/TTS work may take minutes; timestamp the actual service fetch,
+  // and recheck its deadline after that work, not against the initial tick.
+  const now = simulatedNow ?? new Date();
   if (slot.getTime() - now.getTime() > 10 * 60_000) return;
+  if (slot.getTime() < now.getTime()) throw new Error("Sendetermin verstrichen; keine nachträgliche Serviceausgabe");
   return withJob(key, async () => {
     if (await bulletinForSlot(slot)) return;
     const main = await prisma.radioAsset.findUnique({ where: { key: mainKey } });
