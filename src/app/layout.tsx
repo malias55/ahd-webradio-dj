@@ -1,10 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import { getLogtoContext } from "@logto/next/server-actions";
+import { getAppUser } from "@/lib/admin";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { TopNav } from "@/components/TopNav";
 import { RegisterSW } from "@/components/RegisterSW";
-import { logtoConfig } from "./logto";
 
 export const metadata: Metadata = {
   title: "AHD Radio DJ",
@@ -31,25 +30,9 @@ export const viewport: Viewport = {
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const authEnabled = process.env.SKIP_AUTH !== "true";
 
-  // Resolve auth state once at the layout so the nav can render links only when signed in.
-  let authenticated = !authEnabled;
-  let user: { name?: string; email?: string } | null = null;
-  if (authEnabled) {
-    try {
-      const ctx = await getLogtoContext(logtoConfig, { fetchUserInfo: true });
-      authenticated = ctx.isAuthenticated;
-      const claims = ctx.claims as Record<string, unknown> | undefined;
-      const info = ctx.userInfo as Record<string, unknown> | undefined;
-      user = authenticated
-        ? {
-            name: (info?.name as string) ?? (claims?.name as string) ?? undefined,
-            email: (info?.email as string) ?? (claims?.email as string) ?? undefined,
-          }
-        : null;
-    } catch { authenticated = false; }
-  } else {
-    user = { name: "Dev User" };
-  }
+  const appUser = await getAppUser();
+  const authenticated = !!appUser;
+  const user = appUser ? { name: appUser.name ?? undefined, email: appUser.email } : null;
 
   return (
     <html lang="de" suppressHydrationWarning>

@@ -74,7 +74,7 @@ function spawnFfmpeg(zoneId: string, kind: RelayKind, relayId: string, mime?: st
     "-f", "mp3",
     "pipe:1",
   ];
-  const proc = spawn(FFMPEG, args, { stdio: ["pipe", "pipe", "pipe"] });
+  const proc = spawn(/* turbopackIgnore: true */ FFMPEG, args, { stdio: ["pipe", "pipe", "pipe"] });
   console.log(`[relay ${tag}] ffmpeg spawn -f ${fmt} mime=${mime || "<none>"}`);
   proc.stderr.on("data", (d) => {
     const line = d.toString().trim();

@@ -6,18 +6,19 @@
     "dev": "dotenv -e .env.local -- tsx watch server.ts",
     "build": "next build --turbopack && tsc -p tsconfig.server.json",
     "start": "NODE_ENV=production node dist/server.js",
-    "lint": "next lint",
     "prisma:generate": "dotenv -e .env.local -- prisma generate",
     "prisma:push": "dotenv -e .env.local -- prisma db push",
     "prisma:studio": "dotenv -e .env.local -- prisma studio",
-    "seed": "dotenv -e .env.local -- tsx prisma/seed.ts"
+    "seed": "dotenv -e .env.local -- tsx prisma/seed.ts",
+    "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
-    "@logto/next": "^4.2.10",
     "@prisma/client": "^6.1.0",
+    "cheerio": "^1.2.0",
+    "fast-xml-parser": "^5.11.2",
     "jose": "^6.2.2",
     "lucide-react": "^1.8.0",
-    "next": "16.2.4",
+    "next": "^16.4.3",
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "socket.io": "^4.8.1",

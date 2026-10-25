@@ -124,8 +124,8 @@ export default function ControlPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Steuerung</h1>
         <p className="text-sm text-neutral-600 dark:text-neutral-400">
-          Lautstärke, Tab-Audio und Durchsagen pro Zone. Der native Stream läuft automatisch,
-          wenn keine Live-Quelle aktiv ist. Neue Zonen werden direkt in Postgres angelegt.
+          Lautstärke, Tab-Audio und Durchsagen pro Zone. Das Radio läuft von 08 bis 18 Uhr automatisch,
+          wenn keine Live-Quelle aktiv ist. Nachrichten kommen zur vollen Stunde.
         </p>
       </div>
 

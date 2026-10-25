@@ -85,11 +85,11 @@ function ZoneCard({
         <span className="text-xs font-medium text-neutral-600 dark:text-neutral-400">Standard-Quelle</span>
         <select
           className="input mt-1"
-          value={zone.defaultSource}
+          value={["radio", "azuracast"].includes(zone.defaultSource) ? "radio" : zone.defaultSource}
           disabled={!admin}
           onChange={(e) => onUpdate(zone.id, { defaultSource: e.target.value })}
         >
-          <option value="azuracast">AzuraCast (Stream)</option>
+          <option value="radio">Autohaus Radio · KI-Musik und Nachrichten</option>
           <option value="custom_url">Benutzerdefinierte URL</option>
           <option value="silent">Stumm</option>
         </select>
@@ -114,8 +114,8 @@ function ZoneCard({
             </button>
           )}
         </div>
-        {zone.defaultSource === "azuracast" && (
-          <p className="mt-1 text-xs text-neutral-400">AzuraCast-URL wird vom Server vorgegeben und kann nicht geändert werden.</p>
+        {["radio", "azuracast"].includes(zone.defaultSource) && (
+          <p className="mt-1 text-xs text-neutral-400">Das Autohaus Radio sendet automatisch von 08 bis 18 Uhr; Nachrichten von 08 bis 17 Uhr zur vollen Stunde.</p>
         )}
       </label>
 

@@ -1,33 +1,30 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const LOGTO_COOKIE_NAME = `logto_${process.env.LOGTO_APP_ID || ""}`;
+import { userForCookie } from "./lib/session";
+import { publicOrigin } from "./lib/radio/config";
 
-// Paths that must stay public:
-//  - "/"                          -> renders LoginPage when unauthenticated
-//  - "/callback"                  -> OIDC redirect target
-//  - "/api/auth/*"                -> session cleanup routes
-//  - "/api/health"                -> Railway healthcheck
-//  - "/backchannel_logout"        -> Logto server-to-server logout
-//  - GET /api/zones/:id/live      -> Pi devices pull the live stream (auth via DEVICE_API_KEY on ws)
 function isPublic(pathname: string, method: string) {
   if (pathname === "/") return true;
-  if (pathname === "/callback") return true;
-  if (pathname === "/backchannel_logout") return true;
+  if (method === "GET" && pathname === "/api/radio/stream") return true;
   if (pathname === "/api/health") return true;
-  if (pathname.startsWith("/api/auth/")) return true;
   if (method === "GET" && /^\/api\/zones\/[^/]+\/live\/?$/.test(pathname)) return true;
   return false;
 }
 
-export function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (process.env.SKIP_AUTH === "true") return NextResponse.next();
   if (isPublic(pathname, request.method)) return NextResponse.next();
 
-  const cookie = request.cookies.get(LOGTO_COOKIE_NAME);
-  if (cookie?.value) return NextResponse.next();
+  const origin = request.headers.get("origin");
+  if (!["GET", "HEAD", "OPTIONS"].includes(request.method) && origin && origin !== publicOrigin() && origin !== request.nextUrl.origin) {
+    return NextResponse.json({ error: "Origin mismatch" }, { status: 403 });
+  }
+
+  const user = await userForCookie(request.headers.get("cookie") || "");
+  if (user) return NextResponse.next();
 
   // Unauthenticated:
   //  - API calls → 401 JSON (so fetches don't silently redirect and break JSON parsing)

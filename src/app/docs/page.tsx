@@ -39,7 +39,7 @@ export default function DocsPage() {
           und in folgendem Befehl einsetzen:
         </p>
         <Code>{`sudo tee /etc/default/ahd-pi >/dev/null <<'EOF'
-AHD_SERVER=wss://radio-dj.doerrschuck.de/ws
+AHD_SERVER=wss://radio.doerrschuck.de/ws
 AHD_DEVICE_API_KEY=<Key hier eintragen>
 EOF`}</Code>
         <p className="mt-2">
@@ -146,7 +146,7 @@ cd /opt/ahd-pi-client/pi-client
 source /etc/default/ahd-pi && node client.js
 
 # mpv direkt testen
-mpv --no-video https://radio.doerrschuck.de/listen/fe4eea42-0571-4534-890e-d2a45fda8902/radio.mp3`}</Code>
+mpv --no-video https://radio.doerrschuck.de/api/radio/stream`}</Code>
       </Section>
 
       <Section title="Testen">

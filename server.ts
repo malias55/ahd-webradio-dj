@@ -26,6 +26,11 @@ import {
   type RelayKind,
 } from "./src/lib/broadcast";
 
+import { userForCookie } from "./src/lib/session";
+import { nativeSource, isOnAir, RADIO_STREAM_PATH, publicOrigin } from "./src/lib/radio/config";
+import { attachRadio, startRadio, stopRadio } from "./src/lib/radio/engine";
+import { pushConfigForZone } from "./src/lib/serverActions";
+
 const dev = process.env.NODE_ENV !== "production";
 const port = Number(process.env.PORT || 3000);
 const app = next({ dev });
@@ -40,23 +45,17 @@ if (!dev && process.env.SKIP_AUTH === "true") {
   console.error("[server] FATAL: SKIP_AUTH=true in production. Refusing to start.");
   process.exit(1);
 }
-if (!dev && process.env.LOGTO_COOKIE_SECRET && process.env.LOGTO_COOKIE_SECRET.length < 32) {
-  console.warn("[server] LOGTO_COOKIE_SECRET is shorter than 32 chars — iron-session requires 32+.");
-}
 
 function resolveOrigin(req: IncomingMessage): string {
-  if (process.env.LOGTO_BASE_URL) return process.env.LOGTO_BASE_URL.replace(/\/$/, "");
+  if (process.env.RADIO_PUBLIC_URL) return process.env.RADIO_PUBLIC_URL.replace(/\/$/, "");
   if (process.env.RAILWAY_PUBLIC_DOMAIN) return `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`;
   const proto = (req.headers["x-forwarded-proto"] as string) || "http";
   const host = req.headers.host || `localhost:${port}`;
   return `${proto}://${host}`;
 }
 
-function isAuthenticated(req: IncomingMessage): boolean {
-  if (process.env.SKIP_AUTH === "true") return true;
-  const cookie = req.headers.cookie || "";
-  const appId = process.env.LOGTO_APP_ID || "";
-  return !!(appId && cookie.includes(`logto_${appId}=`));
+async function isAuthenticated(req: IncomingMessage): Promise<boolean> {
+  return !!(await userForCookie(req.headers.cookie || ""));
 }
 
 const LIVE_RE = /^\/api\/zones\/([^/]+)\/live\/?$/;
@@ -109,7 +108,7 @@ function handleLive(req: IncomingMessage, res: ServerResponse) {
 
 // ── /api/zones/:id/current-source ──
 async function handleCurrentSource(req: IncomingMessage, res: ServerResponse) {
-  if (!isAuthenticated(req)) {
+  if (!(await isAuthenticated(req))) {
     res.writeHead(401, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "Unauthorized" }));
     return;
   }
@@ -141,7 +140,7 @@ async function handleCurrentSource(req: IncomingMessage, res: ServerResponse) {
     const liveUrl = `${origin}/api/zones/${zoneId}/live?m=stream`;
     body = { zoneId, zoneName: zone.name, url: liveUrl, sources: [{ url: liveUrl, kind: "stream" }], live: true, mode: "stream", volume: zone.volume };
   } else {
-    body = { zoneId, zoneName: zone.name, url: zone.streamUrl || process.env.AZURACAST_STREAM_URL || null, sources: [], live: false, mode: null, volume: zone.volume };
+    body = { zoneId, zoneName: zone.name, url: nativeSource(zone, origin), sources: [], live: false, mode: null, volume: zone.volume };
   }
 
   res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-cache" }).end(JSON.stringify(body));
@@ -156,10 +155,7 @@ async function pushConfig(socket: Socket, serial: string) {
   joinZoneRoom(socket, device.zoneId);
 
   const zone = device.zone;
-  const streamUrl =
-    zone?.defaultSource === "custom_url" || zone?.defaultSource === "azuracast"
-      ? zone?.streamUrl || process.env.AZURACAST_STREAM_URL || null
-      : null;
+  const streamUrl = zone ? nativeSource(zone, resolveOrigin(socket.request)) : null;
 
   broadcastConfig(serial, {
     zone: zone
@@ -173,6 +169,15 @@ async function pushConfig(socket: Socket, serial: string) {
 app.prepare().then(() => {
   const httpServer = createServer((req, res) => {
     const pathname = req.url?.split("?")[0] || "/";
+
+    if (pathname === RADIO_STREAM_PATH) {
+      if (req.method !== "GET") { res.writeHead(405).end(); return; }
+      if (!isOnAir()) { res.writeHead(503, { "Retry-After": "60", "Cache-Control": "no-store" }).end("Radio sendet von 08 bis 18 Uhr (Europe/Berlin)."); return; }
+      res.writeHead(200, { "Content-Type": "audio/mpeg", "Cache-Control": "no-cache, no-store", "X-Accel-Buffering": "no", "Connection": "keep-alive" });
+      res.flushHeaders();
+      attachRadio(res);
+      return;
+    }
 
     // Handle live + current-source directly — bypasses Next.js so relay state
     // is guaranteed accessible and res.write() flushes immediately.
@@ -272,12 +277,13 @@ app.prepare().then(() => {
   (global as any).__io = io;
 
   const broadcastNs = io.of("/broadcast");
-  broadcastNs.use((socket, next) => {
-    if (process.env.SKIP_AUTH === "true") return next();
-    const cookie = socket.handshake.headers.cookie || "";
-    const appId = process.env.LOGTO_APP_ID || "";
-    if (appId && cookie.includes(`logto_${appId}=`)) return next();
-    next(new Error("unauthorized"));
+  broadcastNs.use(async (socket, next) => {
+    const origin = socket.handshake.headers.origin;
+    if (origin && origin !== publicOrigin()) return next(new Error("origin mismatch"));
+    const user = await userForCookie(socket.handshake.headers.cookie || "");
+    if (!user) return next(new Error("unauthorized"));
+    socket.data.user = user;
+    next();
   });
   broadcastNs.on("connection", (socket) => {
     const owned = new Map<string, { kind: RelayKind; mime: string; relayId: string }>();
@@ -291,8 +297,8 @@ app.prepare().then(() => {
       owned.set(payload.zoneId, { kind, mime, relayId });
       if (payload.email || payload.name || payload.tabTitle) {
         setRelayMeta(relayId, kind, {
-          broadcasterEmail: payload.email,
-          broadcasterName: payload.name,
+          broadcasterEmail: socket.data.user.email,
+          broadcasterName: socket.data.user.name,
           tabTitle: payload.tabTitle,
         });
       }
@@ -368,8 +374,9 @@ app.prepare().then(() => {
         const zone = await prisma.zone.findUnique({ where: { id: zid } });
         if (!zone) return;
         sendToZone(zid, { type: "stop" });
-        if (zone.defaultSource !== "silent" && zone.streamUrl) {
-          sendToZone(zid, { type: "play", url: zone.streamUrl });
+        const source = nativeSource(zone);
+        if (source) {
+          sendToZone(zid, { type: "play", url: source });
           sendToZone(zid, { type: "volume", value: zone.volume });
         }
       } catch (err) { console.error("[broadcast] restore failed", err); }
@@ -392,6 +399,13 @@ app.prepare().then(() => {
   });
 
   httpServer.listen(port, "0.0.0.0", () => {
+    startRadio(async () => {
+      const zones = await prisma.zone.findMany({ where: { defaultSource: { in: ["radio", "azuracast"] } }, select: { id: true } });
+      await Promise.all(zones.map(z => pushConfigForZone(z.id)));
+    });
     console.log(`> AHD Radio DJ ready on 0.0.0.0:${port}`);
   });
 });
+
+process.on("SIGTERM", () => { stopRadio(); process.exit(0); });
+process.on("SIGINT", () => { stopRadio(); process.exit(0); });

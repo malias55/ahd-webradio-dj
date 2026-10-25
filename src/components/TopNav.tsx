@@ -9,6 +9,7 @@ import { doSignOut } from "@/app/actions/auth";
 
 const links = [
   { href: "/control", label: "Steuerung" },
+  { href: "/radio", label: "Radioprogramm" },
   { href: "/admin/devices", label: "Geräte" },
   { href: "/admin/zones", label: "Zonen" },
   { href: "/docs", label: "Docs" },

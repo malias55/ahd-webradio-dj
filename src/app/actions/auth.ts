@@ -1,25 +1,22 @@
 "use server";
+import { headers, cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { getAppUser } from "@/lib/admin";
+import { authCookies, centralAuthUrl, SESSION_COOKIES } from "@/lib/session";
+import { publicOrigin } from "@/lib/radio/config";
 
-import { getLogtoContext, signIn, signOut } from "@logto/next/server-actions";
-import { logtoConfig } from "../logto";
-
-export async function checkAuthStatus(): Promise<{ isAuthenticated: boolean }> {
-  if (process.env.SKIP_AUTH === "true") return { isAuthenticated: true };
-  try {
-    const { isAuthenticated } = await getLogtoContext(logtoConfig);
-    return { isAuthenticated };
-  } catch (error) {
-    console.error("[Auth Check] Error:", error);
-    return { isAuthenticated: false };
-  }
-}
-
+export async function checkAuthStatus() { return { isAuthenticated: !!(await getAppUser()) }; }
 export async function doSignIn() {
-  "use server";
-  await signIn(logtoConfig);
+  redirect(`${centralAuthUrl()}/login?returnTo=${encodeURIComponent(`${publicOrigin()}/control`)}`);
 }
-
 export async function doSignOut() {
-  "use server";
-  await signOut(logtoConfig);
+  const cookie = authCookies((await headers()).get("cookie") || "");
+  if (cookie) {
+    const response = await fetch(`${centralAuthUrl()}/api/auth/sign-out`, { method: "POST",
+      headers: { Cookie: cookie, Origin: publicOrigin(), "Content-Type": "application/json" }, body: "{}", signal: AbortSignal.timeout(5000) });
+    if (!response.ok) throw new Error("Abmelden nicht möglich. Bitte erneut versuchen.");
+  }
+  const store = await cookies();
+  for (const name of SESSION_COOKIES) store.set(name, "", { domain: ".doerrschuck.de", path: "/", secure: true, httpOnly: true, sameSite: "lax", maxAge: 0 });
+  redirect("/");
 }

@@ -98,8 +98,16 @@ async function applyState(
         el.volume = Math.max(0, Math.min(1, nextVol / 100));
         el.src = src.url;
         audioCreatedAt.set(key, Date.now());
-        el.addEventListener("error", () => recover());
-        el.addEventListener("ended", () => recover());
+        const retry = () => {
+          el.pause();
+          el.removeAttribute("src");
+          audioElements.delete(key);
+          audioCreatedAt.delete(key);
+          if (state) state.sources = state.sources.filter(s => keyFor(s) !== key);
+          setTimeout(() => { void recover(); }, 2000);
+        };
+        el.addEventListener("error", retry, { once: true });
+        el.addEventListener("ended", retry, { once: true });
         audioElements.set(key, el);
         try { await el.play(); } catch (e) { console.warn("[speaker] play failed", src.url, e); }
       }

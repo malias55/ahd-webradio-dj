@@ -40,11 +40,39 @@ model Device {
 model Zone {
   id            String   @id @default(uuid())
   name          String   @unique
-  defaultSource String   @default("azuracast") @map("default_source")
+  defaultSource String   @default("radio") @map("default_source")
   streamUrl     String?  @map("stream_url")
   volume        Int      @default(80)
   devices       Device[]
   createdAt     DateTime @default(now()) @map("created_at")
 
   @@map("zones")
+}
+
+// Audio lives in the existing database; local files are a disposable playback cache.
+model RadioAsset {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  kind      String
+  title     String
+  audio     Bytes
+  duration  Float
+  script    String?
+  metadata  Json?
+  slot      DateTime?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([kind, slot])
+  @@map("radio_assets")
+}
+
+model RadioJob {
+  key        String   @id
+  status     String   @default("pending")
+  attempts   Int      @default(0)
+  leaseUntil DateTime? @map("lease_until")
+  error      String?
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("radio_jobs")
 }

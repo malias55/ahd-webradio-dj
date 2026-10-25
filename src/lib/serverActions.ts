@@ -1,14 +1,11 @@
+import { nativeSource, publicOrigin } from "./radio/config";
 import { prisma } from "./prisma";
 import { sendToDevice, joinZoneRoom } from "./deviceHub";
 import { currentMode, announceRelaysForZone } from "./broadcast";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const io = () => (global as any).__io as import("socket.io").Server | undefined;
 
-function resolveOrigin(): string {
-  if (process.env.LOGTO_BASE_URL) return process.env.LOGTO_BASE_URL.replace(/\/$/, "");
-  if (process.env.RAILWAY_PUBLIC_DOMAIN) return `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`;
-  return `http://localhost:${process.env.PORT || 3000}`;
-}
+const resolveOrigin = publicOrigin;
 
 export async function pushConfigForDevice(serial: string) {
   const device = await prisma.device.findUnique({
@@ -50,10 +47,7 @@ export async function pushConfigForDevice(serial: string) {
     return;
   }
 
-  const streamUrl =
-    zone.defaultSource === "custom_url" || zone.defaultSource === "azuracast"
-      ? zone.streamUrl || process.env.AZURACAST_STREAM_URL || null
-      : null;
+  const streamUrl = nativeSource(zone);
   if (streamUrl) {
     sendToDevice(serial, { type: "play", url: streamUrl });
     sendToDevice(serial, { type: "volume", value: zone.volume });

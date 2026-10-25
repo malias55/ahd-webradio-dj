@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { hasAnyRelay, getStreamInfo } from "@/lib/broadcast";
-import { getAzuracastNowPlaying } from "@/lib/azuracast";
+import { radioStatus } from "@/lib/radio/engine";
+import { isOnAir } from "@/lib/radio/config";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ export async function GET() {
       ...z,
       liveBroadcast: hasAnyRelay(z.id),
       streamInfo: getStreamInfo(z.id),
-      nowPlaying: z.streamUrl ? await getAzuracastNowPlaying(z.streamUrl) : null,
+      nowPlaying: ["radio", "azuracast"].includes(z.defaultSource) ? { online: isOnAir() && !!radioStatus().playing, title: radioStatus().playing?.title, artist: "Autohaus Dörrschuck Radio" } : null,
     })),
   );
   return NextResponse.json(hydrated);

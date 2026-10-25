@@ -16,11 +16,11 @@ export function LoginPage() {
       <form action={doSignIn} className="w-full">
         <button type="submit" className="btn-primary w-full px-6 py-3 text-base">
           <LogIn className="h-5 w-5" aria-hidden />
-          Mit Logto anmelden
+          Mit AHD-Konto anmelden
         </button>
       </form>
       <p className="text-xs text-neutral-500">
-        Single Sign-On über <span className="font-mono">duxpom.logto.app</span>
+        Derselbe Zugang wie im AHD-DMS.
       </p>
     </div>
   );

@@ -1,3 +1,4 @@
+import { nativeSource } from "@/lib/radio/config";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { currentMode, announceRelaysForZone } from "@/lib/broadcast";
@@ -48,7 +49,7 @@ export async function GET(req: Request, { params }: Ctx) {
   return NextResponse.json({
     zoneId: id,
     zoneName: zone.name,
-    url: zone.streamUrl || process.env.AZURACAST_STREAM_URL || null,
+    url: nativeSource(zone, origin),
     sources: [],
     live: false,
     mode: null,

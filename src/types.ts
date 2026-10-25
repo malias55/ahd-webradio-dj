@@ -1,7 +1,7 @@
 export type Zone = {
   id: string;
   name: string;
-  defaultSource: "azuracast" | "silent" | "custom_url" | string;
+  defaultSource: "radio" | "silent" | "custom_url" | string;
   streamUrl: string | null;
   volume: number;
   devices?: Device[];
