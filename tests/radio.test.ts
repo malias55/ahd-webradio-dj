@@ -216,3 +216,11 @@ test("archived audio supports bounded byte ranges and rejects invalid seeks", as
   for (const range of ["bytes=9-", "bytes=4-2", "bytes=-0", "bytes=", "bytes=0-1,3-4"]) assert.equal(audioResponse(bytes, range).status, 416);
   assert.equal(audioResponse(bytes, null).status, 200);
 });
+
+import { speechText } from "../src/lib/radio/pronunciation";
+test("Turkish TTS reads TRT as TERETE and the dealership as Dörşuk", () => {
+  assert.equal(speechText("Autohaus Dörrschuck: TRT’nin TRT Dinle, TRT Belgesel ve TRT 2 yayınları.", "tr"), "Autohaus Dörşuk: TERETE’nin TERETE Dinle, TERETE Belgesel ve TERETE 2 yayınları.");
+  assert.equal(speechText("TRT2, T.R.T. ve T R T", "tr"), "TERETE 2, TERETE ve TERETE");
+  assert.equal(speechText("TRTSpor, XTRT, TRTnin", "tr"), "TRTSpor, XTRT, TRTnin");
+  assert.equal(speechText("Autohaus Dörrschuck und TRT", "de"), "Autohaus Dörrschuck und TRT");
+});

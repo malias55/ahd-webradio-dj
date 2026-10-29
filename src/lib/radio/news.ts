@@ -1,10 +1,12 @@
+import { createHash } from "node:crypto";
+import { speechText, TURKISH_PRONUNCIATION_VERSION } from "./pronunciation";
 import { XMLParser } from "fast-xml-parser";
 import { load } from "cheerio";
 import { prisma } from "../prisma";
 import { edenJson, presenterForHour, presenterForSlot, servicePresenter, speech, type ModelCall } from "./providers";
 import { withJob } from "./store";
-import { mixDryBulletin, joinNewsParts, prependInvocation, type Cue } from "./mix";
-import { IMAGING_VERSION, GERMAN_DIVIDER_VERSION } from "./imaging";
+import { mixDryBulletin, joinNewsParts, frameTurkishProgramme, type Cue } from "./mix";
+import { IMAGING_VERSION, GERMAN_DIVIDER_VERSION, turkishSignatureAsset, TURKISH_SIGNATURE_KEY } from "./imaging";
 import { isNewsSlot, stationTime, newsLanguage } from "./config";
 import { collectHourlyService, serviceFreshForSlot } from "./service";
 import type { RadioAsset } from "@prisma/client";
@@ -21,7 +23,7 @@ export const DEFAULT_FEEDS = [
 ];
 export const TURKISH_OPENING = "Rahmân ve Rahîm olan Allah'ın adıyla. ";
 export const TURKISH_OPENING_VERSION = "tr-dry-opening-v3";
-export const TURKISH_NEWS_VERSION = "tr-speech-only-v4";
+export const TURKISH_NEWS_VERSION = "tr-dorsuk-signature-v5";
 
 // The invocation is identical every day: preserve Turkish spelling and language
 // and reuse its spoken audio instead of buying another TTS call per bulletin.
@@ -37,6 +39,24 @@ export async function turkishInvocation() {
   });
   return prisma.radioAsset.findUniqueOrThrow({ where: { key } });
 }
+export const TURKISH_INTRO = "Autohaus Dörşuk Radyo'dan merhaba. Türkiye'den, Almanya'dan ve dünyadan seçtiğimiz haberleri dinliyorsunuz. Bu bülten yapay zekâ tarafından hazırlanmış ve seslendirilmiştir.";
+export const TURKISH_OUTRO = "Bültenimizin sonuna geldik. Haber kaynaklarına radyo panelimizden ulaşabilirsiniz. Güzel, huzurlu ve keyifli bir gün dileriz. Autohaus Dörşuk Radyo'da tekrar görüşmek üzere.";
+export async function turkishStaticSpeech(role: "intro" | "outro", example = false) {
+  const voice = presenterForHour(7).voiceId;
+  const text = role === "outro" ? TURKISH_OUTRO : example ? TURKISH_INTRO.replace("Türkiye'den", "Bu, Türkçe sabah bültenimizin bir örneğidir. Türkiye'den") : TURKISH_INTRO;
+  const model = process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2";
+  const hash = createHash("sha256").update(JSON.stringify({ text: speechText(text, "tr"), voice, model })).digest("hex").slice(0, 24);
+  const key = `speech-static:tr:${role}:${hash}`;
+  await withJob(key, async () => {
+    if (await prisma.radioAsset.findUnique({ where: { key }, select: { id: true } })) return;
+    const { normalizeAudio } = await import("./store");
+    const audio = await normalizeAudio(await speech(text, voice, "tr"));
+    await prisma.radioAsset.create({ data: { key, kind: "speech-static", title: `Autohaus Dörşuk · Türkçe ${role}`, script: text, ...audio,
+      metadata: { language: "tr", role, voiceId: voice, ttsModel: model, aiGenerated: true, backgroundMusic: false } } });
+  });
+  return prisma.radioAsset.findUniqueOrThrow({ where: { key } });
+}
+
 export const DEFAULT_TR_FEEDS = [
   "https://www.trthaber.com/kultur_sanat_articles.rss",
   "https://www.trthaber.com/bilim_teknoloji_articles.rss",
@@ -216,29 +236,36 @@ export async function editorialContent(slot: Date): Promise<EditorialContent> {
 export async function renderBulletin(slot: Date, content: EditorialContent, example = false, mainPart = false) {
   const presenter = presenterForSlot(slot), language = content.language;
   const intro = language === "tr"
-    ? `Autohaus Dörrschuck Radyo'dan merhaba. ${example ? "Bu, Türkçe sabah bültenimizin bir örneğidir. " : ""}Türkiye'den, Almanya'dan ve dünyadan seçtiğimiz haberleri dinliyorsunuz. Bu bülten yapay zekâ tarafından hazırlanmış ve seslendirilmiştir.`
+    ? (example ? TURKISH_INTRO.replace("Türkiye'den", "Bu, Türkçe sabah bültenimizin bir örneğidir. Türkiye'den") : TURKISH_INTRO)
     : `Guten Tag aus Mainz und herzlich willkommen bei Autohaus Dörrschuck Radio. Ich bin ${presenter.name}, ${presenter.assistant}. ${example ? "Sie hören eine Beispielausgabe unseres " : "Hier kommt unser "}KI-generierten Magazins mit freundlichen Meldungen aus Mainz und darüber hinaus.`;
   const outro = language === "tr"
-    ? "Bültenimizin sonuna geldik. Haber kaynaklarına radyo panelimizden ulaşabilirsiniz. Güzel, huzurlu ve keyifli bir gün dileriz. Autohaus Dörrschuck Radyo'da tekrar görüşmek üzere."
+    ? TURKISH_OUTRO
     : mainPart ? "Das waren unsere Hauptnachrichten. Und jetzt übernimmt Jane mit dem Wetter und dem Verkehr rund um Mainz."
     : "Das war unser Nachrichtenmagazin. Alle Quellen finden Sie im Radio-Dashboard. Wir wünschen Ihnen einen schönen Aufenthalt im Autohaus Dörrschuck. Unser Team ist gerne für Ihre Fragen da. Jetzt geht es entspannt mit guter Musik weiter.";
   const paragraphs = [intro, ...content.stories.map(s => s.text), outro];
   const segments = [];
-  for (let i = 0; i < paragraphs.length; i++) segments.push({ audio: await speech(paragraphs[i], presenter.voiceId, language), kind: i === 0 ? "intro" as const : i === paragraphs.length - 1 ? "outro" as const : "story" as const });
+  for (let i = 0; i < paragraphs.length; i++) {
+    const kind = i === 0 ? "intro" as const : i === paragraphs.length - 1 ? "outro" as const : "story" as const;
+    const audio = language === "tr" && kind !== "story"
+      ? Buffer.from((await turkishStaticSpeech(kind, example)).audio)
+      : await speech(paragraphs[i], presenter.voiceId, language);
+    segments.push({ audio, kind });
+  }
   let { timeline, ...audio } = await mixDryBulletin(segments, language === "tr" ? { opener: false, closer: false } : { closer: !mainPart });
   if (language === "tr") {
     const invocation = await turkishInvocation();
-    const combined = await prependInvocation(Buffer.from(invocation.audio), audio.audio);
-    timeline = [{ kind: "invocation", start: 0, end: combined.offset }, ...timeline.map(c => ({ ...c, start: c.start + combined.offset, end: c.end + combined.offset }))];
+    const signature = await turkishSignatureAsset();
+    const combined = await frameTurkishProgramme(invocation, signature, { ...audio, timeline });
+    timeline = combined.timeline;
     audio = { audio: combined.audio, duration: combined.duration };
   }
   if (audio.duration > 260) throw new Error("Die fertige Ausgabe überschreitet das Sendezeitfenster.");
-  return { ...audio, script: `${language === "tr" ? TURKISH_OPENING : ""}${paragraphs.join("\n\n")}`,
+  return { ...audio, script: `${language === "tr" ? TURKISH_OPENING : ""}${paragraphs.map(p => speechText(p, language)).join("\n\n")}`,
     metadata: { programmeVersion: language === "tr" ? TURKISH_NEWS_VERSION : GERMAN_NEWS_VERSION, voiceId: presenter.voiceId, presenter: presenter.name, language, gender: presenter.gender, aiGenerated: true, backgroundMusic: false, editorialVersion: language === "de" ? GERMAN_EDITORIAL_VERSION : null,
       sources: content.sources, stories: content.stories, modelCalls: content.modelCalls, editionSlot: content.editionSlot, example,
       authorModel: process.env.EDENAI_MODEL || "gpt-6-luna", reviewModel: process.env.EDENAI_REVIEW_MODEL || process.env.EDENAI_MODEL || "gpt-6-luna",
-      openingVersion: language === "tr" ? TURKISH_OPENING_VERSION : null,
-      ttsModel: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2", imagingVersion: language === "tr" ? null : IMAGING_VERSION, dividerVersion: language === "de" ? GERMAN_DIVIDER_VERSION : null, timeline,
+      openingVersion: language === "tr" ? TURKISH_OPENING_VERSION : null, pronunciationVersion: language === "tr" ? TURKISH_PRONUNCIATION_VERSION : null,
+      ttsModel: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2", imagingVersion: language === "tr" ? TURKISH_SIGNATURE_KEY : IMAGING_VERSION, dividerVersion: language === "de" ? GERMAN_DIVIDER_VERSION : null, timeline,
       region: language === "tr" ? "Türkiye / Almanya" : process.env.NEWS_REGION || "Mainz und Rheinhessen" } };
 }
 

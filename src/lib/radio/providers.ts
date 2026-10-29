@@ -1,3 +1,4 @@
+import { speechText } from "./pronunciation";
 import { prisma } from "../prisma";
 import { normalizeAudio, withJob } from "./store";
 import { stationTime } from "./config";
@@ -57,7 +58,7 @@ export async function germanVoice() {
 
 export async function speech(text: string, voiceId: string, language: "de" | "tr" = "de") {
   return eleven(`/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`, {
-    text, model_id: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2", language_code: language,
+    text: speechText(text, language), model_id: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2", language_code: language,
     voice_settings: { stability: 0.65, similarity_boost: 0.75, style: 0.15, use_speaker_boost: true },
   });
 }

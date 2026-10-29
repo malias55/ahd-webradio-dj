@@ -166,3 +166,19 @@ export async function prependInvocation(invocation: Buffer, programme: Uint8Arra
     return { ...(await normalizeAudio(await readFile(output), 270)), offset: voice.duration + 0.35 };
   } finally { await rm(dir, { recursive: true, force: true }); }
 }
+
+// Invocation remains the first spoken content. The approved signature occupies a
+// separate interval after it; no instrumental audio is loaded under any voice.
+export async function frameTurkishProgramme(invocation: { audio: Uint8Array; duration: number }, signature: { audio: Uint8Array; duration: number }, body: { audio: Uint8Array; duration: number; timeline: Cue[] }) {
+  const dir = await mkdtemp(join(tmpdir(), "ahd-tr-frame-"));
+  try {
+    const first = join(dir, "invocation.mp3"), sound = join(dir, "signature.mp3"), speech = join(dir, "body.mp3"), output = join(dir, "framed.wav");
+    await writeFile(first, invocation.audio); await writeFile(sound, signature.audio); await writeFile(speech, body.audio);
+    const signatureStart = invocation.duration + 0.35, offset = signatureStart + signature.duration + 0.35;
+    await command(process.env.FFMPEG_PATH || "ffmpeg", ["-v", "error", "-nostdin", "-i", first, "-i", sound, "-i", speech,
+      "-filter_complex", "[0:a]apad=pad_dur=0.35[v];[1:a]apad=pad_dur=0.35[s];[v][s][2:a]concat=n=3:v=0:a=1[out]", "-map", "[out]", "-ar", "44100", "-ac", "2", "-y", output]);
+    const audio = await normalizeAudio(await readFile(output), 270);
+    if (audio.duration > 260) throw new Error("Türkische Ausgabe überschreitet das Sendezeitfenster");
+    return { ...audio, timeline: [{ kind: "invocation", start: 0, end: invocation.duration }, { kind: "opener", start: signatureStart, end: signatureStart + signature.duration }, ...body.timeline.map(c => ({ ...c, start: c.start + offset, end: c.end + offset }))] };
+  } finally { await rm(dir, { recursive: true, force: true }); }
+}

@@ -6,7 +6,7 @@ import { AudioDetails, type Asset, time, duration, languageLabel } from "@/compo
 
 type Playback = { id: string; assetId: string | null; title: string; language: string; kind: string; startedAt: string; endedAt: string | null; status: string; scheduledFor: string | null; repeated: boolean; listeners: number; error: string | null };
 type Job = { key: string; status: string; attempts: number; error: string | null; updatedAt: string };
-type Status = { onAir: boolean; playing: Asset | null; preparing: boolean; nextNewsAt: string | null; error: string | null; region: string; nextPresenter: string | null; configured: { elevenlabs: boolean; edenai: boolean }; assets: Asset[]; actions: string[]; failures: Job[]; jobs: Job[]; playbacks: Playback[] };
+type Status = { onAir: boolean; playing: Asset | null; preparing: boolean; nextNewsAt: string | null; error: string | null; region: string; nextPresenter: string | null; assets: Asset[]; failures: Job[]; jobs: Job[]; playbacks: Playback[] };
 const labels: Record<string, string> = { starting: "Startet", playing: "Läuft", completed: "Beendet", interrupted: "Unterbrochen", failed: "Fehler", skipped: "Nicht gesendet", done: "Fertig", running: "In Arbeit", pending: "Vorgemerkt" };
 const jobLabel = (key: string) => key.startsWith("repeat:") ? "Wiederholung vorbereitet" : key.startsWith("news-example:") ? "Hörbeispiel erstellen" : key.startsWith("news-main:") ? "Hauptnachrichten erstellen" : key.startsWith("news-hourly:") ? "Morgenausgabe mit Wetter und Verkehr" : key.startsWith("news:") ? "Nachrichten erstellen" : key.startsWith("music:") ? "Musiktitel erstellen" : "Klangbaustein erstellen";
 
@@ -27,15 +27,6 @@ export default function RadioPage() {
     return () => clearInterval(timer);
   }, [reload]);
   useEffect(() => { void fetch("/api/me").then(r => r.json()).then(v => setAdmin(v.admin)).catch(() => {}); }, []);
-  const generate = async (action: string) => {
-    setBusy(true); setMessage("");
-    try {
-      const r = await fetch("/api/radio", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
-      const result = await r.json();
-      if (!r.ok) throw new Error(result.error);
-      setMessage("Vorbereitung gestartet."); await reload();
-    } catch (e) { setMessage((e as Error).message); } finally { setBusy(false); }
-  };
   const upload = async (form: HTMLFormElement) => {
     setBusy(true); setMessage("");
     try {
@@ -57,7 +48,7 @@ export default function RadioPage() {
       <p>{status.playing?.title || "Nächster Start: türkisches Magazin um 07:00 Uhr, Musik ab 08:00 Uhr."}</p>
       {status.nextNewsAt && <p className="text-sm">Nächste Ausgabe: {time(status.nextNewsAt)} · {status.nextPresenter}{status.preparing ? " · wird vorbereitet" : ""}</p>}
       <div className="grid gap-2 text-sm sm:grid-cols-2"><p>07 Uhr · Türkçe mit Cavit<br />08 Uhr · deutsche Nachrichten mit Elias</p><p>08 Uhr · Wetter und Verkehr mit Jane<br />Mainz und Umgebung · A60 / A63 / A643</p></div>
-      <p className="text-xs text-neutral-500">Deutsche Ortszeit. Im Testbetrieb täglich nur zwei Ausgaben: Türkisch um 07 Uhr und Deutsch um 08 Uhr, einschließlich frischem Wetter und Verkehr. Danach keine weiteren Nachrichtengenerierungen. Alle gesprochenen Beiträge ohne Musikbett, auch die türkische Ausgabe. Türkisch vorerst vollständig ohne Jingles und Übergangssounds. Zwischen Meldungen kurze Pausen; leiser Klavierklang nur zum Wetter und Verkehr. Nachrichten und Moderationsstimmen sind KI-generiert.</p>
+      <p className="text-xs text-neutral-500">Deutsche Ortszeit. Im Testbetrieb täglich nur zwei Ausgaben: Türkisch um 07 Uhr und Deutsch um 08 Uhr, einschließlich frischem Wetter und Verkehr. Danach keine weiteren Nachrichtengenerierungen. Alle gesprochenen Beiträge ohne Musikbett, auch die türkische Ausgabe. Türkisch mit dem ausgewählten kurzen Intro nach dem gesprochenen Einstieg; keine Klänge zwischen den Meldungen oder am Schluss. Zwischen Meldungen kurze Pausen; leiser Klavierklang nur zum Wetter und Verkehr. Nachrichten und Moderationsstimmen sind KI-generiert.</p>
       {status.error && <p className="text-sm text-amber-700 dark:text-amber-400" role="status">{status.error}</p>}
     </div>
     <div className="card space-y-4"><h2 className="font-semibold">Hörbeispiele</h2>{examples.map(a => <div key={a.id} className="space-y-2 border-b border-neutral-200 pb-4 dark:border-neutral-800"><h3 className="font-medium">{a.title}</h3><AudioDetails asset={a} /></div>)}</div>
@@ -70,9 +61,7 @@ export default function RadioPage() {
     </div>
     <div className="card space-y-4"><h2 className="font-semibold">Nachrichtenausgaben · {day}</h2>{!news.length && <p className="text-sm text-neutral-500">Noch keine gespeicherte Ausgabe für diesen Tag.</p>}{news.map(a => <details key={a.id}><summary className="cursor-pointer font-medium">{a.title}</summary><div className="mt-3"><AudioDetails asset={a} /></div></details>)}</div>
     {admin && <div className="card space-y-4">
-      <h2 className="font-semibold">Programm vorbereiten</h2><p className="text-sm">ElevenLabs: {status.configured.elevenlabs ? "verbunden" : "API-Schlüssel fehlt"} · Eden AI: {status.configured.edenai ? "verbunden" : "API-Schlüssel fehlt"}</p>
-      <div className="flex flex-wrap gap-2"><button className="btn-primary" disabled={busy || status.actions.includes("music") || !status.configured.elevenlabs || music.length >= 24} onClick={() => generate("music")}>{status.actions.includes("music") ? "Musik wird erstellt…" : "3 Musiktitel generieren (kostenpflichtig)"}</button><button className="btn-outline" disabled={busy || status.actions.includes("news") || status.preparing || !status.configured.elevenlabs || !status.configured.edenai} onClick={() => generate("news")}>Nächste Ausgabe vorbereiten</button></div>
-      <p className="text-xs text-neutral-500">Pro Tag wird genau eine türkische und eine deutsche Ausgabe erstellt. Jane ergänzt nur um 08 Uhr Wetter und Verkehr, ohne zusätzliche Textmodell-Aufrufe. Vorbereitung zehn Minuten vor dem Sendetermin; früher gestartete Vorbereitungen erzeugen zunächst nur den Hauptteil.</p>
+      <h2 className="font-semibold">Musiktitel importieren</h2>
       <form onSubmit={e => { e.preventDefault(); void upload(e.currentTarget); }} className="space-y-2"><label className="block text-sm font-medium" htmlFor="music-file">Musiktitel importieren</label><input id="music-file" name="audio" type="file" accept="audio/*" required className="input" /><input name="title" aria-label="Musiktitel" placeholder="Titel" className="input" maxLength={100} /><button type="submit" className="btn-outline" disabled={busy}>Audio hinzufügen</button><p className="text-xs text-neutral-500">Bis 20 MB und 10 Minuten. Maximal 24 Musiktitel.</p></form>{message && <p role="status" className="text-sm">{message}</p>}
     </div>}
     <div className="card space-y-4"><h2 className="font-semibold">Musikpool · {music.length} Titel</h2>{music.map(a => <details key={a.id}><summary className="cursor-pointer text-sm font-medium">{a.title} · {duration(a.duration)}</summary><div className="mt-3"><AudioDetails asset={a} /></div></details>)}</div>

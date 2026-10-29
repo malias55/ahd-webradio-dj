@@ -2,17 +2,12 @@ import { NextResponse } from "next/server";
 import { isAdmin, isAuthorized } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
 import { radioStatus } from "@/lib/radio/engine";
-import { generateMusic } from "@/lib/radio/providers";
-import { prepareNews } from "@/lib/radio/news";
 import { upcomingNewsSlot, publicOrigin, stationTime, stationDayBounds } from "@/lib/radio/config";
 import { normalizeAudio } from "@/lib/radio/store";
 import { randomUUID } from "node:crypto";
 import { presenterForSlot } from "@/lib/radio/providers";
 
 export const dynamic = "force-dynamic";
-const jobs = globalThis as unknown as { __radioActions?: Set<string> };
-const actions = jobs.__radioActions ??= new Set();
-
 export async function GET(req: Request) {
   if (!(await isAuthorized())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const day = new URL(req.url).searchParams.get("day") || stationTime().date;
@@ -25,7 +20,7 @@ export async function GET(req: Request) {
     prisma.radioPlayback.findMany({ where: { startedAt: { gte: range.start, lt: range.end } }, orderBy: { startedAt: "desc" }, take: 500 }),
   ]);
   const failures = jobs.filter(j => j.status === "failed").slice(0, 5);
-  return NextResponse.json({ ...radioStatus(), day, assets, failures, jobs, playbacks, actions: [...actions],
+  return NextResponse.json({ ...radioStatus(), day, assets, failures, jobs, playbacks, generationEnabled: false,
     configured: { elevenlabs: !!process.env.ELEVENLABS_API_KEY, edenai: !!process.env.EDENAI_API_KEY },
     region: process.env.NEWS_REGION || "Mainz und Rheinhessen", model: process.env.EDENAI_MODEL || "gpt-6-luna",
     newsRefreshHours: 24, serviceRefreshHours: 24, nextPresenter: upcomingNewsSlot() ? `${presenterForSlot(upcomingNewsSlot()!).name}${stationTime(upcomingNewsSlot()!).hour === 7 ? "" : " · Jane für Wetter und Verkehr"}` : null });
@@ -48,17 +43,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true });
     } catch { return NextResponse.json({ error: "Audiodatei konnte nicht verarbeitet werden" }, { status: 422 }); }
   }
-  const body = await req.json();
-  const action = body?.action;
-  if (action !== "music" && action !== "news") return NextResponse.json({ error: "Unbekannte Aktion" }, { status: 400 });
-  if (!process.env.ELEVENLABS_API_KEY || (action === "news" && !process.env.EDENAI_API_KEY)) return NextResponse.json({ error: "API-Schlüssel im Hauptservice fehlen" }, { status: 409 });
-  if (actions.has(action)) return NextResponse.json({ error: "Diese Generierung läuft bereits" }, { status: 409 });
-  const slot = upcomingNewsSlot();
-  if (action === "news" && (!slot || slot.getTime() - Date.now() > 3600_000)) return NextResponse.json({ error: "Nachrichten werden frühestens eine Stunde vor dem Sendetermin vorbereitet" }, { status: 409 });
-  actions.add(action);
-  // The custom Node server stays resident; no separate worker or serverless task required.
-  void (action === "music" ? generateMusic() : prepareNews(slot!)).catch(e => {
-    console.error("[radio generation]", e instanceof Error ? e.message : "failed");
-  }).finally(() => actions.delete(action));
-  return NextResponse.json({ accepted: true, slot: action === "news" ? slot : undefined }, { status: 202 });
+  // Manual generation is available only through server-side maintenance scripts.
+  // Removing buttons alone would leave the paid provider calls reachable.
+  return NextResponse.json({ error: "Generierungen werden ausschließlich im Backend verwaltet." }, { status: 403 });
 }

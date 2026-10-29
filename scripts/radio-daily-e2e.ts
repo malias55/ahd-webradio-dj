@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { randomInt } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,6 +17,7 @@ async function main() {
   const repeat = new Date(slot.getTime() + 86400_000), missing = new Date(repeat.getTime() + 86400_000);
   const mainKey = mainNewsKey(slot), keys = [mainKey, mainNewsKey(repeat), mainNewsKey(missing), bulletinKey(slot), bulletinKey(repeat), bulletinKey(missing)];
   const ids: string[] = [], originalFetch = globalThis.fetch;
+  const testVoice = `e2e-turkish-${randomUUID()}`, originalTurkishVoice = process.env.ELEVENLABS_TURKISH_VOICE_ID;
   try {
     assert.equal(await prisma.radioAsset.count({ where: { key: { in: keys } } }), 0, "choose unused test slots");
     const tonePath = join(dir, "tone.mp3");
@@ -78,13 +79,29 @@ async function main() {
     // Measure the actual encoded German mix: only a pure 440 Hz test voice may
     // remain inside speech intervals, including when real production jingles exist.
     const turkishFetch = globalThis.fetch;
-    globalThis.fetch = async (input, init) => String(input).includes("api.elevenlabs.io/v1/text-to-speech/")
-      ? new Response(tone, { headers: { "content-type": "audio/mpeg" } }) : turkishFetch(input, init);
+    const trRequests: string[] = [];
+    process.env.ELEVENLABS_TURKISH_VOICE_ID = testVoice;
+    globalThis.fetch = async (input, init) => {
+      if (String(input).includes("api.elevenlabs.io/v1/text-to-speech/")) {
+        const request = JSON.parse(String(init?.body));
+        assert.equal(request.language_code, "tr");
+        trRequests.push(request.text);
+        return new Response(tone, { headers: { "content-type": "audio/mpeg" } });
+      }
+      return turkishFetch(input, init);
+    };
     const trSlot = new Date(slot.getTime() - 3600_000);
-    const turkish = await renderBulletin(trSlot, { stories: [{ text: "Test haber.", sourceIds: [1] }], sources: [], modelCalls: [], language: "tr", editionSlot: trSlot.toISOString() });
+    const trContent = { stories: [{ text: "TRT’nin yeni yayını.", sourceIds: [1] }], sources: [], modelCalls: [], language: "tr" as const, editionSlot: trSlot.toISOString() };
+    const turkish = await renderBulletin(trSlot, trContent);
+    const firstRequestCount = trRequests.length;
+    await renderBulletin(trSlot, trContent);
+    assert.equal(trRequests.length - firstRequestCount, 1, "static intro, outro and invocation must be cached; only story gets new TTS");
+    assert.ok(trRequests.includes("TERETE’nin yeni yayını."));
+    assert.ok(trRequests.some(t => t.includes("Autohaus Dörşuk")));
     assert.equal(turkish.metadata.backgroundMusic, false);
-    assert.equal(turkish.metadata.timeline.filter(c => ["opener", "closer", "divider"].includes(c.kind)).length, 0, "Turkish news has no transition sounds at all");
+    assert.deepEqual(turkish.metadata.timeline.filter(c => ["opener", "closer", "divider"].includes(c.kind)).map(c => c.kind), ["opener"], "only the approved standalone opener is allowed");
     assert.ok(turkish.script.startsWith(TURKISH_OPENING));
+    assert.match(turkish.script, /TERETE/);
     const speechKinds = new Set(["invocation", "intro", "story", "outro"]);
     for (const voice of turkish.metadata.timeline.filter(c => speechKinds.has(c.kind))) for (const music of turkish.metadata.timeline.filter(c => ["opener", "closer", "divider"].includes(c.kind)))
       assert.ok(voice.end <= music.start || music.end <= voice.start, "Turkish voice overlaps imaging");
@@ -108,6 +125,10 @@ async function main() {
     console.log("PASS daily morning editions, cached generation, no 09:00 purchases, early service deferred, missing-main fallback, journal persisted; encoded German, Turkish and station-ID speech contain no background music");
   } finally {
     globalThis.fetch = originalFetch;
+    if (originalTurkishVoice === undefined) delete process.env.ELEVENLABS_TURKISH_VOICE_ID;
+    else process.env.ELEVENLABS_TURKISH_VOICE_ID = originalTurkishVoice;
+    const staticFixtures = await prisma.radioAsset.findMany({ where: { metadata: { path: ["voiceId"], equals: testVoice } }, select: { id: true, key: true } });
+    ids.push(...staticFixtures.map(a => a.id)); keys.push(...staticFixtures.map(a => a.key));
     await prisma.radioPlayback.deleteMany({ where: { assetId: { in: ids } } });
     await prisma.radioJob.deleteMany({ where: { key: { in: keys } } });
     await prisma.radioAsset.deleteMany({ where: { id: { in: ids } } });
