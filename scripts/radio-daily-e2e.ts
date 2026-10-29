@@ -83,6 +83,7 @@ async function main() {
     const trSlot = new Date(slot.getTime() - 3600_000);
     const turkish = await renderBulletin(trSlot, { stories: [{ text: "Test haber.", sourceIds: [1] }], sources: [], modelCalls: [], language: "tr", editionSlot: trSlot.toISOString() });
     assert.equal(turkish.metadata.backgroundMusic, false);
+    assert.equal(turkish.metadata.timeline.filter(c => ["opener", "closer", "divider"].includes(c.kind)).length, 0, "Turkish news has no transition sounds at all");
     assert.ok(turkish.script.startsWith(TURKISH_OPENING));
     const speechKinds = new Set(["invocation", "intro", "story", "outro"]);
     for (const voice of turkish.metadata.timeline.filter(c => speechKinds.has(c.kind))) for (const music of turkish.metadata.timeline.filter(c => ["opener", "closer", "divider"].includes(c.kind)))

@@ -21,6 +21,7 @@ export const DEFAULT_FEEDS = [
 ];
 export const TURKISH_OPENING = "Rahmân ve Rahîm olan Allah'ın adıyla. ";
 export const TURKISH_OPENING_VERSION = "tr-dry-opening-v3";
+export const TURKISH_NEWS_VERSION = "tr-speech-only-v4";
 
 // The invocation is identical every day: preserve Turkish spelling and language
 // and reuse its spoken audio instead of buying another TTS call per bulletin.
@@ -167,7 +168,7 @@ export function newsEditionSlot(slot: Date) {
   return stationTime(slot).hour === 7 ? slot : new Date(slot.getTime() - (stationTime(slot).hour % 2) * 3_600_000);
 }
 export function mainNewsKey(slot: Date) { return `news-main:${GERMAN_NEWS_VERSION}:${newsEditionSlot(slot).toISOString()}`; }
-export function bulletinKey(slot: Date) { return newsLanguage(slot) === "tr" ? `news:${TURKISH_OPENING_VERSION}:${slot.toISOString()}` : `news-hourly:${GERMAN_NEWS_VERSION}:${slot.toISOString()}`; }
+export function bulletinKey(slot: Date) { return newsLanguage(slot) === "tr" ? `news:${TURKISH_NEWS_VERSION}:${slot.toISOString()}` : `news-hourly:${GERMAN_NEWS_VERSION}:${slot.toISOString()}`; }
 export function isRepeatSlot(slot: Date) { return newsEditionSlot(slot).getTime() !== slot.getTime(); }
 export async function bulletinForSlot(slot: Date) {
   const asset = await prisma.radioAsset.findUnique({ where: { key: bulletinKey(slot) }, select: { id: true, title: true, duration: true, kind: true, metadata: true } });
@@ -224,7 +225,7 @@ export async function renderBulletin(slot: Date, content: EditorialContent, exam
   const paragraphs = [intro, ...content.stories.map(s => s.text), outro];
   const segments = [];
   for (let i = 0; i < paragraphs.length; i++) segments.push({ audio: await speech(paragraphs[i], presenter.voiceId, language), kind: i === 0 ? "intro" as const : i === paragraphs.length - 1 ? "outro" as const : "story" as const });
-  let { timeline, ...audio } = await mixDryBulletin(segments, { closer: !mainPart });
+  let { timeline, ...audio } = await mixDryBulletin(segments, language === "tr" ? { opener: false, closer: false } : { closer: !mainPart });
   if (language === "tr") {
     const invocation = await turkishInvocation();
     const combined = await prependInvocation(Buffer.from(invocation.audio), audio.audio);
@@ -233,11 +234,11 @@ export async function renderBulletin(slot: Date, content: EditorialContent, exam
   }
   if (audio.duration > 260) throw new Error("Die fertige Ausgabe überschreitet das Sendezeitfenster.");
   return { ...audio, script: `${language === "tr" ? TURKISH_OPENING : ""}${paragraphs.join("\n\n")}`,
-    metadata: { voiceId: presenter.voiceId, presenter: presenter.name, language, gender: presenter.gender, aiGenerated: true, backgroundMusic: false, editorialVersion: language === "de" ? GERMAN_EDITORIAL_VERSION : null,
+    metadata: { programmeVersion: language === "tr" ? TURKISH_NEWS_VERSION : GERMAN_NEWS_VERSION, voiceId: presenter.voiceId, presenter: presenter.name, language, gender: presenter.gender, aiGenerated: true, backgroundMusic: false, editorialVersion: language === "de" ? GERMAN_EDITORIAL_VERSION : null,
       sources: content.sources, stories: content.stories, modelCalls: content.modelCalls, editionSlot: content.editionSlot, example,
       authorModel: process.env.EDENAI_MODEL || "gpt-6-luna", reviewModel: process.env.EDENAI_REVIEW_MODEL || process.env.EDENAI_MODEL || "gpt-6-luna",
       openingVersion: language === "tr" ? TURKISH_OPENING_VERSION : null,
-      ttsModel: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2", imagingVersion: IMAGING_VERSION, dividerVersion: language === "de" ? GERMAN_DIVIDER_VERSION : IMAGING_VERSION, timeline,
+      ttsModel: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2", imagingVersion: language === "tr" ? null : IMAGING_VERSION, dividerVersion: language === "de" ? GERMAN_DIVIDER_VERSION : null, timeline,
       region: language === "tr" ? "Türkiye / Almanya" : process.env.NEWS_REGION || "Mainz und Rheinhessen" } };
 }
 
@@ -306,7 +307,7 @@ export async function prepareNews(slot: Date, simulatedNow?: Date) {
 export async function generateNewsExample(language: "de" | "tr") {
   const now = new Date(), hour = stationTime(now).hour;
   const slot = language === "tr" ? new Date(Math.floor(now.getTime() / 3_600_000) * 3_600_000 + (7 - hour) * 3_600_000) : new Date(Math.ceil(now.getTime() / 3_600_000) * 3_600_000);
-  const baseKey = `news-example:${language === "tr" ? TURKISH_OPENING_VERSION : GERMAN_NEWS_VERSION}:${language}:${stationTime(now).date}`;
+  const baseKey = `news-example:${language === "tr" ? TURKISH_NEWS_VERSION : GERMAN_NEWS_VERSION}:${language}:${stationTime(now).date}`;
   const key = language === "tr" ? baseKey : `${baseKey}:service-v2`;
   await withJob(key, async () => {
     if (await prisma.radioAsset.findUnique({ where: { key }, select: { id: true } })) return;
