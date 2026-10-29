@@ -1,9 +1,9 @@
 import { XMLParser } from "fast-xml-parser";
 import { load } from "cheerio";
 import { prisma } from "../prisma";
-import { edenJson, presenterForSlot, servicePresenter, speech, type ModelCall } from "./providers";
+import { edenJson, presenterForHour, presenterForSlot, servicePresenter, speech, type ModelCall } from "./providers";
 import { withJob } from "./store";
-import { mixBulletin, mixDryBulletin, joinNewsParts, prependInvocation, type Cue } from "./mix";
+import { mixDryBulletin, joinNewsParts, prependInvocation, type Cue } from "./mix";
 import { IMAGING_VERSION, GERMAN_DIVIDER_VERSION } from "./imaging";
 import { isNewsSlot, stationTime, newsLanguage } from "./config";
 import { collectHourlyService, serviceFreshForSlot } from "./service";
@@ -19,7 +19,23 @@ export const DEFAULT_FEEDS = [
   "https://www.tagesschau.de/wissen/forschung/index~rss2.xml",
   "https://www.tagesschau.de/wissen/technologie/index~rss2.xml",
 ];
-export const TURKISH_OPENING = "Rahman ve Rahim olan Allah in adiyla. ";
+export const TURKISH_OPENING = "Rahmân ve Rahîm olan Allah'ın adıyla. ";
+export const TURKISH_OPENING_VERSION = "tr-dry-opening-v3";
+
+// The invocation is identical every day: preserve Turkish spelling and language
+// and reuse its spoken audio instead of buying another TTS call per bulletin.
+export async function turkishInvocation() {
+  const voice = presenterForHour(7).voiceId;
+  const key = `invocation:${TURKISH_OPENING_VERSION}:${voice}`;
+  await withJob(key, async () => {
+    if (await prisma.radioAsset.findUnique({ where: { key }, select: { id: true } })) return;
+    const { normalizeAudio } = await import("./store");
+    const audio = await normalizeAudio(await speech(TURKISH_OPENING, voice, "tr"), 20);
+    await prisma.radioAsset.create({ data: { key, kind: "invocation", title: "Türkçe açılış · Rahmân ve Rahîm", script: TURKISH_OPENING, ...audio,
+      metadata: { language: "tr", voiceId: voice, openingVersion: TURKISH_OPENING_VERSION, aiGenerated: true, backgroundMusic: false } } });
+  });
+  return prisma.radioAsset.findUniqueOrThrow({ where: { key } });
+}
 export const DEFAULT_TR_FEEDS = [
   "https://www.trthaber.com/kultur_sanat_articles.rss",
   "https://www.trthaber.com/bilim_teknoloji_articles.rss",
@@ -151,7 +167,7 @@ export function newsEditionSlot(slot: Date) {
   return stationTime(slot).hour === 7 ? slot : new Date(slot.getTime() - (stationTime(slot).hour % 2) * 3_600_000);
 }
 export function mainNewsKey(slot: Date) { return `news-main:${GERMAN_NEWS_VERSION}:${newsEditionSlot(slot).toISOString()}`; }
-export function bulletinKey(slot: Date) { return newsLanguage(slot) === "tr" ? `news:${slot.toISOString()}` : `news-hourly:${GERMAN_NEWS_VERSION}:${slot.toISOString()}`; }
+export function bulletinKey(slot: Date) { return newsLanguage(slot) === "tr" ? `news:${TURKISH_OPENING_VERSION}:${slot.toISOString()}` : `news-hourly:${GERMAN_NEWS_VERSION}:${slot.toISOString()}`; }
 export function isRepeatSlot(slot: Date) { return newsEditionSlot(slot).getTime() !== slot.getTime(); }
 export async function bulletinForSlot(slot: Date) {
   const asset = await prisma.radioAsset.findUnique({ where: { key: bulletinKey(slot) }, select: { id: true, title: true, duration: true, kind: true, metadata: true } });
@@ -208,18 +224,19 @@ export async function renderBulletin(slot: Date, content: EditorialContent, exam
   const paragraphs = [intro, ...content.stories.map(s => s.text), outro];
   const segments = [];
   for (let i = 0; i < paragraphs.length; i++) segments.push({ audio: await speech(paragraphs[i], presenter.voiceId, language), kind: i === 0 ? "intro" as const : i === paragraphs.length - 1 ? "outro" as const : "story" as const });
-  let { timeline, ...audio } = language === "tr" ? await mixBulletin(segments) : await mixDryBulletin(segments, { closer: !mainPart });
+  let { timeline, ...audio } = await mixDryBulletin(segments, { closer: !mainPart });
   if (language === "tr") {
-    const invocation = await speech(TURKISH_OPENING, presenter.voiceId, "tr");
-    const combined = await prependInvocation(invocation, audio.audio);
+    const invocation = await turkishInvocation();
+    const combined = await prependInvocation(Buffer.from(invocation.audio), audio.audio);
     timeline = [{ kind: "invocation", start: 0, end: combined.offset }, ...timeline.map(c => ({ ...c, start: c.start + combined.offset, end: c.end + combined.offset }))];
     audio = { audio: combined.audio, duration: combined.duration };
   }
   if (audio.duration > 260) throw new Error("Die fertige Ausgabe überschreitet das Sendezeitfenster.");
   return { ...audio, script: `${language === "tr" ? TURKISH_OPENING : ""}${paragraphs.join("\n\n")}`,
-    metadata: { voiceId: presenter.voiceId, presenter: presenter.name, language, gender: presenter.gender, aiGenerated: true, backgroundMusic: language === "tr", editorialVersion: language === "de" ? GERMAN_EDITORIAL_VERSION : null,
+    metadata: { voiceId: presenter.voiceId, presenter: presenter.name, language, gender: presenter.gender, aiGenerated: true, backgroundMusic: false, editorialVersion: language === "de" ? GERMAN_EDITORIAL_VERSION : null,
       sources: content.sources, stories: content.stories, modelCalls: content.modelCalls, editionSlot: content.editionSlot, example,
       authorModel: process.env.EDENAI_MODEL || "gpt-6-luna", reviewModel: process.env.EDENAI_REVIEW_MODEL || process.env.EDENAI_MODEL || "gpt-6-luna",
+      openingVersion: language === "tr" ? TURKISH_OPENING_VERSION : null,
       ttsModel: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2", imagingVersion: IMAGING_VERSION, dividerVersion: language === "de" ? GERMAN_DIVIDER_VERSION : IMAGING_VERSION, timeline,
       region: language === "tr" ? "Türkiye / Almanya" : process.env.NEWS_REGION || "Mainz und Rheinhessen" } };
 }
@@ -241,7 +258,7 @@ export async function renderGermanHourly(slot: Date, main: MainAudio | null, exa
     programmeVersion: GERMAN_NEWS_VERSION, editorialVersion: GERMAN_EDITORIAL_VERSION, language: "de", aiGenerated: true, backgroundMusic: false, example,
     presenter: main ? "Elias · Jane (Wetter und Verkehr)" : "Jane · Wetter und Verkehr", mainAssetId: main?.id || null,
     mainReused: !!main && !example && isRepeatSlot(slot), mainUnavailable: !main, editionSlot: m.editionSlot || newsEditionSlot(slot).toISOString(),
-    mainCreatedFor: main?.slot?.toISOString() || null, serviceRefreshHours: 1, service,
+    mainCreatedFor: main?.slot?.toISOString() || null, serviceRefreshHours: 24, service,
     presenters: [{ name: presenterForSlot(slot).name, voiceId: presenterForSlot(slot).voiceId, role: "Hauptnachrichten" }, { name: presenter.name, voiceId: presenter.voiceId, role: "Wetter und Verkehr" }],
     sources: [...mainSources, ...service.sources.map((s, i) => ({ ...s, id: maxId + i + 1, local: true }))],
     modelCalls: !example && isRepeatSlot(slot) ? [] : m.modelCalls || [], authorModel: m.authorModel || null, reviewModel: m.reviewModel || null,
@@ -252,7 +269,7 @@ export async function renderGermanHourly(slot: Date, main: MainAudio | null, exa
 
 export async function prepareNews(slot: Date, simulatedNow?: Date) {
   const startedAt = simulatedNow ?? new Date();
-  if (!isNewsSlot(slot)) throw new Error("Nachrichten nur um 07 Uhr auf Türkisch und 08 bis 17 Uhr auf Deutsch");
+  if (!isNewsSlot(slot)) throw new Error("Nachrichten nur um 07 Uhr auf Türkisch und um 08 Uhr auf Deutsch");
   if (newsLanguage(slot) === "de" && slot.getTime() < startedAt.getTime()) throw new Error("Sendetermin verstrichen; keine nachträgliche Serviceausgabe");
   const key = bulletinKey(slot);
   if (newsLanguage(slot) === "tr") {
@@ -289,7 +306,7 @@ export async function prepareNews(slot: Date, simulatedNow?: Date) {
 export async function generateNewsExample(language: "de" | "tr") {
   const now = new Date(), hour = stationTime(now).hour;
   const slot = language === "tr" ? new Date(Math.floor(now.getTime() / 3_600_000) * 3_600_000 + (7 - hour) * 3_600_000) : new Date(Math.ceil(now.getTime() / 3_600_000) * 3_600_000);
-  const baseKey = `news-example:${language === "tr" ? "v4" : GERMAN_NEWS_VERSION}:${language}:${stationTime(now).date}`;
+  const baseKey = `news-example:${language === "tr" ? TURKISH_OPENING_VERSION : GERMAN_NEWS_VERSION}:${language}:${stationTime(now).date}`;
   const key = language === "tr" ? baseKey : `${baseKey}:service-v2`;
   await withJob(key, async () => {
     if (await prisma.radioAsset.findUnique({ where: { key }, select: { id: true } })) return;

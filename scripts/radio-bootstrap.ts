@@ -1,5 +1,6 @@
 import { generateMusic } from "../src/lib/radio/providers";
-import { prepareNews } from "../src/lib/radio/news";
+import { upcomingNewsSlot } from "../src/lib/radio/config";
+import { prepareNews, bulletinKey } from "../src/lib/radio/news";
 import { prisma } from "../src/lib/prisma";
 
 async function main() {
@@ -9,9 +10,10 @@ async function main() {
     console.log("Music pool:", tracks);
   }
   if (process.argv.includes("--news")) {
-    const slot = new Date(Math.floor(Date.now() / 3_600_000) * 3_600_000);
+    const slot = upcomingNewsSlot();
+    if (!slot || slot.getTime() - Date.now() > 3600_000) throw new Error("Vorbereitung frühestens eine Stunde vor 07:00 oder 08:00 Uhr");
     await prepareNews(slot);
-    const asset = await prisma.radioAsset.findUnique({ where: { key: `news:${slot.toISOString()}` }, select: { title: true, duration: true, script: true } });
+    const asset = await prisma.radioAsset.findUnique({ where: { key: bulletinKey(slot) }, select: { title: true, duration: true, script: true } });
     console.log("News preview:", asset);
   }
 }

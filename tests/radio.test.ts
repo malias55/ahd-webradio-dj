@@ -1,15 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isOnAir, upcomingNewsSlot, nativeSource, stationTime, isMusicHours, newsLanguage, stationDayBounds } from "../src/lib/radio/config";
+import { isOnAir, upcomingNewsSlot, nativeSource, stationTime, isMusicHours, isNewsSlot, newsLanguage, stationDayBounds } from "../src/lib/radio/config";
 import { parseFeed, validateStories, articleText, germanTopicAllowed, sourcesForProgramme } from "../src/lib/radio/news";
 import { authCookies, userForCookie } from "../src/lib/session";
 
-test("Berlin opening hours and last bulletin in winter", () => {
+test("Berlin opening hours and morning-only news in winter", () => {
   assert.equal(isOnAir(new Date("2026-10-26T06:59:59Z")), false);
   assert.equal(isOnAir(new Date("2026-10-26T07:00:00Z")), true);
   assert.equal(isOnAir(new Date("2026-10-26T16:59:59Z")), true);
   assert.equal(isOnAir(new Date("2026-10-26T17:00:00Z")), false);
-  assert.equal(upcomingNewsSlot(new Date("2026-10-26T15:59:59Z"))?.toISOString(), "2026-10-26T16:00:00.000Z");
+  assert.equal(upcomingNewsSlot(new Date("2026-10-26T15:59:59Z"))?.toISOString(), "2026-10-27T06:00:00.000Z");
   assert.equal(upcomingNewsSlot(new Date("2026-10-26T16:00:01Z"))?.toISOString(), "2026-10-27T06:00:00.000Z");
 });
 test("summer time and both DST transition days", () => {
@@ -104,7 +104,7 @@ test("07:00 Turkish slot is separate and has no music rotation", () => {
   assert.equal(newsEditionSlot(seven).toISOString(), seven.toISOString());
   assert.equal(isRepeatSlot(seven), false);
   assert.equal(isOnAir(new Date("2026-10-26T06:05:00Z")), false);
-  assert.equal(TURKISH_OPENING, "Rahman ve Rahim olan Allah in adiyla. ");
+  assert.equal(TURKISH_OPENING, "Rahmân ve Rahîm olan Allah'ın adıyla. ");
 });
 test("journal day filters use Berlin midnight even across DST", () => {
   const winter = stationDayBounds("2026-10-26");
@@ -186,4 +186,33 @@ test("source outages produce an explicit hourly fallback without model calls", a
     assert.match(service.weather.text, /nicht verfügbar/); assert.match(service.traffic.text, /nicht abrufbar/);
     assert.equal(service.errors.length, 7); assert.equal(service.sources.length, 0);
   } finally { globalThis.fetch = original; }
+});
+
+
+test("daily test schedule has exactly 07 Turkish and 08 German, no hourly purchases", () => {
+  for (const [day, offset] of [["2026-10-29", 1], ["2026-07-15", 2]] as const) {
+    const slots = [];
+    for (let hour = 0; hour < 24; hour++) {
+      const date = new Date(`${day}T${String(hour).padStart(2, "0")}:00:00Z`);
+      if (isNewsSlot(date)) slots.push(stationTime(date).hour);
+    }
+    assert.deepEqual(slots, [7, 8]);
+    const eight = new Date(`${day}T${String(8 - offset).padStart(2, "0")}:00:00Z`);
+    assert.equal(upcomingNewsSlot(eight)?.getTime(), eight.getTime());
+    assert.equal(stationTime(upcomingNewsSlot(new Date(eight.getTime() + 1))!).hour, 7);
+    assert.equal(isNewsSlot(new Date(eight.getTime() + 1)), false);
+    assert.equal(isNewsSlot(new Date(eight.getTime() + 60_000)), false);
+  }
+});
+
+import { audioResponse } from "../src/lib/radio/audio-range";
+test("archived audio supports bounded byte ranges and rejects invalid seeks", async () => {
+  const bytes = new Uint8Array([0, 1, 2, 3, 4]);
+  for (const [range, expected, contentRange] of [["bytes=1-3", [1, 2, 3], "bytes 1-3/5"], ["bytes=3-", [3, 4], "bytes 3-4/5"], ["bytes=-2", [3, 4], "bytes 3-4/5"], ["bytes=3-99", [3, 4], "bytes 3-4/5"]] as const) {
+    const r = audioResponse(bytes, range);
+    assert.equal(r.status, 206); assert.equal(r.headers.get("content-range"), contentRange);
+    assert.deepEqual([...new Uint8Array(await r.arrayBuffer())], expected);
+  }
+  for (const range of ["bytes=9-", "bytes=4-2", "bytes=-0", "bytes=", "bytes=0-1,3-4"]) assert.equal(audioResponse(bytes, range).status, 416);
+  assert.equal(audioResponse(bytes, null).status, 200);
 });

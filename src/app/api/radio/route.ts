@@ -28,7 +28,7 @@ export async function GET(req: Request) {
   return NextResponse.json({ ...radioStatus(), day, assets, failures, jobs, playbacks, actions: [...actions],
     configured: { elevenlabs: !!process.env.ELEVENLABS_API_KEY, edenai: !!process.env.EDENAI_API_KEY },
     region: process.env.NEWS_REGION || "Mainz und Rheinhessen", model: process.env.EDENAI_MODEL || "gpt-6-luna",
-    newsRefreshHours: 2, serviceRefreshHours: 1, nextPresenter: upcomingNewsSlot() ? `${presenterForSlot(upcomingNewsSlot()!).name}${stationTime(upcomingNewsSlot()!).hour === 7 ? "" : " · Jane für Wetter und Verkehr"}` : null });
+    newsRefreshHours: 24, serviceRefreshHours: 24, nextPresenter: upcomingNewsSlot() ? `${presenterForSlot(upcomingNewsSlot()!).name}${stationTime(upcomingNewsSlot()!).hour === 7 ? "" : " · Jane für Wetter und Verkehr"}` : null });
 }
 
 export async function POST(req: Request) {

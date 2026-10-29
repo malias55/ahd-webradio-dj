@@ -4,7 +4,7 @@ import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { prisma } from "../src/lib/prisma";
-import { prepareNews, bulletinForSlot, bulletinKey, mainNewsKey } from "../src/lib/radio/news";
+import { prepareNews, bulletinForSlot, bulletinKey, mainNewsKey, renderBulletin, TURKISH_OPENING } from "../src/lib/radio/news";
 import { trackPlayback } from "../src/lib/radio/audit";
 import { servicePresenter } from "../src/lib/radio/providers";
 import { command } from "../src/lib/radio/store";
@@ -14,8 +14,8 @@ import { mixStationId, mixDryBulletin } from "../src/lib/radio/mix";
 async function main() {
   const dir = await mkdtemp(join(tmpdir(), "ahd-hourly-e2e-"));
   const slot = new Date(Date.UTC(1990 + randomInt(9), 0, 1 + randomInt(27), 7));
-  const repeat = new Date(slot.getTime() + 3600_000), missing = new Date(repeat.getTime() + 86400_000);
-  const mainKey = mainNewsKey(slot), keys = [mainKey, bulletinKey(slot), bulletinKey(repeat), bulletinKey(missing)];
+  const repeat = new Date(slot.getTime() + 86400_000), missing = new Date(repeat.getTime() + 86400_000);
+  const mainKey = mainNewsKey(slot), keys = [mainKey, mainNewsKey(repeat), mainNewsKey(missing), bulletinKey(slot), bulletinKey(repeat), bulletinKey(missing)];
   const ids: string[] = [], originalFetch = globalThis.fetch;
   try {
     assert.equal(await prisma.radioAsset.count({ where: { key: { in: keys } } }), 0, "choose unused test slots");
@@ -24,6 +24,8 @@ async function main() {
     const tone = await readFile(tonePath);
     const asset = await prisma.radioAsset.create({ data: { key: mainKey, kind: "news-main", title: "Isolated hourly service test", slot, audio: tone, duration: 1.54, script: "Test Hauptnachrichten", metadata: { editionSlot: slot.toISOString(), timeline: [{ kind: "story", start: 0, end: 1.5 }] } } });
     ids.push(asset.id);
+    const secondMain = await prisma.radioAsset.create({ data: { key: mainNewsKey(repeat), kind: "news-main", title: "Isolated next-day edition", slot: repeat, audio: tone, duration: 1.54, script: "Test Hauptnachrichten", metadata: { editionSlot: repeat.toISOString(), timeline: [{ kind: "story", start: 0, end: 1.5 }] } } });
+    ids.push(secondMain.id);
     let ttsCalls = 0, sourceCalls = 0, now = new Date(slot.getTime() - 5 * 60_000), temperature = 12;
     globalThis.fetch = async (input, init) => {
       const url = String(input);
@@ -51,10 +53,14 @@ async function main() {
     assert.notEqual(original.id, reused.id, "hourly bulletin gets new audio");
     const first = original.metadata as { mainAssetId: string; mainReused: boolean; service: { weather: { observation: { temperature: number } } } };
     const second = reused.metadata as typeof first;
-    assert.equal(first.mainAssetId, asset.id); assert.equal(second.mainAssetId, asset.id);
-    assert.equal(first.mainReused, false); assert.equal(second.mainReused, true);
+    assert.equal(first.mainAssetId, asset.id); assert.equal(second.mainAssetId, secondMain.id);
+    assert.equal(first.mainReused, false); assert.equal(second.mainReused, false);
     assert.equal(first.service.weather.observation.temperature, 12); assert.equal(second.service.weather.observation.temperature, 15);
-    assert.equal(ttsCalls, 6); assert.deepEqual(Buffer.from((await prisma.radioAsset.findUniqueOrThrow({ where: { id: asset.id } })).audio), tone);
+    assert.equal(ttsCalls, 6);
+    await prepareNews(repeat, now);
+    assert.equal(ttsCalls, 6, "cached morning edition must not spend more TTS");
+    await assert.rejects(prepareNews(new Date(repeat.getTime() + 3600_000), now), /nur um 07 Uhr/);
+    assert.equal(ttsCalls, 6, "09:00 must never generate service or main news"); assert.deepEqual(Buffer.from((await prisma.radioAsset.findUniqueOrThrow({ where: { id: asset.id } })).audio), tone);
     now = new Date(missing.getTime() - 5 * 60_000);
     await prepareNews(missing, now);
     const fallback = await bulletinForSlot(missing);
@@ -67,13 +73,23 @@ async function main() {
     const audit = trackPlayback(reused, "de", repeat, 2);
     await audit.started(); await audit.finish("completed");
     const row = await prisma.radioPlayback.findFirstOrThrow({ where: { assetId: reused.id } });
-    assert.equal(row.repeated, true); assert.equal(row.status, "completed"); assert.equal(row.listeners, 2); assert.ok(row.endedAt);
+    assert.equal(row.repeated, false); assert.equal(row.status, "completed"); assert.equal(row.listeners, 2); assert.ok(row.endedAt);
 
     // Measure the actual encoded German mix: only a pure 440 Hz test voice may
     // remain inside speech intervals, including when real production jingles exist.
+    const turkishFetch = globalThis.fetch;
+    globalThis.fetch = async (input, init) => String(input).includes("api.elevenlabs.io/v1/text-to-speech/")
+      ? new Response(tone, { headers: { "content-type": "audio/mpeg" } }) : turkishFetch(input, init);
+    const trSlot = new Date(slot.getTime() - 3600_000);
+    const turkish = await renderBulletin(trSlot, { stories: [{ text: "Test haber.", sourceIds: [1] }], sources: [], modelCalls: [], language: "tr", editionSlot: trSlot.toISOString() });
+    assert.equal(turkish.metadata.backgroundMusic, false);
+    assert.ok(turkish.script.startsWith(TURKISH_OPENING));
+    const speechKinds = new Set(["invocation", "intro", "story", "outro"]);
+    for (const voice of turkish.metadata.timeline.filter(c => speechKinds.has(c.kind))) for (const music of turkish.metadata.timeline.filter(c => ["opener", "closer", "divider"].includes(c.kind)))
+      assert.ok(voice.end <= music.start || music.end <= voice.start, "Turkish voice overlaps imaging");
     const dry = await mixDryBulletin([{ audio: tone, kind: "intro" }, { audio: tone, kind: "story" }]);
     const ident = await mixStationId(tone, (await imagingAsset("station-bed")).id);
-    const probes = [{ ...dry, name: "news" }, { ...ident, name: "station-id", timeline: [{ kind: "intro", start: 3.3, end: 4.8 }] }];
+    const probes = [{ ...dry, name: "news" }, { ...turkish, timeline: turkish.metadata.timeline, name: "turkish" }, { ...ident, name: "station-id", timeline: [{ kind: "intro", start: 3.3, end: 4.8 }] }];
     for (const probe of probes) {
     const dryPath = join(dir, `${probe.name}.mp3`); await writeFile(dryPath, probe.audio);
     for (const cue of probe.timeline.filter(c => c.kind === "intro" || c.kind === "story")) {
@@ -88,7 +104,7 @@ async function main() {
       assert.ok(Math.sqrt(residual / energy) < 0.03, `music/effects leaked into ${cue.kind}: ${Math.sqrt(residual / energy)}`);
     }
     }
-    console.log("PASS original male main audio UUID preserved; two fresh hourly service audios; only female TTS, zero editorial calls; early generation deferred; missing-main fallback; journal persisted; encoded news and station-ID speech have no background music");
+    console.log("PASS daily morning editions, cached generation, no 09:00 purchases, early service deferred, missing-main fallback, journal persisted; encoded German, Turkish and station-ID speech contain no background music");
   } finally {
     globalThis.fetch = originalFetch;
     await prisma.radioPlayback.deleteMany({ where: { assetId: { in: ids } } });

@@ -30,7 +30,8 @@ export function dryNewsTimeline(clips: { duration: number; kind: VoiceSegment["k
 }
 
 // German speech and imaging occupy disjoint intervals. No bed is even loaded.
-// Keep the original mixer below for the unchanged Turkish programme.
+// The legacy bed mixer below is retained for compatibility; live editions in
+// both languages use this dry mixer.
 export async function mixDryBulletin(segments: VoiceSegment[], options: DryMixOptions = {}) {
   if (!segments.length) throw new Error("Leere Nachrichtenausgabe");
   const dir = await mkdtemp(join(tmpdir(), "ahd-dry-news-"));

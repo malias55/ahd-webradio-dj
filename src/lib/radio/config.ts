@@ -1,4 +1,5 @@
 export const RADIO_TIMEZONE = "Europe/Berlin";
+export const NEWS_SCHEDULE = { mode: "daily-morning", hours: [7, 8], timezone: RADIO_TIMEZONE } as const;
 export const RADIO_STREAM_PATH = "/api/radio/stream";
 
 export function stationTime(date = new Date()) {
@@ -40,7 +41,7 @@ export function stationDayBounds(day: string) {
 
 export function isNewsSlot(date: Date) {
   const t = stationTime(date);
-  return t.hour >= 7 && t.hour < 18 && t.minute === 0 && t.second === 0;
+  return NEWS_SCHEDULE.hours.some(hour => hour === t.hour) && t.minute === 0 && t.second === 0 && date.getMilliseconds() === 0;
 }
 
 export function upcomingNewsSlot(date = new Date()): Date | null {

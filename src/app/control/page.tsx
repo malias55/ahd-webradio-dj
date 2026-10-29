@@ -125,7 +125,7 @@ export default function ControlPage() {
         <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Steuerung</h1>
         <p className="text-sm text-neutral-600 dark:text-neutral-400">
           Lautstärke, Tab-Audio und Durchsagen pro Zone. Das Radio läuft von 08 bis 18 Uhr automatisch,
-          wenn keine Live-Quelle aktiv ist. Nachrichten kommen zur vollen Stunde.
+          wenn keine Live-Quelle aktiv ist. Nachrichten kommen um 07 Uhr auf Türkisch und um 08 Uhr auf Deutsch.
         </p>
       </div>
 

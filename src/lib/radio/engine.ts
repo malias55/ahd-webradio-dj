@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import type { ServerResponse } from "node:http";
 import { prisma } from "../prisma";
-import { isOnAir, isMusicHours, upcomingNewsSlot, radioEnabled, stationTime, newsLanguage } from "./config";
+import { isOnAir, isNewsSlot, NEWS_SCHEDULE, isMusicHours, upcomingNewsSlot, radioEnabled, stationTime, newsLanguage } from "./config";
 import { assetFile, pruneCache } from "./store";
 import { presenterForSlot } from "./providers";
 import { prepareNews, bulletinForSlot, isRepeatSlot, GERMAN_NEWS_VERSION } from "./news";
@@ -25,9 +25,9 @@ const state = globalRadio.__ahdRadio ??= {
 };
 
 export function radioStatus() {
-  return { programmeVersion: GERMAN_NEWS_VERSION, imagingVersion: IMAGING_VERSION, presenter: presenterForSlot(new Date()).name, newsRefreshHours: 2, serviceRefreshHours: 1, started: state.started, onAir: isOnAir(), playing: state.playing, startedAt: state.startedAt || null,
+  return { programmeVersion: GERMAN_NEWS_VERSION, imagingVersion: IMAGING_VERSION, presenter: presenterForSlot(new Date()).name, newsSchedule: NEWS_SCHEDULE, newsRefreshHours: 24, serviceRefreshHours: 24, started: state.started, onAir: isOnAir(), playing: state.playing, startedAt: state.startedAt || null,
     listeners: state.listeners.size, preparing: state.preparing, error: state.error,
-    nextNewsAt: upcomingNewsSlot()?.toISOString() ?? null, timezone: "Europe/Berlin", hours: "07:00 Türkçe · 08:00–18:00 Musik", newsHours: "07:00 Türkçe · 08:00–17:00 Deutsch" };
+    nextNewsAt: upcomingNewsSlot()?.toISOString() ?? null, timezone: "Europe/Berlin", hours: "07:00 Türkçe · 08:00–18:00 Musik", newsHours: "07:00 Türkçe · 08:00 Deutsch" };
 }
 
 export function attachRadio(res: ServerResponse) {
@@ -129,7 +129,7 @@ async function tick(onBoundary: () => Promise<void>) {
   }
   // Exact slot identity: never replay an old bulletin after a restart or at 18:00.
   const hour = new Date(Math.floor(now.getTime() / 3_600_000) * 3_600_000);
-  if (active && now.getTime() - hour.getTime() < 1500 && state.lastNewsSlot !== hour.toISOString()) {
+  if (active && isNewsSlot(hour) && now.getTime() - hour.getTime() < 1500 && state.lastNewsSlot !== hour.toISOString()) {
     state.lastNewsSlot = hour.toISOString();
     const news = await bulletinForSlot(hour);
     if (news && isOnAir() && Date.now() - hour.getTime() < 5000) await play(news, hour);
