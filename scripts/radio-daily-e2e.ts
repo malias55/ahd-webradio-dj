@@ -18,6 +18,8 @@ async function main() {
   const mainKey = mainNewsKey(slot), keys = [mainKey, mainNewsKey(repeat), mainNewsKey(missing), bulletinKey(slot), bulletinKey(repeat), bulletinKey(missing)];
   const ids: string[] = [], originalFetch = globalThis.fetch;
   const testVoice = `e2e-turkish-${randomUUID()}`, originalTurkishVoice = process.env.ELEVENLABS_TURKISH_VOICE_ID;
+  const testServiceVoice = `e2e-service-${randomUUID()}`, originalServiceVoice = process.env.ELEVENLABS_SERVICE_VOICE_ID;
+  process.env.ELEVENLABS_SERVICE_VOICE_ID = testServiceVoice;
   try {
     assert.equal(await prisma.radioAsset.count({ where: { key: { in: keys } } }), 0, "choose unused test slots");
     const tonePath = join(dir, "tone.mp3");
@@ -49,7 +51,7 @@ async function main() {
     await prepareNews(slot, now);
     const original = await bulletinForSlot(slot);
     assert.ok(original); ids.push(original.id);
-    assert.equal(((original.metadata as { timeline: { kind: string }[] }).timeline).filter(c => ["divider", "opener", "closer"].includes(c.kind)).length, 0, "German news must contain no imaging");
+    assert.equal(((original.metadata as { timeline: { kind: string }[] }).timeline).filter(c => ["divider", "opener", "closer"].includes(c.kind)).length, 1, "German news must contain only one final closing sound");
     now = new Date(repeat.getTime() - 5 * 60_000); temperature = 15;
     await prepareNews(repeat, now);
     const reused = await bulletinForSlot(repeat);
@@ -60,17 +62,17 @@ async function main() {
     assert.equal(first.mainAssetId, asset.id); assert.equal(second.mainAssetId, secondMain.id);
     assert.equal(first.mainReused, false); assert.equal(second.mainReused, false);
     assert.equal(first.service.weather.observation.temperature, 12); assert.equal(second.service.weather.observation.temperature, 15);
-    assert.equal(ttsCalls, 6);
+    assert.equal(ttsCalls, 5);
     await prepareNews(repeat, now);
-    assert.equal(ttsCalls, 6, "cached morning edition must not spend more TTS");
+    assert.equal(ttsCalls, 5, "cached morning edition must not spend more TTS");
     await assert.rejects(prepareNews(new Date(repeat.getTime() + 3600_000), now), /nur um 07 Uhr/);
-    assert.equal(ttsCalls, 6, "09:00 must never generate service or main news"); assert.deepEqual(Buffer.from((await prisma.radioAsset.findUniqueOrThrow({ where: { id: asset.id } })).audio), tone);
+    assert.equal(ttsCalls, 5, "09:00 must never generate service or main news"); assert.deepEqual(Buffer.from((await prisma.radioAsset.findUniqueOrThrow({ where: { id: asset.id } })).audio), tone);
     now = new Date(missing.getTime() - 5 * 60_000);
     await prepareNews(missing, now);
     const fallback = await bulletinForSlot(missing);
     assert.ok(fallback); ids.push(fallback.id);
     assert.equal((fallback.metadata as { mainUnavailable: boolean }).mainUnavailable, true);
-    assert.equal(ttsCalls, 9, "missing main part still broadcasts female service without generating a replacement main edition");
+    assert.equal(ttsCalls, 7, "missing main part still broadcasts female service without generating a replacement main edition");
     const fallbackAudit = trackPlayback(fallback, "de", missing, 0);
     await fallbackAudit.started(); await fallbackAudit.finish("completed");
     assert.equal((await prisma.radioPlayback.findFirstOrThrow({ where: { assetId: fallback.id } })).repeated, false);
@@ -102,7 +104,7 @@ async function main() {
     assert.ok(trRequests.includes("TERETE’nin yeni yayını."));
     assert.ok(trRequests.some(t => t.includes("Autohaus Dörşuk")));
     assert.equal(turkish.metadata.backgroundMusic, false);
-    assert.deepEqual(turkish.metadata.timeline.filter(c => ["opener", "closer", "divider"].includes(c.kind)).map(c => c.kind), ["opener"], "only the approved standalone opener is allowed");
+    assert.deepEqual(turkish.metadata.timeline.filter(c => ["opener", "closer", "divider"].includes(c.kind)).map(c => c.kind), ["opener", "closer"], "only the approved standalone opener and final closer are allowed");
     assert.ok(turkish.script.startsWith(TURKISH_OPENING));
     assert.match(turkish.script, /TERETE/);
     const speechKinds = new Set(["invocation", "intro", "story", "outro"]);
@@ -110,10 +112,11 @@ async function main() {
       assert.ok(voice.end <= music.start || music.end <= voice.start, "Turkish voice overlaps imaging");
     const dry = await mixDryBulletin([{ audio: tone, kind: "intro" }, { audio: tone, kind: "story" }]);
     const ident = await mixStationId(tone, (await imagingAsset("station-bed")).id);
-    const probes = [{ ...dry, name: "news" }, { ...turkish, timeline: turkish.metadata.timeline, name: "turkish" }, { ...ident, name: "station-id", timeline: [{ kind: "intro", start: 3.3, end: 4.8 }] }];
+    const germanAudio = (await prisma.radioAsset.findUniqueOrThrow({ where: { id: original.id }, select: { audio: true } })).audio;
+    const probes = [{ ...dry, name: "news" }, { audio: germanAudio, timeline: (original.metadata as { timeline: { kind: string; start: number; end: number }[] }).timeline, name: "german-final" }, { ...turkish, timeline: turkish.metadata.timeline, name: "turkish" }, { ...ident, name: "station-id", timeline: [{ kind: "intro", start: 3.3, end: 4.8 }] }];
     for (const probe of probes) {
     const dryPath = join(dir, `${probe.name}.mp3`); await writeFile(dryPath, probe.audio);
-    for (const cue of probe.timeline.filter(c => c.kind === "intro" || c.kind === "story")) {
+    for (const cue of probe.timeline.filter(c => ["invocation", "intro", "story", "weather", "traffic", "outro"].includes(c.kind))) {
       const pcmPath = join(dir, `${cue.kind}.pcm`);
       await command(process.env.FFMPEG_PATH || "ffmpeg", ["-v", "error", "-i", dryPath, "-ss", String(cue.start + 0.4), "-t", "0.5", "-ac", "1", "-ar", "16000", "-f", "f32le", "-y", pcmPath]);
       const pcm = await readFile(pcmPath), samples = Array.from({ length: pcm.length / 4 }, (_, i) => pcm.readFloatLE(i * 4));
@@ -130,7 +133,9 @@ async function main() {
     globalThis.fetch = originalFetch;
     if (originalTurkishVoice === undefined) delete process.env.ELEVENLABS_TURKISH_VOICE_ID;
     else process.env.ELEVENLABS_TURKISH_VOICE_ID = originalTurkishVoice;
-    const staticFixtures = await prisma.radioAsset.findMany({ where: { metadata: { path: ["voiceId"], equals: testVoice } }, select: { id: true, key: true } });
+    if (originalServiceVoice === undefined) delete process.env.ELEVENLABS_SERVICE_VOICE_ID;
+    else process.env.ELEVENLABS_SERVICE_VOICE_ID = originalServiceVoice;
+    const staticFixtures = await prisma.radioAsset.findMany({ where: { OR: [{ metadata: { path: ["voiceId"], equals: testVoice } }, { metadata: { path: ["voiceId"], equals: testServiceVoice } }] }, select: { id: true, key: true } });
     ids.push(...staticFixtures.map(a => a.id)); keys.push(...staticFixtures.map(a => a.key));
     await prisma.radioPlayback.deleteMany({ where: { assetId: { in: ids } } });
     await prisma.radioJob.deleteMany({ where: { key: { in: keys } } });

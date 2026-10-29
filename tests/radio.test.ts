@@ -253,3 +253,14 @@ test("radio speech drops measurement times and internal panel comments but keeps
   assert.doesNotMatch(weather.text + traffic.text, /Messstand|Abrufstand|Stand \d|Dashboard|Bright Sky|Quelle ist/);
   assert.equal(weather.observedAt, new Date(currentWeather.weather.timestamp).toISOString());
 });
+
+import { newsOutroTimeline } from "../src/lib/radio/mix";
+test("energetic closers begin after all speech, keep a clean gap and cannot be doubled", () => {
+  const programme = { duration: 10.2, timeline: [{ kind: "story", start: 0, end: 6 }, { kind: "outro", start: 6.5, end: 10 }] };
+  const result = newsOutroTimeline(programme, 3);
+  assert.ok(result.start >= 10.22); assert.equal(result.timeline.at(-1)?.kind, "closer");
+  for (const voice of programme.timeline) assert.ok(voice.end < result.start);
+  assert.throws(() => newsOutroTimeline({ duration: result.duration, timeline: result.timeline }, 3));
+  assert.throws(() => newsOutroTimeline(programme, Number.NaN));
+  assert.throws(() => newsOutroTimeline({ duration: 2, timeline: programme.timeline }, 3));
+});

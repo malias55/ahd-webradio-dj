@@ -5,6 +5,11 @@ import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+export const GERMAN_OUTRO_KEY = "imaging:de-energetic-outro-v3";
+export async function germanOutroAsset() {
+  return prisma.radioAsset.findUniqueOrThrow({ where: { key: GERMAN_OUTRO_KEY } });
+}
+
 export const TURKISH_SIGNATURE_KEY = "imaging:tr-approved-intro-v1";
 export async function turkishSignatureAsset() {
   return prisma.radioAsset.findUniqueOrThrow({ where: { key: TURKISH_SIGNATURE_KEY } });

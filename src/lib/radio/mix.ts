@@ -176,6 +176,32 @@ export async function frameTurkishProgramme(invocation: { audio: Uint8Array; dur
       "-filter_complex", "[0:a]apad=pad_dur=0.35[v];[1:a]apad=pad_dur=0.35[s];[v][s][2:a]concat=n=3:v=0:a=1[out]", "-map", "[out]", "-ar", "44100", "-ac", "2", "-y", output]);
     const audio = await normalizeAudio(await readFile(output), 270);
     if (audio.duration > 260) throw new Error("Türkische Ausgabe überschreitet das Sendezeitfenster");
-    return { ...audio, timeline: [{ kind: "invocation", start: 0, end: invocation.duration }, { kind: "opener", start: signatureStart, end: signatureStart + signature.duration }, ...body.timeline.map(c => ({ ...c, start: c.start + offset, end: c.end + offset }))] };
+    const framed = { ...audio, timeline: [{ kind: "invocation", start: 0, end: invocation.duration }, { kind: "opener", start: signatureStart, end: signatureStart + signature.duration }, ...body.timeline.map(c => ({ ...c, start: c.start + offset, end: c.end + offset }))] };
+    return appendNewsOutro(framed, signature);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+}
+
+export function newsOutroTimeline(programme: { duration: number; timeline: Cue[] }, soundDuration: number) {
+  if (!Number.isFinite(soundDuration) || soundDuration <= 0 || soundDuration > 8 || programme.timeline.some(c => c.kind === "closer")) throw new Error("Invalid or duplicate news outro");
+  const speech = programme.timeline.filter(c => ["invocation", "intro", "story", "weather", "traffic", "outro"].includes(c.kind));
+  const last = Math.max(...speech.map(c => c.end));
+  if (!Number.isFinite(last) || last < 0 || last > programme.duration + 0.05) throw new Error("Incomplete voice timeline");
+  const trimEnd = Math.min(programme.duration, last + 0.06), start = trimEnd + 0.32;
+  return { trimEnd, start, duration: start + soundDuration, timeline: [...programme.timeline, { kind: "closer", start, end: start + soundDuration }] };
+}
+
+// A musical closing button starts only after the voice and a short clean gap.
+export async function appendNewsOutro(programme: { audio: Uint8Array; duration: number; timeline: Cue[] }, signature: { audio: Uint8Array; duration: number }) {
+  const plan = newsOutroTimeline(programme, signature.duration);
+  const dir = await mkdtemp(join(tmpdir(), "ahd-news-outro-"));
+  try {
+    const voice = join(dir, "programme.mp3"), sound = join(dir, "closing.mp3"), output = join(dir, "finished.wav");
+    await writeFile(voice, programme.audio); await writeFile(sound, signature.audio);
+    await command(process.env.FFMPEG_PATH || "ffmpeg", ["-v", "error", "-nostdin", "-i", voice, "-i", sound,
+      "-filter_complex", `[0:a]atrim=duration=${plan.trimEnd},asetpts=PTS-STARTPTS,apad=pad_dur=0.32[v];[v][1:a]concat=n=2:v=0:a=1[out]`,
+      "-map", "[out]", "-ar", "44100", "-ac", "2", "-y", output]);
+    const audio = await normalizeAudio(await readFile(output), 270);
+    if (audio.duration > 260) throw new Error("Ausgabe mit Outro überschreitet das Sendezeitfenster");
+    return { ...audio, timeline: plan.timeline };
   } finally { await rm(dir, { recursive: true, force: true }); }
 }
