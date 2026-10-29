@@ -1,3 +1,5 @@
+import { servicePresenter } from "@/lib/radio/providers";
+import { familyAssetAllowed } from "@/lib/radio/family";
 import { redirect } from "next/navigation";
 import { isAuthorized } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
@@ -15,13 +17,13 @@ export default async function NewsArchive() {
   // A corrected edition replaces the same slot in this list. Historical playback
   // records still refer to the actual, unchanged file that went out at that time.
   const seen = new Set<string>();
-  const assets = rows.filter(row => {
+  const assets = rows.filter(familyAssetAllowed).filter(row => {
     const key = row.slot?.toISOString() || row.id;
     if (seen.has(key)) return false;
     seen.add(key); return true;
   });
   return <div className="space-y-6">
-    <div><h1 className="text-2xl font-bold">Nachrichten</h1><p className="mt-2 text-sm text-neutral-500">Täglich um 07:00 Uhr Türkisch mit Cavit und um 08:00 Uhr Deutsch mit Elias, Wetter und Verkehr mit Jane. Deutsche Ortszeit.</p></div>
+    <div><h1 className="text-2xl font-bold">Nachrichten</h1><p className="mt-2 text-sm text-neutral-500">Täglich um 07:00 Uhr Türkisch mit Cavit und um 08:00 Uhr Deutsch mit Elias, Wetter und Verkehr mit {servicePresenter().name}. Deutsche Ortszeit.</p></div>
     <p className="text-sm text-neutral-500">Hier können alle angemeldeten Nutzer die tatsächlich erstellten Ausgaben der letzten 14 Tage nachhören, mit Transkript und Quellen. Die Angaben zu Wetter und Verkehr beziehen sich auf den angegebenen Abrufzeitpunkt. Alle Stimmen und Ausgaben sind KI-generiert.</p>
     {!assets.length && <div className="card">Noch keine Nachrichtenausgabe gespeichert. Die nächsten Ausgaben werden automatisch vor ihrem Sendetermin erstellt.</div>}
     {assets.map(row => <section key={row.id} className="card space-y-3">

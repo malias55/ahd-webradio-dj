@@ -31,8 +31,10 @@ async function main() {
     globalThis.fetch = async (input, init) => {
       const url = String(input);
       if (url.includes("api.elevenlabs.io/v1/text-to-speech/")) {
-        assert.ok(url.includes(servicePresenter().voiceId), "only Jane can be synthesized for hourly service");
+        assert.ok(url.includes(servicePresenter().voiceId), "only the selected service presenter can be synthesized for weather/traffic");
         assert.equal(JSON.parse(String(init?.body)).language_code, "de");
+        assert.equal(JSON.parse(String(init?.body)).voice_settings.speed, 1.06);
+        assert.equal(JSON.parse(String(init?.body)).voice_settings.stability, 0.4);
         ttsCalls++;
         return new Response(tone, { headers: { "content-type": "audio/mpeg" } });
       }
@@ -47,6 +49,7 @@ async function main() {
     await prepareNews(slot, now);
     const original = await bulletinForSlot(slot);
     assert.ok(original); ids.push(original.id);
+    assert.equal(((original.metadata as { timeline: { kind: string }[] }).timeline).filter(c => ["divider", "opener", "closer"].includes(c.kind)).length, 0, "German news must contain no imaging");
     now = new Date(repeat.getTime() - 5 * 60_000); temperature = 15;
     await prepareNews(repeat, now);
     const reused = await bulletinForSlot(repeat);

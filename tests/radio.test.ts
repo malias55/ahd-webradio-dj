@@ -72,14 +72,14 @@ import { presenterForSlot, servicePresenter } from "../src/lib/radio/providers";
 import { newsEditionSlot, bulletinKey, mainNewsKey, isRepeatSlot, TURKISH_OPENING } from "../src/lib/radio/news";
 import { newsTimeline, dryNewsTimeline } from "../src/lib/radio/mix";
 
-test("German main news always uses Elias, weather and traffic use Jane", () => {
+test("German main news always uses Elias, weather and traffic use Susanne", () => {
   for (const offset of [1, 2]) {
     for (let hour = 8; hour <= 17; hour++) {
       const date = new Date(`2026-${offset === 1 ? '10-26' : '07-15'}T${String(hour - offset).padStart(2, '0')}:00:00Z`);
       const presenter = presenterForSlot(date);
       assert.equal(presenter.gender, "male");
       assert.equal(presenter.voiceId, "1h6gHcRvQugDNZgdAo9N");
-      assert.equal(servicePresenter().voiceId, "hOBDmVrVUuqtp1I3KsIq");
+      assert.equal(servicePresenter().voiceId, "mjTSjCqHhkhULvdsy68o");
     }
   }
 });
@@ -127,7 +127,7 @@ import { weatherReport, trafficEvents, trafficReport, serviceFreshForSlot, colle
 
 test("German dry mix never overlaps any speech with any music or effect", () => {
   const clips = [{ kind: "intro" as const, duration: 12 }, { kind: "story" as const, duration: 35 }, { kind: "story" as const, duration: 30 }, { kind: "outro" as const, duration: 10 }];
-  for (const options of [{}, { closer: false }, { opener: false, leadingDivider: true }]) {
+  for (const options of [{}, { closer: false }, { opener: false, closer: false }]) {
     const timeline = dryNewsTimeline(clips, options);
     const speech = timeline.cues.filter(c => !["opener", "closer", "divider"].includes(c.kind));
     const music = timeline.cues.filter(c => ["opener", "closer", "divider"].includes(c.kind));
@@ -136,12 +136,12 @@ test("German dry mix never overlaps any speech with any music or effect", () => 
     assert.ok(timeline.duration >= timeline.cues.at(-1)!.end);
   }
 });
-test("German stories use quiet pauses, with short accents only at service boundaries", () => {
+test("German stories and weather/traffic boundaries use pauses without transition sounds", () => {
   const main = [{ kind: "intro" as const, duration: 10 }, { kind: "story" as const, duration: 30 }, { kind: "story" as const, duration: 30 }, { kind: "outro" as const, duration: 8 }];
   assert.equal(dryNewsTimeline(main).cues.filter(c => c.kind === "divider").length, 0);
   const full = dryNewsTimeline([...main, { kind: "weather", duration: 25 }, { kind: "traffic", duration: 30 }, { kind: "outro", duration: 10 }]);
   const dividers = full.cues.filter(c => c.kind === "divider");
-  assert.equal(dividers.length, 2);
+  assert.equal(dividers.length, 0);
   for (const cue of dividers) assert.ok(cue.end - cue.start <= 0.801);
 });
 const serviceSlot = new Date("2026-10-26T07:00:00Z"), serviceNow = new Date("2026-10-26T06:55:00Z");
@@ -223,4 +223,23 @@ test("Turkish TTS reads TRT as TERETE and the dealership as Dörşuk", () => {
   assert.equal(speechText("TRT2, T.R.T. ve T R T", "tr"), "TERETE 2, TERETE ve TERETE");
   assert.equal(speechText("TRTSpor, XTRT, TRTnin", "tr"), "TRTSpor, XTRT, TRTnin");
   assert.equal(speechText("Autohaus Dörrschuck und TRT", "de"), "Autohaus Dörrschuck und TRT");
+});
+
+import { familyContentAllowed, familyAssetAllowed, FAMILY_CONTENT_POLICY } from "../src/lib/radio/family";
+import { warningDetail } from "../src/lib/radio/service";
+import { NEWS_POLICY } from "../src/lib/radio/news";
+test("family policy rejects explicit adult topics in German and Turkish before speech and playback", () => {
+  for (const text of ["Ein Erotikfilm", "Empfehlung: Horrorfilm ab 18+", "FSK 16: neuer Splatterfilm", "Werbung für Glücksspiel", "Erfolg mit Cannabis", "Cinsel içerik", "Çıplak görüntüler", "Uyuşturucu reklamı", "Kumar oyunu", "İşkence sahneleri", "Ein Song mit Fuck you", "Siktir git"])
+    assert.equal(familyContentAllowed(text), false, text);
+  for (const text of ["Eine Ausstellung für Familien in Mainz", "Kuss Quartett spielt Kammermusik", "Die DNA von Vögeln wurde untersucht", "Yeni kütüphaneler ve dinozor fosilleri", "Auf der A60 ist die Auffahrt gesperrt."])
+    assert.equal(familyContentAllowed(text), true, text);
+  assert.ok(NEWS_POLICY.includes(FAMILY_CONTENT_POLICY));
+  assert.equal(familyAssetAllowed({ kind: "news", script: "Eine Ausstellung", metadata: { sources: [{ title: "Erotikfilm mit FSK 18" }] } }), false);
+});
+test("traffic keeps operational warnings and reported delays without upsetting incident detail", () => {
+  const detail = warningDetail("Mainz Richtung Wiesbaden", ["Unfall mit grausamen Verletzungsdetails", "Im Stillstand", "Reisezeitverlust: 11 Minuten"]);
+  assert.match(detail, /Verkehr steht/); assert.match(detail, /11 Minuten/); assert.doesNotMatch(detail, /Unfall|Verletzungsdetails/);
+  assert.match(warningDetail("Mainz", ["Gegenstände auf der Fahrbahn"]), /Hindernisse/);
+  assert.match(warningDetail("Mainz", ["Gefahr durch Glatteis"]), /Glätte/);
+  assert.match(warningDetail("Mainz", ["Falschfahrer, stockender Verkehr"]), /Falschfahrer/);
 });

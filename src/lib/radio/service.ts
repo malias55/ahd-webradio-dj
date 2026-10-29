@@ -1,3 +1,4 @@
+import { familyContentAllowed } from "./family";
 import { stationTime } from "./config";
 
 // Structured hourly service data, deliberately without another model call.
@@ -33,9 +34,9 @@ export function weatherReport(current: unknown, forecast: unknown, now: Date, sl
     number(observation.temperature) && observation.temperature >= -50 && observation.temperature <= 55;
   if (!usable) return { available: false, text: "Das Wetter für Mainz: Aktuelle, ausreichend frische Wetterdaten sind gerade nicht verfügbar.", observedAt: null, observation: null, forecast: [] };
   const icon = weatherIcons[text(observation.icon)];
-  let script = `Das Wetter für Mainz und Umgebung, Messstand ${clock(observedAt)}. Es sind rund ${rounded(observation.temperature as number)} Grad${icon ? ` und ${icon}` : ""}.`;
+  let script = `Ihr Wetter für Mainz und Umgebung! Stand ${clock(observedAt)}. Aktuell rund ${rounded(observation.temperature as number)} Grad${icon ? ` und ${icon}` : ""}.`;
   const wind = observation.wind_speed_10;
-  if (number(wind) && wind >= 0 && wind <= 300) script += ` Der Wind erreicht im Mittel rund ${rounded(wind)} Kilometer pro Stunde.`;
+  if (number(wind) && wind >= 0 && wind <= 300) script += ` Der Wind weht im Mittel mit ${rounded(wind)} Kilometern pro Stunde.`;
   const prediction = object(forecast), forecastSources = list(prediction.sources).map(object);
   const future = list(prediction.weather).map(object).filter(row => {
     const t = Date.parse(text(row.timestamp)), source = forecastSources.find(s => s.id === row.source_id);
@@ -45,11 +46,11 @@ export function weatherReport(current: unknown, forecast: unknown, now: Date, sl
   const fullForecast = [0, 1, 2, 3].every(hour => future.some(r => Date.parse(text(r.timestamp)) === slot.getTime() + hour * 3_600_000));
   if (fullForecast) {
     const temperatures = future.map(r => Math.round(r.temperature as number)), min = Math.min(...temperatures), max = Math.max(...temperatures);
-    script += ` Für die nächsten drei Stunden werden ${min === max ? `etwa ${rounded(min)}` : `${rounded(min)} bis ${rounded(max)}`} Grad erwartet.`;
+    script += ` Für die nächsten drei Stunden: ${min === max ? `etwa ${rounded(min)}` : `${rounded(min)} bis ${rounded(max)}`} Grad.`;
     const probabilities = future.map(r => r.precipitation_probability).filter(number).filter(n => n >= 0 && n <= 100);
-    if (probabilities.length === future.length) script += ` Die Regenwahrscheinlichkeit liegt dabei bei bis zu ${rounded(Math.max(...probabilities))} Prozent.`;
+    if (probabilities.length === future.length) script += ` Regenwahrscheinlichkeit: bis zu ${rounded(Math.max(...probabilities))} Prozent.`;
   }
-  script += " Die Wetterdaten kommen vom Deutschen Wetterdienst über Bright Sky.";
+  script += " Wetterdaten: Deutscher Wetterdienst, über Bright Sky.";
   return { available: true, text: script, observedAt: observedAt.toISOString(),
     observation: { temperature: observation.temperature as number, icon: text(observation.icon), windKmh: number(wind) ? wind : null, station: text(station.station_name) },
     forecast: future.map(r => ({ timestamp: text(r.timestamp), temperature: r.temperature as number, precipitationProbability: number(r.precipitation_probability) ? r.precipitation_probability : null })) };
@@ -66,6 +67,23 @@ function roadText(value: string) {
   return value.replace(/\bAS\b/g, "Anschlussstelle").replace(/\bAD\b/g, "Autobahndreieck").replace(/\bAK\b/g, "Autobahnkreuz")
     .replace(/\bMZ\b/g, "Mainz").replace(/\bA(\d+)\b/g, "A $1").replace(/\bzw\./g, "zwischen").replace(/\bu\./g, "und").replace(/->/g, " Richtung ").replace(/\s+/g, " ").trim();
 }
+export function warningDetail(location: string, lines: string[]) {
+  const raw = lines.join(" ");
+  // Report only travel-relevant facts, never raw accident/injury descriptions.
+  const condition = /Falschfahrer|Geisterfahrer/i.test(raw) ? "Achtung: Auf diesem Abschnitt wird ein Falschfahrer gemeldet. Bitte die Warnhinweise beachten."
+    : /Glatteis|Glätte|vereist/i.test(raw) ? "Achtung: Hier wird Glätte gemeldet. Bitte besonders vorsichtig fahren."
+    : /im Stillstand/i.test(raw) ? "Der Verkehr steht."
+    : /Stau|stockend|angespannt/i.test(raw) ? "Der Verkehr stockt."
+    : /Sperrung|gesperrt/i.test(raw) ? "Hier ist eine Sperrung gemeldet."
+    : /Baustelle/i.test(raw) ? "Hier ist eine Baustelle gemeldet."
+    : /Hindernis|Gegenst[aä]nd/i.test(raw) ? "Hier sind Hindernisse auf der Fahrbahn gemeldet."
+    : /Gefahr|Unfall/i.test(raw) ? "Hier liegt eine Verkehrswarnung vor. Bitte vorsichtig fahren."
+    : "Hier liegt eine Verkehrsmeldung vor. Bitte auf die Beschilderung achten.";
+  const delay = raw.match(/(?:Reisezeitverlust|Zeitverlust):\s*(\d+)\s*Minuten?/i);
+  const minutes = delay ? Number(delay[1]) : 0;
+  return `${familyContentAllowed(location) ? location + ": " : ""}${condition}${minutes > 0 && minutes <= 240 ? ` Gemeldeter Zeitverlust: ${minutes} Minuten.` : ""}`;
+}
+
 export function trafficEvents(value: unknown, road: string, category: "warning" | "closure", slot: Date): TrafficEvent[] {
   const payload = object(value);
   if (!Array.isArray(payload[category])) throw new Error("Ungültige Verkehrsdaten");
@@ -80,14 +98,15 @@ export function trafficEvents(value: unknown, road: string, category: "warning" 
     if (event.future === true || event.future === "true" || (Number.isFinite(start) && start > slot.getTime()) || (Number.isFinite(end) && end <= slot.getTime())) return [];
     const lines = list(event.description).map(text).filter(Boolean), periodEnd = localPeriodEnd(lines);
     if (periodEnd && periodEnd <= localSlot) return [];
-    const id = text(event.identifier), location = roadText(text(event.subtitle) || text(event.title));
+    const id = text(event.identifier), rawLocation = roadText(text(event.subtitle) || text(event.title));
+    const location = familyContentAllowed(rawLocation) && !/Unfall|verletz|tödlich|Todesopfer/i.test(rawLocation) ? rawLocation : roadText(road);
     if (!id || !location) return [];
     const operational = lines.find(s => /^(Auffahrt auf|Abfahrt von) die |^(Auffahrt auf|Abfahrt von) der |^A\d+\s*:/i.test(s));
     const access = operational?.match(/^(Auffahrt auf die|Abfahrt von der)\s+A\d+:\s*(.+)$/i);
     // Describe the restriction without sensational incident details or invented delays.
     const detail = category === "closure" ? access ? `Die ${access[1].startsWith("Auffahrt") ? "Auffahrt" : "Abfahrt"} an der ${roadText(access[2])} ist gesperrt.`
       : `${operational ? roadText(operational) : location}: Hier wird eine ${event.display_type === "CLOSURE_ENTRY_EXIT" ? "gesperrte Auf- oder Abfahrt" : "Sperrung"} gemeldet.`
-      : `${location}: Es liegt eine Verkehrsmeldung vor. ${roadText(lines.filter(s => !/^(Beginn:|Ende:|Zeitraum|Länge:|\(Ende)/.test(s)).join(" ")).slice(0, 260)}`;
+      : warningDetail(location, lines);
     return [{ id, road, category, location, detail: detail.slice(0, 420), distanceKm: Math.round(distance), url: `${AUTOBAHN_URL}/details/${category}/${encodeURIComponent(id)}` }];
   });
 }
@@ -96,7 +115,7 @@ export function trafficReport(events: TrafficEvent[], successfulFeeds: number, f
   const complete = successfulFeeds === SERVICE_ROADS.length * 2;
   const ordered = [...events].sort((a, b) => (a.category === "warning" ? 0 : 1) - (b.category === "warning" ? 0 : 1) || a.distanceKm - b.distanceKm);
   const seen = new Set<string>(), selected = ordered.filter(e => { const key = `${e.road}:${e.detail}`; if (seen.has(key)) return false; seen.add(key); return true; }).slice(0, 2);
-  let script = `Der Verkehr rund um Mainz, Abrufstand ${clock(fetchedAt)}. `;
+  let script = `Jetzt der Blick auf die Straßen rund um Mainz! Stand ${clock(fetchedAt)}. `;
   if (!successfulFeeds) script += "Aktuelle Verkehrsmeldungen sind gerade nicht abrufbar. Eine verlässliche Auskunft zur Verkehrslage ist deshalb nicht möglich.";
   else {
     if (!complete) script += "Die Daten liegen momentan nur teilweise vor. ";

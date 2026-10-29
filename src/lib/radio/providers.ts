@@ -1,3 +1,4 @@
+import { assertFamilyContent } from "./family";
 import { speechText } from "./pronunciation";
 import { prisma } from "../prisma";
 import { normalizeAudio, withJob } from "./store";
@@ -11,7 +12,7 @@ export function presenterForHour(hour: number) {
   return { gender: "male" as const, name: "Elias", language: "de" as const, voiceId: process.env.ELEVENLABS_MALE_VOICE_ID || "1h6gHcRvQugDNZgdAo9N", assistant: "Ihr KI-Nachrichtenassistent" };
 }
 export function servicePresenter() {
-  return { gender: "female" as const, name: "Jane", language: "de" as const, voiceId: process.env.ELEVENLABS_FEMALE_VOICE_ID || "hOBDmVrVUuqtp1I3KsIq", assistant: "Ihre KI-Moderatorin für Wetter und Verkehr" };
+  return { gender: "female" as const, name: process.env.ELEVENLABS_SERVICE_VOICE_NAME || "Susanne", language: "de" as const, voiceId: process.env.ELEVENLABS_SERVICE_VOICE_ID || "mjTSjCqHhkhULvdsy68o", assistant: "Ihre KI-Moderatorin für Wetter und Verkehr" };
 }
 
 export function composeMusic(prompt: string, seconds: number) {
@@ -56,10 +57,13 @@ export async function germanVoice() {
   return suitable[0].voice_id;
 }
 
-export async function speech(text: string, voiceId: string, language: "de" | "tr" = "de") {
+export type SpeechDelivery = "standard" | "service";
+export const SERVICE_VOICE_SETTINGS = { stability: 0.4, similarity_boost: 0.75, style: 0.15, speed: 1.06, use_speaker_boost: true };
+export async function speech(text: string, voiceId: string, language: "de" | "tr" = "de", delivery: SpeechDelivery = "standard") {
+  assertFamilyContent(text);
   return eleven(`/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`, {
     text: speechText(text, language), model_id: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2", language_code: language,
-    voice_settings: { stability: 0.65, similarity_boost: 0.75, style: 0.15, use_speaker_boost: true },
+    voice_settings: delivery === "service" ? SERVICE_VOICE_SETTINGS : { stability: 0.65, similarity_boost: 0.75, style: 0.15, use_speaker_boost: true },
   });
 }
 

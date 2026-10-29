@@ -2,27 +2,24 @@ import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { assetFile, command, normalizeAudio } from "./store";
-import { imagingAsset, germanDividerAsset, GERMAN_DIVIDER_SECONDS } from "./imaging";
+import { imagingAsset } from "./imaging";
 
 export type VoiceSegment = { audio: Buffer; kind: "intro" | "story" | "weather" | "traffic" | "outro" };
 export type Cue = { kind: string; start: number; end: number };
 
-export type DryMixOptions = { opener?: boolean; closer?: boolean; leadingDivider?: boolean };
+export type DryMixOptions = { opener?: boolean; closer?: boolean };
 export function dryNewsTimeline(clips: { duration: number; kind: VoiceSegment["kind"] }[], options: DryMixOptions = {}) {
   const cues: Cue[] = [];
   let cursor = 0.25;
   if (options.opener !== false) { cues.push({ kind: "opener", start: 0, end: 6 }); cursor = 6.3; }
-  else if (options.leadingDivider) { cues.push({ kind: "divider", start: 0, end: GERMAN_DIVIDER_SECONDS }); cursor = GERMAN_DIVIDER_SECONDS + 0.3; }
+
   for (let i = 0; i < clips.length; i++) {
     const clip = clips[i];
     cues.push({ kind: clip.kind, start: cursor, end: cursor + clip.duration });
     cursor += clip.duration;
     if (i < clips.length - 1) {
       const next = clips[i + 1].kind;
-      if ((clip.kind === "outro" && next === "weather") || (clip.kind === "weather" && next === "traffic")) {
-        cues.push({ kind: "divider", start: cursor + 0.25, end: cursor + 0.25 + GERMAN_DIVIDER_SECONDS });
-        cursor += GERMAN_DIVIDER_SECONDS + 0.5;
-      } else cursor += clip.kind === "story" && next === "story" ? 0.7 : 0.5;
+      cursor += clip.kind === "story" && next === "story" ? 0.7 : 0.5;
     }
   }
   if (options.closer !== false) { cues.push({ kind: "closer", start: cursor + 0.3, end: cursor + 5.3 }); cursor += 5.3; }
@@ -53,14 +50,14 @@ export async function mixDryBulletin(segments: VoiceSegment[], options: DryMixOp
       stems.push(`v${i}`);
     });
     let input = clips.length;
-    for (const kind of ["opener", "closer", "divider"] as const) {
+    for (const kind of ["opener", "closer"] as const) {
       const cues = timeline.cues.filter(c => c.kind === kind);
       if (!cues.length) continue;
-      const asset = kind === "divider" ? await germanDividerAsset() : await imagingAsset(kind === "opener" ? "news-open" : "news-close");
+      const asset = await imagingAsset(kind === "opener" ? "news-open" : "news-close");
       args.push("-i", await assetFile(asset.id));
       cues.forEach((cue, i) => {
         const label = `${kind}${i}`, length = cue.end - cue.start;
-        filters.push(`[${input}:a]atrim=duration=${length},asetpts=PTS-STARTPTS,volume=${kind === "divider" ? 0.45 : 0.65},afade=t=out:st=${length - 0.15}:d=0.15,adelay=${Math.round(cue.start * 1000)}:all=1[${label}]`);
+        filters.push(`[${input}:a]atrim=duration=${length},asetpts=PTS-STARTPTS,volume=0.65,afade=t=out:st=${length - 0.15}:d=0.15,adelay=${Math.round(cue.start * 1000)}:all=1[${label}]`);
         stems.push(label);
       });
       input++;

@@ -30,7 +30,7 @@ async function main() {
   ];
   const segments = [];
   for (const line of lines) segments.push({ audio: await speech(line.text, line.presenter.voiceId), kind: line.kind });
-  const bulletin = await mixDryBulletin(segments);
+  const bulletin = await mixDryBulletin(segments, { opener: false, closer: false });
   const dir = await mkdtemp(join(tmpdir(), "ahd-demo-"));
   try {
     const bulletinPath = join(dir, "bulletin.mp3"); await writeFile(bulletinPath, bulletin.audio);

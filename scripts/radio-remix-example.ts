@@ -2,7 +2,6 @@ import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { prisma } from "../src/lib/prisma";
-import { generateGermanDivider, GERMAN_DIVIDER_VERSION } from "../src/lib/radio/imaging";
 import { mixDryBulletin, joinNewsParts, type Cue, type VoiceSegment } from "../src/lib/radio/mix";
 import { GERMAN_NEWS_VERSION } from "../src/lib/radio/news";
 import { stationTime } from "../src/lib/radio/config";
@@ -16,7 +15,6 @@ async function main() {
   const metadata = (source.metadata || {}) as Record<string, unknown> & { language?: string; backgroundMusic?: boolean; timeline?: Cue[]; mainAssetId?: string };
   if (source.kind !== "demo" || metadata.language !== "de" || metadata.backgroundMusic !== false || !metadata.timeline?.length)
     throw new Error("Nur ein deutsches Hörbeispiel ohne Musik unter Sprache kann verlustarm neu gemischt werden");
-  await generateGermanDivider();
   const baseKey = `news-example:${GERMAN_NEWS_VERSION}:de:${stationTime().date}`, key = `${baseKey}:service-v2`;
   await withJob(key, async () => {
     if (await prisma.radioAsset.findUnique({ where: { key }, select: { id: true } })) return;
@@ -33,19 +31,19 @@ async function main() {
         await command(process.env.FFMPEG_PATH || "ffmpeg", ["-v", "error", "-nostdin", "-i", path, "-ss", String(cue.start), "-t", String(cue.end - cue.start), "-ar", "44100", "-ac", "2", "-y", clip]);
         segments.push({ audio: await readFile(clip), kind: cue.kind as VoiceSegment["kind"] });
       }
-      const main = await mixDryBulletin(segments.slice(0, split), { closer: false });
-      const service = await mixDryBulletin(segments.slice(split), { opener: false, leadingDivider: true });
+      const main = await mixDryBulletin(segments.slice(0, split), { opener: false, closer: false });
+      const service = await mixDryBulletin(segments.slice(split), { opener: false, closer: false });
       const mainKey = `${baseKey}:main:remix:${source.id}`;
       const originalMain = metadata.mainAssetId ? await prisma.radioAsset.findUnique({ where: { id: metadata.mainAssetId } }) : null;
       const mainAsset = await prisma.radioAsset.upsert({ where: { key: mainKey }, update: {}, create: {
         key: mainKey, kind: "demo-part", title: "Hörbeispiel · Elias · Ruhige Meldungspausen", script: originalMain?.script,
         audio: main.audio, duration: main.duration,
-        metadata: { ...((originalMain?.metadata as Prisma.JsonObject) || {}), timeline: main.timeline, dividerVersion: GERMAN_DIVIDER_VERSION,
+        metadata: { ...((originalMain?.metadata as Prisma.JsonObject) || {}), timeline: main.timeline, dividerVersion: null,
           remixedFrom: originalMain?.id || source.id, modelCalls: [] },
       } });
       const audio = await joinNewsParts(mainAsset.audio, service.audio), offset = mainAsset.duration + 0.45;
-      await prisma.radioAsset.create({ data: { key, kind: "demo", title: "Hörbeispiel · Elias & Jane · Ruhige Übergänge", script: source.script, ...audio,
-        metadata: { ...(source.metadata as Prisma.JsonObject), programmeVersion: GERMAN_NEWS_VERSION, dividerVersion: GERMAN_DIVIDER_VERSION,
+      await prisma.radioAsset.create({ data: { key, kind: "demo", title: "Hörbeispiel · Elias & Jane · Ohne Übergangssounds", script: source.script, ...audio,
+        metadata: { ...(source.metadata as Prisma.JsonObject), programmeVersion: GERMAN_NEWS_VERSION, dividerVersion: null,
           mainAssetId: mainAsset.id, remixedFrom: source.id, modelCalls: [], speechReused: true,
           timeline: [...main.timeline, ...service.timeline.map(c => ({ ...c, start: c.start + offset, end: c.end + offset }))] } } });
     } finally { await rm(dir, { recursive: true, force: true }); }
