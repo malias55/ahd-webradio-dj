@@ -1,3 +1,4 @@
+import { naturalRadioText } from "./presentation";
 import { assertFamilyContent } from "./family";
 import { speechText } from "./pronunciation";
 import { prisma } from "../prisma";
@@ -61,36 +62,15 @@ export type SpeechDelivery = "standard" | "service";
 export const SERVICE_VOICE_SETTINGS = { stability: 0.4, similarity_boost: 0.75, style: 0.15, speed: 1.06, use_speaker_boost: true };
 export async function speech(text: string, voiceId: string, language: "de" | "tr" = "de", delivery: SpeechDelivery = "standard") {
   assertFamilyContent(text);
+  const spoken = naturalRadioText(text);
+  if (!spoken) throw new Error("Kein verwendbarer Radiotext");
   return eleven(`/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`, {
-    text: speechText(text, language), model_id: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2", language_code: language,
+    text: speechText(spoken, language), model_id: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2", language_code: language,
     voice_settings: delivery === "service" ? SERVICE_VOICE_SETTINGS : { stability: 0.65, similarity_boost: 0.75, style: 0.15, use_speaker_boost: true },
   });
 }
 
-export type ModelCall = { requestedModel: string; resolvedModel: string; purpose: string; inputTokens: number | null; outputTokens: number | null; costUsd: number | null };
-export async function edenJson(system: string, input: unknown, review = false, calls?: ModelCall[]): Promise<unknown> {
-  if (!process.env.EDENAI_API_KEY) throw new Error("EDENAI_API_KEY fehlt");
-  const model = review ? (process.env.EDENAI_REVIEW_MODEL || process.env.EDENAI_MODEL || "gpt-6-luna") : (process.env.EDENAI_MODEL || "gpt-6-luna");
-  const schema = review ? {
-    type: "object", properties: { approved: { type: "boolean" }, reason: { type: "string" } }, required: ["approved", "reason"], additionalProperties: false,
-  } : {
-    type: "object", properties: { stories: { type: "array", items: { type: "object", properties: {
-      text: { type: "string" }, sourceIds: { type: "array", items: { type: "integer" } },
-    }, required: ["text", "sourceIds"], additionalProperties: false } } }, required: ["stories"], additionalProperties: false,
-  };
-  const r = await fetch("https://api.edenai.run/v3/chat/completions", {
-    method: "POST", headers: { Authorization: `Bearer ${process.env.EDENAI_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model, messages: [{ role: "system", content: system }, { role: "user", content: JSON.stringify(input) }],
-      response_format: { type: "json_schema", json_schema: { name: review ? "editorial_review" : "radio_news", strict: true, schema } }, max_completion_tokens: review ? 3200 : 6000 }), signal: AbortSignal.timeout(90_000),
-  });
-  if (!r.ok) throw new Error(`Eden AI HTTP ${r.status} (${model})`);
-  const j = await r.json() as { choices?: { message?: { content?: string }; finish_reason?: string }[]; model?: string; usage?: { prompt_tokens?: number; completion_tokens?: number }; cost?: number };
-  calls?.push({ requestedModel: model, resolvedModel: j.model || model, purpose: review ? "review" : "author", inputTokens: j.usage?.prompt_tokens ?? null, outputTokens: j.usage?.completion_tokens ?? null, costUsd: j.cost ?? null });
-  const content = j.choices?.[0]?.message?.content;
-  if (!content) throw new Error(`${review ? "Prüfung" : "Redaktion"}: Eden AI lieferte keinen Text (${model}, ${j.choices?.[0]?.finish_reason || "ohne Status"})`);
-  try { return JSON.parse(content.replace(/^```(?:json)?\s*/, "").replace(/\s*```$/, "")); }
-  catch { throw new Error(`${review ? "Quellenprüfung" : "Redaktion"}: ungültige strukturierte Antwort (${model})`); }
-}
+export { editorialJson as edenJson, newsModelConfig, editorialConfigured, type ModelCall } from "./models";
 
 export const MUSIC_STYLES = [
   { title: "Showroom Velvet", prompt: "Refined instrumental lounge for a welcoming car showroom. Warm Rhodes piano, soft electronic groove, tasteful jazz harmonies, rounded bass, brushed percussion, 92 BPM. Elegant, optimistic and relaxed. No vocals, no dramatic drops, no aggressive drums." },

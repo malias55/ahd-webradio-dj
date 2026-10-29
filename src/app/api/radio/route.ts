@@ -6,7 +6,7 @@ import { radioStatus } from "@/lib/radio/engine";
 import { upcomingNewsSlot, publicOrigin, stationTime, stationDayBounds } from "@/lib/radio/config";
 import { normalizeAudio } from "@/lib/radio/store";
 import { randomUUID } from "node:crypto";
-import { presenterForSlot, servicePresenter } from "@/lib/radio/providers";
+import { presenterForSlot, servicePresenter, newsModelConfig, editorialConfigured } from "@/lib/radio/providers";
 
 export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
@@ -22,8 +22,8 @@ export async function GET(req: Request) {
   ]);
   const failures = jobs.filter(j => j.status === "failed").slice(0, 5);
   return NextResponse.json({ ...radioStatus(), day, assets: assets.filter(familyAssetAllowed), failures, jobs, playbacks, generationEnabled: false,
-    configured: { elevenlabs: !!process.env.ELEVENLABS_API_KEY, edenai: !!process.env.EDENAI_API_KEY },
-    region: process.env.NEWS_REGION || "Mainz und Rheinhessen", model: process.env.EDENAI_MODEL || "gpt-6-luna",
+    configured: { elevenlabs: !!process.env.ELEVENLABS_API_KEY, edenai: !!process.env.EDENAI_API_KEY, editorial: editorialConfigured() },
+    region: process.env.NEWS_REGION || "Mainz und Rheinhessen", model: newsModelConfig().primary, modelPolicy: newsModelConfig(),
     newsRefreshHours: 24, serviceRefreshHours: 24, nextPresenter: upcomingNewsSlot() ? `${presenterForSlot(upcomingNewsSlot()!).name}${stationTime(upcomingNewsSlot()!).hour === 7 ? "" : ` · ${servicePresenter().name} für Wetter und Verkehr`}` : null });
 }
 

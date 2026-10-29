@@ -9,7 +9,7 @@ async function main() {
   const r = await fetch("https://api.edenai.run/v3/models", { headers: { Authorization: `Bearer ${process.env.EDENAI_API_KEY}` } });
   if (r.ok) {
     const models = JSON.stringify(await r.json());
-    console.log("Requested models in catalogue:", { luna: models.includes("gpt-6-luna"), haiku: models.includes("haiku-5-5") });
+    console.log("Requested models in catalogue:", { terra: models.includes("gpt-6.1-terra"), haiku: models.includes("haiku-5-5") });
   } else console.log("Model catalogue status:", r.status);
   const sample = await edenJson('Antworte ausschließlich als JSON {"approved":true,"reason":"API-Test"}.', { test: true }, true);
   console.log("Eden response:", sample);

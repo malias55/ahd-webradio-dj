@@ -26,7 +26,7 @@ async function main() {
     { text: paragraphs[2], presenter: male, kind: "story" as const },
     { text: `Und ich bin ${female.name}, Ihre KI-Nachrichtenassistentin. Zur nächsten Stunde übernehme ich das Mikrofon. Hier im Hörbeispiel geht es schon jetzt mit Kultur weiter. ${paragraphs[4]}`, presenter: female, kind: "story" as const },
     { text: paragraphs[5], presenter: female, kind: "story" as const },
-    { text: "Das war ein Hörbeispiel unseres KI-generierten Radiomagazins. Die Nachrichtenquellen finden Sie im Radio-Dashboard. Wir wünschen Ihnen einen entspannten Tag im Autohaus Dörrschuck. Und jetzt: zurück zur Musik.", presenter: female, kind: "outro" as const },
+    { text: "Das war ein Hörbeispiel unseres KI-generierten Radiomagazins. Wir wünschen Ihnen einen entspannten Tag im Autohaus Dörrschuck. Und jetzt: zurück zur Musik.", presenter: female, kind: "outro" as const },
   ];
   const segments = [];
   for (const line of lines) segments.push({ audio: await speech(line.text, line.presenter.voiceId), kind: line.kind });

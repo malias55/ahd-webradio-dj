@@ -243,3 +243,13 @@ test("traffic keeps operational warnings and reported delays without upsetting i
   assert.match(warningDetail("Mainz", ["Gefahr durch Glatteis"]), /Glätte/);
   assert.match(warningDetail("Mainz", ["Falschfahrer, stockender Verkehr"]), /Falschfahrer/);
 });
+
+import { naturalRadioText } from "../src/lib/radio/presentation";
+test("radio speech drops measurement times and internal panel comments but keeps event times", () => {
+  assert.equal(naturalRadioText("Ihr Wetter! Stand 07 Uhr 30. Aktuell 4 Grad. Alle Quellen finden Sie im Radio-Dashboard. Gute Fahrt!"), "Ihr Wetter! Aktuell 4 Grad. Gute Fahrt!");
+  assert.equal(naturalRadioText("Verkehr. Abrufstand 08:15 Uhr. Die Auffahrt bleibt bis 18 Uhr gesperrt. Quelle ist die Autobahn GmbH."), "Verkehr. Die Auffahrt bleibt bis 18 Uhr gesperrt.");
+  assert.equal(naturalRadioText("Bültenimizin sonuna geldik. Haber kaynaklarına radyo panelimizden ulaşabilirsiniz. Güzel bir gün dileriz."), "Bültenimizin sonuna geldik. Güzel bir gün dileriz.");
+  const weather = weatherReport(currentWeather, null, serviceNow, serviceSlot), traffic = trafficReport([], 6, serviceNow);
+  assert.doesNotMatch(weather.text + traffic.text, /Messstand|Abrufstand|Stand \d|Dashboard|Bright Sky|Quelle ist/);
+  assert.equal(weather.observedAt, new Date(currentWeather.weather.timestamp).toISOString());
+});

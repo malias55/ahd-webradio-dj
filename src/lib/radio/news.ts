@@ -1,10 +1,11 @@
+import { naturalRadioText } from "./presentation";
 import { FAMILY_CONTENT_POLICY, FAMILY_CONTENT_VERSION, familyContentAllowed, assertFamilyContent } from "./family";
 import { createHash } from "node:crypto";
 import { speechText, TURKISH_PRONUNCIATION_VERSION } from "./pronunciation";
 import { XMLParser } from "fast-xml-parser";
 import { load } from "cheerio";
 import { prisma } from "../prisma";
-import { edenJson, presenterForHour, presenterForSlot, servicePresenter, speech, SERVICE_VOICE_SETTINGS, type ModelCall } from "./providers";
+import { edenJson, presenterForHour, presenterForSlot, servicePresenter, speech, SERVICE_VOICE_SETTINGS, newsModelConfig, type ModelCall } from "./providers";
 import { withJob } from "./store";
 import { mixDryBulletin, joinNewsParts, frameTurkishProgramme, type Cue } from "./mix";
 import { turkishSignatureAsset, TURKISH_SIGNATURE_KEY } from "./imaging";
@@ -12,7 +13,7 @@ import { isNewsSlot, stationTime, newsLanguage } from "./config";
 import { collectHourlyService, serviceFreshForSlot } from "./service";
 import type { RadioAsset } from "@prisma/client";
 
-export const GERMAN_NEWS_VERSION = "dry-family-energetic-v4";
+export const GERMAN_NEWS_VERSION = "natural-terra-v5";
 export const GERMAN_HANDOVER = "Das waren unsere Hauptnachrichten. Weiter geht es mit dem Wetter und dem Verkehr rund um Mainz.";
 export const GERMAN_EDITORIAL_VERSION = "combustion-family-v2";
 
@@ -25,7 +26,7 @@ export const DEFAULT_FEEDS = [
 ];
 export const TURKISH_OPENING = "Rahmân ve Rahîm olan Allah'ın adıyla. ";
 export const TURKISH_OPENING_VERSION = "tr-dry-opening-v3";
-export const TURKISH_NEWS_VERSION = "tr-family-dorsuk-v6";
+export const TURKISH_NEWS_VERSION = "tr-natural-terra-v7";
 
 // The invocation is identical every day: preserve Turkish spelling and language
 // and reuse its spoken audio instead of buying another TTS call per bulletin.
@@ -42,7 +43,7 @@ export async function turkishInvocation() {
   return prisma.radioAsset.findUniqueOrThrow({ where: { key } });
 }
 export const TURKISH_INTRO = "Autohaus Dörşuk Radyo'dan merhaba. Türkiye'den, Almanya'dan ve dünyadan seçtiğimiz haberleri dinliyorsunuz. Bu bülten yapay zekâ tarafından hazırlanmış ve seslendirilmiştir.";
-export const TURKISH_OUTRO = "Bültenimizin sonuna geldik. Haber kaynaklarına radyo panelimizden ulaşabilirsiniz. Güzel, huzurlu ve keyifli bir gün dileriz. Autohaus Dörşuk Radyo'da tekrar görüşmek üzere.";
+export const TURKISH_OUTRO = "Bültenimizin sonuna geldik. Güzel, huzurlu ve keyifli bir gün dileriz. Autohaus Dörşuk Radyo'da tekrar görüşmek üzere.";
 export async function turkishStaticSpeech(role: "intro" | "outro", example = false) {
   const voice = presenterForHour(7).voiceId;
   const text = role === "outro" ? TURKISH_OUTRO : example ? TURKISH_INTRO.replace("Türkiye'den", "Bu, Türkçe sabah bültenimizin bir örneğidir. Türkiye'den") : TURKISH_INTRO;
@@ -145,7 +146,7 @@ Eigenständig knapp paraphrasieren, keine Artikel nacherzählen. Pro Quelle maxi
 Bei zu wenig Material kürzer bleiben. Ziel 340–440 Wörter, Obergrenze 480 Wörter inklusive Einleitung und Schluss.
 Wenn ausreichend geeignete Fakten vorliegen, vier bis sechs unterschiedliche Themen auswählen. Vermeide unnötige Kürzung auf nur ein oder zwei Meldungen.
 Der lokale Feed ist als local=true markiert. Nutze mindestens eine geeignete lokale Meldung, wenn vorhanden; sonst keinen lokalen Bezug erfinden.
-Keine Floskeln zwischen jedem Satz; natürliche, ruhige und leicht verständliche Moderation.`;
+Keine Floskeln zwischen jedem Satz; natürliche, ruhige und leicht verständliche Moderation. Keine Mess- oder Abrufzeiten, technischen Zeitstempel, Dashboard-/Panel-Verweise oder Hinweise zur internen Nachrichtenproduktion aussprechen. Quellen und Datenstände bleiben im Archiv; sachlich notwendige Zeitangaben innerhalb einer Meldung und Verkehrswarnungen bleiben erhalten.`;
 
 export const GERMAN_TOPIC_POLICY = `REDAKTIONELLE THEMENAUSWAHL FÜR DAS DEUTSCHE PROGRAMM:
 Das Autohaus verkauft überwiegend Fahrzeuge mit Verbrennungsmotor. Wähle passende, sachliche Themen aus, ohne aus Nachrichten Verkaufswerbung zu machen.
@@ -249,7 +250,7 @@ export async function renderBulletin(slot: Date, content: EditorialContent, exam
   const outro = language === "tr"
     ? TURKISH_OUTRO
     : mainPart ? GERMAN_HANDOVER
-    : "Das war unser Nachrichtenmagazin. Alle Quellen finden Sie im Radio-Dashboard. Wir wünschen Ihnen einen schönen Aufenthalt im Autohaus Dörrschuck. Unser Team ist gerne für Ihre Fragen da. Jetzt geht es entspannt mit guter Musik weiter.";
+    : "Das war unser Nachrichtenmagazin. Wir wünschen Ihnen einen schönen Aufenthalt im Autohaus Dörrschuck. Unser Team ist gerne für Ihre Fragen da. Jetzt geht es entspannt mit guter Musik weiter.";
   const paragraphs = [intro, ...content.stories.map(s => s.text), outro];
   const segments = [];
   for (let i = 0; i < paragraphs.length; i++) {
@@ -268,10 +269,11 @@ export async function renderBulletin(slot: Date, content: EditorialContent, exam
     audio = { audio: combined.audio, duration: combined.duration };
   }
   if (audio.duration > 260) throw new Error("Die fertige Ausgabe überschreitet das Sendezeitfenster.");
-  return { ...audio, script: `${language === "tr" ? TURKISH_OPENING : ""}${paragraphs.map(p => speechText(p, language)).join("\n\n")}`,
+  return { ...audio, script: `${language === "tr" ? TURKISH_OPENING : ""}${paragraphs.map(p => speechText(naturalRadioText(p), language)).join("\n\n")}`,
     metadata: { programmeVersion: language === "tr" ? TURKISH_NEWS_VERSION : GERMAN_NEWS_VERSION, voiceId: presenter.voiceId, presenter: presenter.name, language, gender: presenter.gender, aiGenerated: true, backgroundMusic: false, editorialVersion: language === "de" ? GERMAN_EDITORIAL_VERSION : null, familyContentVersion: FAMILY_CONTENT_VERSION,
       sources: content.sources, stories: content.stories, modelCalls: content.modelCalls, editionSlot: content.editionSlot, example,
-      authorModel: process.env.EDENAI_MODEL || "gpt-6-luna", reviewModel: process.env.EDENAI_REVIEW_MODEL || process.env.EDENAI_MODEL || "gpt-6-luna",
+      authorModel: content.modelCalls.filter(c => c.purpose === "author" && c.status !== "failed").at(-1)?.resolvedModel || newsModelConfig().primary, reviewModel: content.modelCalls.filter(c => c.purpose === "review" && c.status !== "failed").at(-1)?.resolvedModel || newsModelConfig().primary,
+      modelPolicy: newsModelConfig(),
       openingVersion: language === "tr" ? TURKISH_OPENING_VERSION : null, pronunciationVersion: language === "tr" ? TURKISH_PRONUNCIATION_VERSION : null,
       ttsModel: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2", imagingVersion: language === "tr" ? TURKISH_SIGNATURE_KEY : null, dividerVersion: null, timeline,
       region: language === "tr" ? "Türkiye / Almanya" : process.env.NEWS_REGION || "Mainz und Rheinhessen" } };
@@ -281,9 +283,9 @@ type MainAudio = Pick<RadioAsset, "id" | "audio" | "script" | "metadata" | "dura
 export async function renderGermanHourly(slot: Date, main: MainAudio | null, example = false, now = new Date(), suppliedService?: Awaited<ReturnType<typeof collectHourlyService>>) {
   if (main?.script) assertFamilyContent(main.script);
   const presenter = servicePresenter(), service = suppliedService ?? await collectHourlyService(slot, now);
-  const intro = `Hallo Mainz! Ich bin ${presenter.name}, Ihre KI-Moderatorin für Wetter und Verkehr. ${!main ? "Die Hauptnachrichten stehen gerade nicht bereit. " : ""}`;
+  const intro = `Hallo Mainz! Hier ist ${presenter.name} mit Wetter und Verkehr. ${!main ? "Die Hauptnachrichten stehen gerade nicht bereit. " : ""}`;
   const paragraphs = [intro + service.weather.text, service.traffic.text,
-    "Alle Quellen finden Sie im Radio-Dashboard. Wir wünschen Ihnen einen schönen Aufenthalt im Autohaus Dörrschuck und eine gute Fahrt. Jetzt geht es weiter mit Musik."];
+    "Wir wünschen Ihnen einen schönen Aufenthalt im Autohaus Dörrschuck und eine gute Fahrt. Jetzt geht es weiter mit Musik."];
   const segments = [];
   for (let i = 0; i < paragraphs.length; i++) segments.push({ audio: await speech(paragraphs[i], presenter.voiceId, "de", "service"), kind: i === 0 ? "weather" as const : i === 1 ? "traffic" as const : "outro" as const });
   const rendered = await mixDryBulletin(segments, { opener: false, closer: false });
@@ -291,7 +293,7 @@ export async function renderGermanHourly(slot: Date, main: MainAudio | null, exa
   const m = (main?.metadata || {}) as { sources?: SourceReference[]; modelCalls?: ModelCall[]; timeline?: Cue[]; authorModel?: string; reviewModel?: string; editionSlot?: string };
   const offset = main ? main.duration + 0.45 : 0;
   const mainSources = m.sources || [], maxId = Math.max(0, ...mainSources.map(s => s.id));
-  return { ...audio, script: [main?.script, ...paragraphs].filter(Boolean).join("\n\n"), metadata: {
+  return { ...audio, script: [main?.script, ...paragraphs.map(naturalRadioText)].filter(Boolean).join("\n\n"), metadata: {
     programmeVersion: GERMAN_NEWS_VERSION, editorialVersion: GERMAN_EDITORIAL_VERSION, familyContentVersion: FAMILY_CONTENT_VERSION, language: "de", aiGenerated: true, backgroundMusic: false, example,
     presenter: main ? `Elias · ${presenter.name} (Wetter und Verkehr)` : `${presenter.name} · Wetter und Verkehr`, mainAssetId: main?.id || null,
     mainReused: !!main && !example && isRepeatSlot(slot), mainUnavailable: !main, editionSlot: m.editionSlot || newsEditionSlot(slot).toISOString(),
@@ -299,7 +301,7 @@ export async function renderGermanHourly(slot: Date, main: MainAudio | null, exa
     presenters: [{ name: presenterForSlot(slot).name, voiceId: presenterForSlot(slot).voiceId, role: "Hauptnachrichten" }, { name: presenter.name, voiceId: presenter.voiceId, role: "Wetter und Verkehr" }],
     sources: [...mainSources, ...service.sources.map((s, i) => ({ ...s, id: maxId + i + 1, local: true }))],
     modelCalls: !example && isRepeatSlot(slot) ? [] : m.modelCalls || [], authorModel: m.authorModel || null, reviewModel: m.reviewModel || null,
-    serviceTextMethod: "deterministic-from-structured-data", serviceVoiceSettings: SERVICE_VOICE_SETTINGS, ttsModel: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2",
+    modelPolicy: newsModelConfig(), serviceTextMethod: "deterministic-from-structured-data", serviceVoiceSettings: SERVICE_VOICE_SETTINGS, ttsModel: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2",
     imagingVersion: null, dividerVersion: null, region: "Mainz und Rheinhessen", timeline: [...(m.timeline || []), ...rendered.timeline.map(c => ({ ...c, start: c.start + offset, end: c.end + offset }))],
   } };
 }

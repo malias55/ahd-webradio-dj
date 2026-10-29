@@ -11,10 +11,6 @@ const object = (v: unknown): Json => v && typeof v === "object" && !Array.isArra
 const list = (v: unknown): unknown[] => Array.isArray(v) ? v : [];
 const number = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 const text = (v: unknown) => typeof v === "string" ? v.replace(/<[^>]*>/g, " ").replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim() : "";
-const clock = (date: Date) => {
-  const t = stationTime(date);
-  return `${String(t.hour).padStart(2, "0")} Uhr ${String(t.minute).padStart(2, "0")}`;
-};
 const rounded = (value: number) => Math.round(value).toLocaleString("de-DE");
 function nearMainz(source: Json) {
   return number(source.distance) && source.distance <= 30_000;
@@ -34,7 +30,7 @@ export function weatherReport(current: unknown, forecast: unknown, now: Date, sl
     number(observation.temperature) && observation.temperature >= -50 && observation.temperature <= 55;
   if (!usable) return { available: false, text: "Das Wetter für Mainz: Aktuelle, ausreichend frische Wetterdaten sind gerade nicht verfügbar.", observedAt: null, observation: null, forecast: [] };
   const icon = weatherIcons[text(observation.icon)];
-  let script = `Ihr Wetter für Mainz und Umgebung! Stand ${clock(observedAt)}. Aktuell rund ${rounded(observation.temperature as number)} Grad${icon ? ` und ${icon}` : ""}.`;
+  let script = `Ihr Wetter für Mainz und Umgebung! Aktuell rund ${rounded(observation.temperature as number)} Grad${icon ? ` und ${icon}` : ""}.`;
   const wind = observation.wind_speed_10;
   if (number(wind) && wind >= 0 && wind <= 300) script += ` Der Wind weht im Mittel mit ${rounded(wind)} Kilometern pro Stunde.`;
   const prediction = object(forecast), forecastSources = list(prediction.sources).map(object);
@@ -50,7 +46,6 @@ export function weatherReport(current: unknown, forecast: unknown, now: Date, sl
     const probabilities = future.map(r => r.precipitation_probability).filter(number).filter(n => n >= 0 && n <= 100);
     if (probabilities.length === future.length) script += ` Regenwahrscheinlichkeit: bis zu ${rounded(Math.max(...probabilities))} Prozent.`;
   }
-  script += " Wetterdaten: Deutscher Wetterdienst, über Bright Sky.";
   return { available: true, text: script, observedAt: observedAt.toISOString(),
     observation: { temperature: observation.temperature as number, icon: text(observation.icon), windKmh: number(wind) ? wind : null, station: text(station.station_name) },
     forecast: future.map(r => ({ timestamp: text(r.timestamp), temperature: r.temperature as number, precipitationProbability: number(r.precipitation_probability) ? r.precipitation_probability : null })) };
@@ -115,13 +110,13 @@ export function trafficReport(events: TrafficEvent[], successfulFeeds: number, f
   const complete = successfulFeeds === SERVICE_ROADS.length * 2;
   const ordered = [...events].sort((a, b) => (a.category === "warning" ? 0 : 1) - (b.category === "warning" ? 0 : 1) || a.distanceKm - b.distanceKm);
   const seen = new Set<string>(), selected = ordered.filter(e => { const key = `${e.road}:${e.detail}`; if (seen.has(key)) return false; seen.add(key); return true; }).slice(0, 2);
-  let script = `Jetzt der Blick auf die Straßen rund um Mainz! Stand ${clock(fetchedAt)}. `;
+  let script = `Jetzt der Blick auf die Straßen rund um Mainz! `;
   if (!successfulFeeds) script += "Aktuelle Verkehrsmeldungen sind gerade nicht abrufbar. Eine verlässliche Auskunft zur Verkehrslage ist deshalb nicht möglich.";
   else {
     if (!complete) script += "Die Daten liegen momentan nur teilweise vor. ";
     script += selected.length ? selected.map(e => `Auf der ${e.road.replace(/^A/, "A ")}: ${e.detail}`).join(" ")
       : `In den ${complete ? "abgerufenen" : "erreichbaren"} Meldungen für die A 60, A 63 und A 643 im Umkreis von Mainz finden sich gerade keine aktuellen Hinweise.`;
-    script += " Quelle ist die Autobahn GmbH. Der innerstädtische Verkehr ist dabei nicht erfasst.";
+    script += " Der innerstädtische Verkehr ist dabei nicht erfasst.";
   }
   return { available: successfulFeeds > 0, complete, successfulFeeds, totalFeeds: SERVICE_ROADS.length * 2, events: selected, text: script };
 }

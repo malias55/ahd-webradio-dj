@@ -40,9 +40,10 @@ Audio liegt dauerhaft in der bestehenden PostgreSQL-Datenbank. Der lokale MP3-Ca
 | `NEWS_TR_FEED_URLS` | Optional: türkische RSS-Quellen, kommagetrennt |
 | `ELEVENLABS_MUSIC_MODEL` | Standard `music_v2` |
 | `ELEVENLABS_TTS_MODEL` | Standard `eleven_multilingual_v2` |
-| `EDENAI_API_KEY` | Redaktion und Quellenprüfung |
-| `EDENAI_MODEL` | Produktiv `gpt-6-luna` |
-| `EDENAI_REVIEW_MODEL` | Produktiv `anthropic/claude-haiku-5-5` |
+| `OPENAI_API_KEY` | Terra für Redaktion und Quellenprüfung |
+| `EDENAI_API_KEY` | Haiku als technischer Ersatzpfad |
+| `NEWS_MODEL` | `gpt-6.1-terra`, direkt über OpenAI für Autor und Prüfer |
+| `EDENAI_FALLBACK_MODEL` | `anthropic/claude-haiku-5-5`, nur bei technischen Ausfällen |
 | `NEWS_REGION` | Standard `Mainz und Rheinhessen` |
 | `NEWS_FEED_URLS` | Optional: HTTPS-RSS/Atom-URLs, kommagetrennt; erster Feed lokal |
 | `RADIO_PUBLIC_URL` | `https://radio.doerrschuck.de` |
@@ -108,3 +109,7 @@ python3 scripts/railway-local.py npx tsx scripts/radio-turkish-refresh.ts <UUID-
 ```
 
 Die korrigierte Fassung erhält eine neue UUID und erscheint im Nachrichtenarchiv. Das ursprüngliche Ausstrahlungsprotokoll bleibt erhalten.
+
+Autor und Prüfer verwenden direkt `gpt-6.1-terra`. Nur bei technischen Anbieterfehlern wird einmalig Eden AI / Haiku 5.5 verwendet. Redaktionelle Ablehnungen, Sicherheitsverweigerungen und Inhaltsfilter lösen keinen Modellwechsel aus. Beide Versuche samt Provider, tatsächlich aufgelöstem Modell, Status und Tokenverbrauch werden protokolliert. Historische Autorenangaben bleiben korrekt erhalten.
+
+Gesprochene Meldungen enthalten weder Mess-/Abrufzeiten noch Dashboard- oder Panel-Verweise. Datenstände und Quellen bleiben ausschließlich im Archiv sichtbar; nützliche Ereigniszeiten, Sperrfristen und Abdeckungshinweise bleiben erhalten.

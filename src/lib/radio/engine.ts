@@ -3,7 +3,7 @@ import type { ServerResponse } from "node:http";
 import { prisma } from "../prisma";
 import { isOnAir, isNewsSlot, NEWS_SCHEDULE, isMusicHours, upcomingNewsSlot, radioEnabled, stationTime, newsLanguage } from "./config";
 import { assetFile, pruneCache } from "./store";
-import { presenterForSlot } from "./providers";
+import { presenterForSlot, editorialConfigured } from "./providers";
 import { prepareNews, bulletinForSlot, isRepeatSlot, GERMAN_NEWS_VERSION } from "./news";
 import { stationIdAsset, IMAGING_VERSION } from "./imaging";
 import { trackPlayback } from "./audit";
@@ -142,7 +142,7 @@ async function tick(onBoundary: () => Promise<void>) {
   if (active && !state.process) await nextMusic();
 
   const next = upcomingNewsSlot(now);
-  if (radioEnabled() && next && next.getTime() - now.getTime() <= 10 * 60_000 && !state.preparing && Date.now() - state.lastPrepAt > 60_000 && process.env.ELEVENLABS_API_KEY && process.env.EDENAI_API_KEY) {
+  if (radioEnabled() && next && next.getTime() - now.getTime() <= 10 * 60_000 && !state.preparing && Date.now() - state.lastPrepAt > 60_000 && process.env.ELEVENLABS_API_KEY && editorialConfigured()) {
     state.lastPrepAt = Date.now();
     state.preparing = true;
     void prepareNews(next).catch(report).finally(() => { state.preparing = false; });
