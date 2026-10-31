@@ -27,7 +27,7 @@ export const DEFAULT_FEEDS = [
 ];
 export const TURKISH_OPENING = "Rahmân ve Rahîm olan Allah'ın adıyla. ";
 export const TURKISH_OPENING_VERSION = "tr-dry-opening-v3";
-export const TURKISH_NEWS_VERSION = "tr-story-signature-v9";
+export const TURKISH_NEWS_VERSION = "tr-original-divider-v10";
 
 // The invocation is identical every day: preserve Turkish spelling and language
 // and reuse its spoken audio instead of buying another TTS call per bulletin.

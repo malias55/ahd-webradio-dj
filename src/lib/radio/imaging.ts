@@ -11,7 +11,7 @@ export async function germanOutroAsset() {
 }
 
 export const TURKISH_SIGNATURE_KEY = "imaging:tr-approved-intro-v1";
-export const TURKISH_DIVIDER_KEY = "imaging:tr-approved-divider-v1";
+export const TURKISH_DIVIDER_KEY = "imaging:tr-original-divider-v2";
 export async function turkishDividerAsset() {
   return prisma.radioAsset.findUniqueOrThrow({ where: { key: TURKISH_DIVIDER_KEY } });
 }
