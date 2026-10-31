@@ -1,5 +1,9 @@
 // Audience-facing speech never reads out internal control-panel instructions or
 // measurement bookkeeping. Event times and useful traffic restrictions remain.
+export function germanBrandingAllowed(text: string) {
+  return !/\b(?:d(?:ö|oe|o)rr?schuck|dörşuk|ahd\s*(?:radio|webradio))\b/iu.test(text);
+}
+
 export function naturalRadioText(text: string) {
   return text
     .replace(/\b(?:Messstand|Abrufstand|Messzeit|Abrufzeit|Datenstand|Stand)\s*:?\s*\d{1,2}(?::\d{2})?(?:\s*Uhr(?:\s*\d{1,2})?)?\s*[.,;]?\s*/giu, "")

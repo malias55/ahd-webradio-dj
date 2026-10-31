@@ -17,6 +17,7 @@ async function main() {
   const repeat = new Date(slot.getTime() + 86400_000), missing = new Date(repeat.getTime() + 86400_000);
   const mainKey = mainNewsKey(slot), keys = [mainKey, mainNewsKey(repeat), mainNewsKey(missing), bulletinKey(slot), bulletinKey(repeat), bulletinKey(missing)];
   const ids: string[] = [], originalFetch = globalThis.fetch;
+  const originalElevenKey = process.env.ELEVENLABS_API_KEY;
   const testVoice = `e2e-turkish-${randomUUID()}`, originalTurkishVoice = process.env.ELEVENLABS_TURKISH_VOICE_ID;
   const testServiceVoice = `e2e-service-${randomUUID()}`, originalServiceVoice = process.env.ELEVENLABS_SERVICE_VOICE_ID;
   process.env.ELEVENLABS_SERVICE_VOICE_ID = testServiceVoice;
@@ -25,6 +26,19 @@ async function main() {
     const tonePath = join(dir, "tone.mp3");
     await command(process.env.FFMPEG_PATH || "ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=1.5:sample_rate=44100", "-ac", "2", "-c:a", "libmp3lame", "-b:a", "128k", "-y", tonePath]);
     const tone = await readFile(tonePath);
+    const blockedSlot = new Date(slot.getTime() - 3600_000), blockedKey = bulletinKey(blockedSlot);
+    keys.push(blockedKey);
+    process.env.ELEVENLABS_API_KEY = `e2e-quota-${randomUUID()}`;
+    let quotaChecks = 0;
+    globalThis.fetch = async input => {
+      assert.equal(String(input), "https://api.elevenlabs.io/v1/user/subscription", "empty quota must stop before editorial, source or TTS requests"); quotaChecks++;
+      return Response.json({ character_count: 121198, character_limit: 121305, max_credit_limit_extension: 0 });
+    };
+    await assert.rejects(prepareNews(blockedSlot), /107 Credits/);
+    assert.equal(quotaChecks, 1);
+    assert.match((await prisma.radioJob.findUniqueOrThrow({ where: { key: blockedKey } })).error || "", /Guthaben/);
+    if (originalElevenKey === undefined) delete process.env.ELEVENLABS_API_KEY;
+    else process.env.ELEVENLABS_API_KEY = originalElevenKey;
     const asset = await prisma.radioAsset.create({ data: { key: mainKey, kind: "news-main", title: "Isolated hourly service test", slot, audio: tone, duration: 1.54, script: "Test Hauptnachrichten", metadata: { editionSlot: slot.toISOString(), timeline: [{ kind: "story", start: 0, end: 1.5 }] } } });
     ids.push(asset.id);
     const secondMain = await prisma.radioAsset.create({ data: { key: mainNewsKey(repeat), kind: "news-main", title: "Isolated next-day edition", slot: repeat, audio: tone, duration: 1.54, script: "Test Hauptnachrichten", metadata: { editionSlot: repeat.toISOString(), timeline: [{ kind: "story", start: 0, end: 1.5 }] } } });
@@ -32,6 +46,7 @@ async function main() {
     let ttsCalls = 0, sourceCalls = 0, now = new Date(slot.getTime() - 5 * 60_000), temperature = 12;
     globalThis.fetch = async (input, init) => {
       const url = String(input);
+      if (url.endsWith("/v1/user/subscription")) return Response.json({ character_count: 100, character_limit: 100000, max_credit_limit_extension: 0 });
       if (url.includes("api.elevenlabs.io/v1/text-to-speech/")) {
         assert.ok(url.includes(servicePresenter().voiceId), "only the selected service presenter can be synthesized for weather/traffic");
         assert.equal(JSON.parse(String(init?.body)).language_code, "de");
@@ -131,6 +146,8 @@ async function main() {
     console.log("PASS daily morning editions, cached generation, no 09:00 purchases, early service deferred, missing-main fallback, journal persisted; encoded German, Turkish and station-ID speech contain no background music");
   } finally {
     globalThis.fetch = originalFetch;
+    if (originalElevenKey === undefined) delete process.env.ELEVENLABS_API_KEY;
+    else process.env.ELEVENLABS_API_KEY = originalElevenKey;
     if (originalTurkishVoice === undefined) delete process.env.ELEVENLABS_TURKISH_VOICE_ID;
     else process.env.ELEVENLABS_TURKISH_VOICE_ID = originalTurkishVoice;
     if (originalServiceVoice === undefined) delete process.env.ELEVENLABS_SERVICE_VOICE_ID;

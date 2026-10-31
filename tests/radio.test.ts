@@ -3,6 +3,38 @@ import assert from "node:assert/strict";
 import { isOnAir, upcomingNewsSlot, nativeSource, stationTime, isMusicHours, isNewsSlot, newsLanguage, stationDayBounds } from "../src/lib/radio/config";
 import { parseFeed, validateStories, articleText, germanTopicAllowed, sourcesForProgramme } from "../src/lib/radio/news";
 import { authCookies, userForCookie } from "../src/lib/session";
+import { availableSpeechCredits, elevenLabsError, assertNewsCredits } from "../src/lib/radio/elevenlabs";
+import { germanBrandingAllowed } from "../src/lib/radio/presentation";
+import { GERMAN_NEWS_INTRO, GERMAN_SERVICE_OUTRO, TURKISH_INTRO } from "../src/lib/radio/news";
+
+test("ElevenLabs quota is distinct from authentication errors and never leaks response data", () => {
+  assert.match(elevenLabsError(401, { detail: { status: "quota_exceeded", message: "SECRET echoed request" } }).message, /Guthaben.*quota_exceeded/);
+  assert.doesNotMatch(elevenLabsError(401, { detail: { status: "quota_exceeded", message: "SECRET" } }).message, /SECRET/);
+  assert.match(elevenLabsError(401, { detail: { status: "invalid_api_key" } }).message, /Schlüssel ungültig/);
+  assert.equal(elevenLabsError(500, { detail: { message: "SECRET" } }).message, "ElevenLabs HTTP 500");
+  assert.equal(availableSpeechCredits({}), null, "unknown balance is not zero");
+  assert.deepEqual(availableSpeechCredits({ character_count: 121198, character_limit: 121305, can_extend_character_limit: false }), { remaining: 107, overages: false });
+  assert.deepEqual(availableSpeechCredits({ character_count: 100, character_limit: 50, can_extend_character_limit: true, max_credit_limit_extension: 0 }), { remaining: 0, overages: false }, "entitlement alone does not enable paid overages");
+});
+
+test("empty speech balance stops preparation before any paid provider request", async () => {
+  const fetchBefore = globalThis.fetch, keyBefore = process.env.ELEVENLABS_API_KEY;
+  process.env.ELEVENLABS_API_KEY = "isolated-quota-test";
+  let requests = 0;
+  globalThis.fetch = async input => {
+    assert.equal(String(input), "https://api.elevenlabs.io/v1/user/subscription"); requests++;
+    return Response.json({ character_count: 121198, character_limit: 121305, max_credit_limit_extension: 0 });
+  };
+  try { await assert.rejects(assertNewsCredits(), /107 Credits/); await assert.rejects(assertNewsCredits(), /107 Credits/); assert.equal(requests, 1); }
+  finally { globalThis.fetch = fetchBefore; if (keyBefore === undefined) delete process.env.ELEVENLABS_API_KEY; else process.env.ELEVENLABS_API_KEY = keyBefore; }
+});
+
+test("German openings and closings are unbranded; Turkish brand remains", () => {
+  assert.ok(germanBrandingAllowed(GERMAN_NEWS_INTRO)); assert.ok(germanBrandingAllowed(GERMAN_SERVICE_OUTRO));
+  assert.match(GERMAN_NEWS_INTRO, /KI-Nachrichtenassistent/);
+  for (const text of ["Autohaus Dörrschuck Radio", "bei Doerrschuck", "Dörşuk", "AHD Radio"]) assert.equal(germanBrandingAllowed(text), false);
+  assert.match(TURKISH_INTRO, /Autohaus Dörşuk/);
+});
 
 test("Berlin opening hours and morning-only news in winter", () => {
   assert.equal(isOnAir(new Date("2026-10-26T06:59:59Z")), false);

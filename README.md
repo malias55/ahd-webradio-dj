@@ -115,3 +115,13 @@ Autor und Prüfer verwenden direkt `gpt-6.1-terra`. Nur bei technischen Anbieter
 Gesprochene Meldungen enthalten weder Mess-/Abrufzeiten noch Dashboard- oder Panel-Verweise. Datenstände und Quellen bleiben ausschließlich im Archiv sichtbar; nützliche Ereigniszeiten, Sperrfristen und Abdeckungshinweise bleiben erhalten.
 
 Die Schlussklänge werden einmalig generiert bzw. aus dem freigegebenen türkischen Klang übernommen und danach wiederverwendet. Deutsche Varianten wurden als echte Audioeingaben mit `gpt-audio-1.5` verglichen; Claude Opus 5.5 im CLI prüfte die Höranalysen, Texte und Messdaten. Opus hat dabei keinen direkten Audioinput und wird nicht als selbst hörender Prüfer ausgegeben. Die Nachrichtenredaktion bleibt unverändert Terra mit Haiku als technischem Ersatzpfad.
+
+Die deutsche Ausgabe ist senderneutral: Keine Nennung von Autohaus Dörrschuck, Dörşuk oder AHD Radio in Einleitung, Meldungen oder Schluss. Der kurze KI-Hinweis bleibt enthalten. Die Begrüßung wird einmal vertont und dauerhaft wiederverwendet. Frühere deutsche Senderkennungen mit Autohausnamen sind aus der Rotation genommen (`neutral-dry-v3`); neutrale Kennungen werden erst nach einer ausdrücklichen Backend-Erzeugung verwendet. Türkische Begrüßung und Autohausnennung bleiben erhalten.
+
+Vor neuer Nachrichtenredaktion und vor dem Wetter-/Verkehrsteil wird das ElevenLabs-Guthaben schreibgeschützt geprüft (60 Sekunden Cache). Bei weniger als 1000 verbleibenden Credits und deaktivierter Mehrverbrauchsabrechnung pausieren neue Generierungen vor bezahlten Textmodellaufrufen. Der Mindestpuffer ist keine Kostengarantie für eine ganze Ausgabe. Ist der Kontostand wegen fehlender Leserechte oder vorübergehender API-Störung unbekannt, wird er nicht als null behandelt. Ein `quota_exceeded` bei der Vertonung erhält eine eigene, sichere Fehlermeldung, auch bei HTTP 401. Das Nachrichtenarchiv zeigt die letzte noch ungelöste Erstellungspanne der vergangenen 48 Stunden. Ein fehlgeschlagener Termin wird nicht nachträglich als gesendet ausgegeben; nach einer Guthabenaufladung gilt der nächste reguläre Morgenplan (07 Uhr Türkisch, 08 Uhr Deutsch).
+
+Eine vorhandene, geprüfte deutsche Ausgabe lässt sich ohne neue Redaktion auf die gespeicherte neutrale Begrüßung umstellen. UUIDs von Hauptteil und vollständiger Ausgabe in dieser Reihenfolge übergeben; Sprach-Timeline, Quellen und ursprüngliches Sendeprotokoll bleiben nachvollziehbar:
+
+```sh
+python3 scripts/railway-local.py npx tsx scripts/radio-neutral-refresh.ts <Hauptteil-UUID> <Ausgabe-UUID>
+```

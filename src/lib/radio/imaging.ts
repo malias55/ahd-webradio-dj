@@ -16,7 +16,7 @@ export async function turkishSignatureAsset() {
 }
 
 export const IMAGING_VERSION = "v1";
-export const STATION_ID_VERSION = "dry-v2";
+export const STATION_ID_VERSION = "neutral-dry-v3";
 export const GERMAN_DIVIDER_VERSION = "felt-piano-v2";
 export const GERMAN_DIVIDER_SECONDS = 0.8;
 export const GERMAN_DIVIDER_KEY = `imaging:${GERMAN_DIVIDER_VERSION}:divider`;
@@ -91,7 +91,7 @@ export async function generateImaging() {
   await generateGermanDivider();
 }
 
-export const STATION_LINE = "Autohaus Dörrschuck Radio. Entspannt ankommen. Gute Musik. Gute Fahrt.";
+export const STATION_LINE = "Entspannt ankommen. Gute Musik. Gute Fahrt.";
 export function stationIdKey(slot: Date) {
   const p = presenterForSlot(slot);
   return `station-id:${STATION_ID_VERSION}:${p.gender}:${p.voiceId}`;

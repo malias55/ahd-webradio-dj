@@ -4,6 +4,7 @@ import { speechText } from "./pronunciation";
 import { prisma } from "../prisma";
 import { normalizeAudio, withJob } from "./store";
 import { stationTime } from "./config";
+import { elevenLabsError } from "./elevenlabs";
 
 export function presenterForSlot(slot: Date) {
   return presenterForHour(stationTime(slot).hour);
@@ -35,7 +36,11 @@ async function eleven(path: string, body: unknown, timeout = 120_000) {
     body: JSON.stringify(body), signal: AbortSignal.timeout(timeout),
   });
   // Don't include provider response bodies: they can contain echoed request data or credentials.
-  if (!r.ok) throw new Error(`ElevenLabs HTTP ${r.status}`);
+  if (!r.ok) {
+    let error: unknown;
+    try { error = await r.json(); } catch {}
+    throw elevenLabsError(r.status, error);
+  }
   if (!(r.headers.get("content-type") || "").includes("audio/")) throw new Error("ElevenLabs returned no audio");
   return Buffer.from(await r.arrayBuffer());
 }

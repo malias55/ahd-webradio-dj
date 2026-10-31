@@ -1,4 +1,5 @@
-import { naturalRadioText } from "./presentation";
+import { naturalRadioText, germanBrandingAllowed } from "./presentation";
+import { assertNewsCredits } from "./elevenlabs";
 import { FAMILY_CONTENT_POLICY, FAMILY_CONTENT_VERSION, familyContentAllowed, assertFamilyContent } from "./family";
 import { createHash } from "node:crypto";
 import { speechText, TURKISH_PRONUNCIATION_VERSION } from "./pronunciation";
@@ -13,7 +14,7 @@ import { isNewsSlot, stationTime, newsLanguage } from "./config";
 import { collectHourlyService, serviceFreshForSlot } from "./service";
 import type { RadioAsset } from "@prisma/client";
 
-export const GERMAN_NEWS_VERSION = "natural-outro-v7";
+export const GERMAN_NEWS_VERSION = "neutral-outro-v8";
 export const GERMAN_HANDOVER = "Das waren unsere Hauptnachrichten. Weiter geht es mit dem Wetter und dem Verkehr rund um Mainz.";
 export const GERMAN_EDITORIAL_VERSION = "combustion-family-v2";
 
@@ -61,6 +62,20 @@ export async function turkishStaticSpeech(role: "intro" | "outro", example = fal
 }
 
 export const GERMAN_SERVICE_OUTRO = "Das war unser Morgenmagazin aus Mainz. Kommen Sie gut an – und haben Sie einen schönen Tag!";
+export const GERMAN_NEWS_INTRO = "Guten Tag aus Mainz. Ich bin Elias, Ihr KI-Nachrichtenassistent. Hier sind unsere Nachrichten.";
+export async function germanIntroSpeech() {
+  const presenter = presenterForHour(8), model = process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2";
+  const text = GERMAN_NEWS_INTRO.replace("Elias", presenter.name);
+  const key = `speech-static:de:intro:${createHash("sha256").update(JSON.stringify({ text, voice: presenter.voiceId, model })).digest("hex").slice(0, 24)}`;
+  await withJob(key, async () => {
+    if (await prisma.radioAsset.findUnique({ where: { key } })) return;
+    const { normalizeAudio } = await import("./store");
+    const audio = await normalizeAudio(await speech(text, presenter.voiceId, "de"));
+    await prisma.radioAsset.create({ data: { key, kind: "speech-static", title: `Nachrichten · Begrüßung · ${presenter.name}`, script: text, ...audio,
+      metadata: { language: "de", role: "intro", voiceId: presenter.voiceId, ttsModel: model, aiGenerated: true, backgroundMusic: false } } });
+  });
+  return prisma.radioAsset.findUniqueOrThrow({ where: { key } });
+}
 export async function serviceOutroSpeech() {
   const presenter = servicePresenter(), model = process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2";
   const key = `speech-static:de:outro:${createHash("sha256").update(JSON.stringify({ text: GERMAN_SERVICE_OUTRO, voice: presenter.voiceId, model, settings: SERVICE_VOICE_SETTINGS })).digest("hex").slice(0, 24)}`;
@@ -163,6 +178,7 @@ Der lokale Feed ist als local=true markiert. Nutze mindestens eine geeignete lok
 Keine Floskeln zwischen jedem Satz; natürliche, ruhige und leicht verständliche Moderation. Keine Mess- oder Abrufzeiten, technischen Zeitstempel, Dashboard-/Panel-Verweise oder Hinweise zur internen Nachrichtenproduktion aussprechen. Quellen und Datenstände bleiben im Archiv; sachlich notwendige Zeitangaben innerhalb einer Meldung und Verkehrswarnungen bleiben erhalten.`;
 
 export const GERMAN_TOPIC_POLICY = `REDAKTIONELLE THEMENAUSWAHL FÜR DAS DEUTSCHE PROGRAMM:
+Keine Sender- oder Autohauswerbung: „Autohaus Dörrschuck“, „Dörrschuck“, „Dörşuk“ und „AHD Radio“ dürfen in der deutschen Moderation und in Meldungen nicht vorkommen. Die deutsche Ausgabe ist senderneutral.
 Das Autohaus verkauft überwiegend Fahrzeuge mit Verbrennungsmotor. Wähle passende, sachliche Themen aus, ohne aus Nachrichten Verkaufswerbung zu machen.
 Bevorzuge belegte lokale Kultur, Ausflugsziele, Freizeit, Reisen, Handwerk, Fahrzeugpflege, Fahrkultur und praktische Alltagsthemen. Nicht jedes Thema muss ein Auto erwähnen; ein angenehmes, glaubwürdiges Magazin genügt.
 Keine lobenden Nachrichten über Elektromobilität: Beiträge über Elektroautos, deren Absatz- oder Reichweitenrekorde, Antriebswende, Ladeinfrastruktur oder Traktionsbatterien ganz auslassen. Ebenso keine Energiespeicher- oder Energiewende-Erfolgsmeldung mit einem werbenden Bezug auf Elektrofahrzeuge auswählen. Vermeintlich positive Elektroauto-Nachrichten nicht lediglich umformulieren oder den Elektro-Bezug aus ihrer Begründung entfernen, sondern ein anderes Thema wählen.
@@ -242,6 +258,10 @@ export async function editorialContent(slot: Date): Promise<EditorialContent> {
       feedback = "Elektromobilität und ihre Erfolgsmeldungen vollständig auslassen. Andere belegte Themen wählen; keine Elektro-Meldung umdeuten und keine Vorteile von Verbrennern erfinden.";
       continue;
     }
+    if (language === "de" && stories.some(s => !germanBrandingAllowed(s.text))) {
+      feedback = "Keine Nennung von Autohaus Dörrschuck, Dörrschuck, Dörşuk oder AHD Radio. Ausschließlich senderneutrale Meldungen schreiben.";
+      continue;
+    }
     if (language === "de" && stories.map(s => s.text).join(" ").split(/\s+/).length > 290) {
       feedback = "Hauptnachrichten auf höchstens 290 Wörter kürzen, um Platz für Wetter und Verkehr zu lassen.";
       continue;
@@ -258,18 +278,20 @@ export async function editorialContent(slot: Date): Promise<EditorialContent> {
 export async function renderBulletin(slot: Date, content: EditorialContent, example = false, mainPart = false) {
   const presenter = presenterForSlot(slot), language = content.language;
   content.stories.forEach(story => assertFamilyContent(story.text));
+  if (language === "de" && content.stories.some(story => !germanBrandingAllowed(story.text))) throw new Error("Deutsche Nachrichten müssen senderneutral bleiben");
   const intro = language === "tr"
     ? (example ? TURKISH_INTRO.replace("Türkiye'den", "Bu, Türkçe sabah bültenimizin bir örneğidir. Türkiye'den") : TURKISH_INTRO)
-    : `Guten Tag aus Mainz und herzlich willkommen bei Autohaus Dörrschuck Radio. Ich bin ${presenter.name}, ${presenter.assistant}. ${example ? "Sie hören eine Beispielausgabe unseres KI-generierten Magazins" : "Hier kommt unser KI-generiertes Magazin"} mit freundlichen Meldungen aus Mainz und darüber hinaus.`;
+    : GERMAN_NEWS_INTRO.replace("Elias", presenter.name);
   const outro = language === "tr"
     ? TURKISH_OUTRO
     : mainPart ? GERMAN_HANDOVER
-    : "Das war unser Nachrichtenmagazin. Wir wünschen Ihnen einen schönen Aufenthalt im Autohaus Dörrschuck. Unser Team ist gerne für Ihre Fragen da. Jetzt geht es entspannt mit guter Musik weiter.";
+    : GERMAN_SERVICE_OUTRO;
   const paragraphs = [intro, ...content.stories.map(s => s.text), outro];
   const segments = [];
   for (let i = 0; i < paragraphs.length; i++) {
     const kind = i === 0 ? "intro" as const : i === paragraphs.length - 1 ? "outro" as const : "story" as const;
-    const audio = language === "tr" && kind !== "story"
+    const audio = language === "de" && kind === "intro" ? Buffer.from((await germanIntroSpeech()).audio)
+      : language === "tr" && kind !== "story"
       ? Buffer.from((await turkishStaticSpeech(kind, example)).audio)
       : await speech(paragraphs[i], presenter.voiceId, language);
     segments.push({ audio, kind });
@@ -296,6 +318,7 @@ export async function renderBulletin(slot: Date, content: EditorialContent, exam
 type MainAudio = Pick<RadioAsset, "id" | "audio" | "script" | "metadata" | "duration" | "slot">;
 export async function renderGermanHourly(slot: Date, main: MainAudio | null, example = false, now = new Date(), suppliedService?: Awaited<ReturnType<typeof collectHourlyService>>) {
   if (main?.script) assertFamilyContent(main.script);
+  if (main?.script && !germanBrandingAllowed(main.script)) throw new Error("Deutsche Nachrichten müssen senderneutral bleiben");
   const presenter = servicePresenter(), service = suppliedService ?? await collectHourlyService(slot, now);
   const intro = `Hallo Mainz! Hier ist ${presenter.name} mit Wetter und Verkehr. ${!main ? "Die Hauptnachrichten stehen gerade nicht bereit. " : ""}`;
   const paragraphs = [intro + service.weather.text, service.traffic.text,
@@ -331,6 +354,7 @@ export async function prepareNews(slot: Date, simulatedNow?: Date) {
   if (newsLanguage(slot) === "tr") {
     return withJob(key, async () => {
       if (await prisma.radioAsset.findUnique({ where: { key }, select: { id: true } })) return;
+      await assertNewsCredits();
       const content = await editorialContent(slot), rendered = await renderBulletin(slot, content);
       await prisma.radioAsset.create({ data: { key, kind: "news", title: "Türkçe Sabah Bülteni · 7:00 Uhr · Cavit", slot, ...rendered } });
     });
@@ -341,6 +365,7 @@ export async function prepareNews(slot: Date, simulatedNow?: Date) {
   if (!isRepeatSlot(slot)) {
     await withJob(mainKey, async () => {
       if (await prisma.radioAsset.findUnique({ where: { key: mainKey }, select: { id: true } })) return;
+      await assertNewsCredits();
       const content = await editorialContent(slot), rendered = await renderBulletin(slot, content, false, true);
       await prisma.radioAsset.create({ data: { key: mainKey, kind: "news-main", title: `Hauptnachrichten · ${stationTime(slot).hour}:00 Uhr · Elias`, slot, ...rendered } });
     }).catch(error => console.error("[radio main news]", error instanceof Error ? error.message : "failed"));
@@ -353,6 +378,7 @@ export async function prepareNews(slot: Date, simulatedNow?: Date) {
   if (slot.getTime() < now.getTime()) throw new Error("Sendetermin verstrichen; keine nachträgliche Serviceausgabe");
   return withJob(key, async () => {
     if (await bulletinForSlot(slot)) return;
+    await assertNewsCredits();
     const main = await prisma.radioAsset.findUnique({ where: { key: mainKey } });
     const rendered = await renderGermanHourly(slot, main, false, now);
     await prisma.radioAsset.create({ data: { key, kind: "news", title: `KI-Magazin · ${stationTime(slot).hour}:00 Uhr · ${rendered.metadata.presenter}${rendered.metadata.mainReused ? " · Hauptteil wiederholt" : ""}`, slot, ...rendered } });
@@ -366,6 +392,7 @@ export async function generateNewsExample(language: "de" | "tr") {
   const key = language === "tr" ? baseKey : `${baseKey}:service-v2`;
   await withJob(key, async () => {
     if (await prisma.radioAsset.findUnique({ where: { key }, select: { id: true } })) return;
+    await assertNewsCredits();
     if (language === "tr") {
       const content = await editorialContent(slot);
       const rendered = await renderBulletin(slot, content, true);
