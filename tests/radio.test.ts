@@ -292,6 +292,7 @@ test("Turkish signatures occupy only silent gaps between complete stories and sh
   const body = { duration: 15, timeline: [{ kind: "intro", start: 0, end: 2 }, { kind: "story", start: 2.5, end: 5 }, { kind: "story", start: 5.7, end: 8 }, { kind: "story", start: 8.7, end: 11 }, { kind: "outro", start: 11.5, end: 14 }] };
   const p = newsDividerTimeline(body, 0.9);
   assert.equal(p.inserts.length, 2); assert.equal(p.timeline.filter(c => c.kind === "divider").length, 2);
+  assert.equal(newsDividerTimeline(body, 2).inserts.length, 2);
   assert.equal(p.duration, 16.8); assert.equal(p.timeline.at(-1)?.end, 15.8);
   for (const effect of p.timeline.filter(c => c.kind === "divider")) for (const voice of p.timeline.filter(c => c.kind !== "divider")) assert.ok(voice.end < effect.start || effect.end < voice.start);
   assert.throws(() => newsDividerTimeline({ duration: p.duration, timeline: p.timeline }, 0.9));

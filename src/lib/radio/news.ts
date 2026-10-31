@@ -27,7 +27,7 @@ export const DEFAULT_FEEDS = [
 ];
 export const TURKISH_OPENING = "Rahmân ve Rahîm olan Allah'ın adıyla. ";
 export const TURKISH_OPENING_VERSION = "tr-dry-opening-v3";
-export const TURKISH_NEWS_VERSION = "tr-original-divider-v10";
+export const TURKISH_NEWS_VERSION = "tr-broadcast-style-v11";
 
 // The invocation is identical every day: preserve Turkish spelling and language
 // and reuse its spoken audio instead of buying another TTS call per bulletin.
@@ -297,10 +297,13 @@ export async function renderBulletin(slot: Date, content: EditorialContent, exam
     segments.push({ audio, kind });
   }
   let { timeline, ...audio } = await mixDryBulletin(segments, { opener: false, closer: false });
+  let dividerVersion: string | null = null;
   if (language === "tr") {
     const invocation = await turkishInvocation();
     const signature = await turkishSignatureAsset();
-    const separated = await insertNewsDividers({ ...audio, timeline }, await turkishDividerAsset());
+    const divider = await turkishDividerAsset();
+    const separated = divider ? await insertNewsDividers({ ...audio, timeline }, divider) : { ...audio, timeline };
+    if (divider) dividerVersion = TURKISH_DIVIDER_KEY;
     const combined = await frameTurkishProgramme(invocation, signature, separated);
     timeline = combined.timeline;
     audio = { audio: combined.audio, duration: combined.duration };
@@ -312,7 +315,7 @@ export async function renderBulletin(slot: Date, content: EditorialContent, exam
       authorModel: content.modelCalls.filter(c => c.purpose === "author" && c.status !== "failed").at(-1)?.resolvedModel || newsModelConfig().primary, reviewModel: content.modelCalls.filter(c => c.purpose === "review" && c.status !== "failed").at(-1)?.resolvedModel || newsModelConfig().primary,
       modelPolicy: newsModelConfig(),
       openingVersion: language === "tr" ? TURKISH_OPENING_VERSION : null, pronunciationVersion: language === "tr" ? TURKISH_PRONUNCIATION_VERSION : null,
-      ttsModel: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2", imagingVersion: language === "tr" ? TURKISH_SIGNATURE_KEY : null, dividerVersion: language === "tr" ? TURKISH_DIVIDER_KEY : null, timeline,
+      ttsModel: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2", imagingVersion: language === "tr" ? TURKISH_SIGNATURE_KEY : null, dividerVersion, timeline,
       region: language === "tr" ? "Türkiye / Almanya" : process.env.NEWS_REGION || "Mainz und Rheinhessen" } };
 }
 

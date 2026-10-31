@@ -20,7 +20,7 @@ async function divider() {
   const input=join(dir,'original.mp3'),pcm=join(dir,'master.pcm'),output=join(dir,'master.mp3');
   await writeFile(input,original);
   const originalDuration=Number(await command(process.env.FFPROBE_PATH || 'ffprobe',['-v','error','-show_entries','format=duration','-of','default=nw=1:nk=1',input]));
-  if(!Number.isFinite(originalDuration)||originalDuration<0.5||originalDuration>1.2)throw new Error('Generate a complete short sting lasting 0.5–1.2 seconds');
+  if(!Number.isFinite(originalDuration)||originalDuration<0.5||originalDuration>2.5)throw new Error('Generate a complete short sting lasting 0.5–2.5 seconds');
   // Master the entire original performance. No excerpting, time cuts or reuse
   // of the longer intro: preserve the generator's complete musical gesture.
   await command(process.env.FFMPEG_PATH || 'ffmpeg',['-v','error','-nostdin','-i',input,'-ar','44100','-ac','2','-f','f32le','-y',pcm]);
@@ -39,7 +39,8 @@ async function main(){
  const id=process.argv[2];if(!id)return;
  const source=await prisma.radioAsset.findUniqueOrThrow({where:{id}});const m=source.metadata as {language:string;timeline:Cue[]};
  if(source.kind!=='news'||m.language!=='tr'||!source.slot||!familyAssetAllowed(source))throw new Error('Reviewed Turkish news required');
- const key=bulletinKey(source.slot);
+ const baseKey=bulletinKey(source.slot), existing=await prisma.radioAsset.findUnique({where:{key:baseKey},select:{metadata:true}});
+ const key=existing && (existing.metadata as {dividerVersion?:string|null})?.dividerVersion!==TURKISH_DIVIDER_KEY ? `${baseKey}:divider:${sound.id}` : baseKey;
  await withJob(key,async()=>{
   if(await prisma.radioAsset.findUnique({where:{key},select:{id:true}}))return;
   const {timeline,...audio}=await insertNewsDividers({audio:source.audio,duration:source.duration,timeline:m.timeline},sound);

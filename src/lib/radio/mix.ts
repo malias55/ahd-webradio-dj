@@ -10,7 +10,7 @@ export type Cue = { kind: string; start: number; end: number };
 export type DryMixOptions = { opener?: boolean; closer?: boolean };
 
 export function newsDividerTimeline(programme: { duration: number; timeline: Cue[] }, soundDuration: number) {
-  if (!Number.isFinite(soundDuration) || soundDuration <= 0 || soundDuration > 1.2 || programme.timeline.some(c => c.kind === "divider")) throw new Error("Invalid or duplicate story divider");
+  if (!Number.isFinite(soundDuration) || soundDuration <= 0 || soundDuration > 2.5 || programme.timeline.some(c => c.kind === "divider")) throw new Error("Invalid or duplicate story divider");
   const inserts: { at: number; start: number; end: number }[] = [];
   for (let i = 0; i < programme.timeline.length - 1; i++) {
     const current = programme.timeline[i], next = programme.timeline[i + 1];
