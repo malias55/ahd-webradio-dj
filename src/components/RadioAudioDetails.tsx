@@ -1,11 +1,11 @@
 "use client";
 
+import { time, duration, languageLabel } from "@/lib/radio/format";
+export { time, duration, languageLabel } from "@/lib/radio/format";
+
 type Source = { id: number; title: string; url: string; publishedAt: string };
 export type Asset = { id: string; title: string; kind: string; duration: number; slot: string | null; script: string | null; createdAt: string;
   metadata?: { programmeVersion?: string; familyContentVersion?: string; correctedAt?: string; supersededBy?: string; editionSlot?: string; presenter?: string; language?: string; authorModel?: string; reviewModel?: string; ttsModel?: string; example?: boolean; mainAssetId?: string; mainReused?: boolean; mainUnavailable?: boolean; backgroundMusic?: boolean; service?: { fetchedAt: string; weather: { available: boolean }; traffic: { available: boolean; complete: boolean }; errors: string[] }; modelCalls?: { inputTokens: number | null; outputTokens: number | null }[]; sources?: Source[] } };
-export const time = (v: string) => new Date(v).toLocaleString("de-DE", { timeZone: "Europe/Berlin", dateStyle: "short", timeStyle: "short" });
-export const duration = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
-export const languageLabel = (l?: string) => l === "tr" ? "Türkisch" : l === "de" ? "Deutsch" : "Instrumental";
 
 export function AudioDetails({ asset }: { asset: Asset }) {
   const m = asset.metadata;

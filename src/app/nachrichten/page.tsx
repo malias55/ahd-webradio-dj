@@ -3,7 +3,8 @@ import { familyAssetAllowed } from "@/lib/radio/family";
 import { redirect } from "next/navigation";
 import { isAuthorized } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
-import { AudioDetails, time, type Asset } from "@/components/RadioAudioDetails";
+import { AudioDetails, type Asset } from "@/components/RadioAudioDetails";
+import { time } from "@/lib/radio/format";
 
 export const dynamic = "force-dynamic";
 

@@ -8,6 +8,7 @@ function isPublic(pathname: string, method: string) {
   if (pathname === "/") return true;
   if (method === "GET" && pathname === "/api/radio/stream") return true;
   if (pathname === "/api/health") return true;
+  if (["GET", "HEAD"].includes(method) && ["/manifest.json", "/sw.js"].includes(pathname)) return true;
   if (method === "GET" && /^\/api\/zones\/[^/]+\/live\/?$/.test(pathname)) return true;
   return false;
 }
