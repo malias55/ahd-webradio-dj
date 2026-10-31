@@ -29,7 +29,7 @@ export function newsDividerTimeline(programme: { duration: number; timeline: Cue
 // is cut, no sound is overlaid, and all original pauses remain in the programme.
 export async function insertNewsDividers(programme: { audio: Uint8Array; duration: number; timeline: Cue[] }, sound: { audio: Uint8Array; duration: number }) {
   const plan = newsDividerTimeline(programme, sound.duration);
-  if (!plan.inserts.length) return programme;
+  if (!plan.inserts.length) return { ...programme, audio: Buffer.from(programme.audio) };
   const dir = await mkdtemp(join(tmpdir(), "ahd-story-dividers-"));
   try {
     const body = join(dir, "body.mp3"), divider = join(dir, "divider.mp3"), output = join(dir, "separated.wav");
