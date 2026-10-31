@@ -8,6 +8,46 @@ export type VoiceSegment = { audio: Buffer; kind: "intro" | "story" | "weather" 
 export type Cue = { kind: string; start: number; end: number };
 
 export type DryMixOptions = { opener?: boolean; closer?: boolean };
+
+export function newsDividerTimeline(programme: { duration: number; timeline: Cue[] }, soundDuration: number) {
+  if (!Number.isFinite(soundDuration) || soundDuration <= 0 || soundDuration > 1.2 || programme.timeline.some(c => c.kind === "divider")) throw new Error("Invalid or duplicate story divider");
+  const inserts: { at: number; start: number; end: number }[] = [];
+  for (let i = 0; i < programme.timeline.length - 1; i++) {
+    const current = programme.timeline[i], next = programme.timeline[i + 1];
+    if (current.kind !== "story" || next.kind !== "story") continue;
+    if (!Number.isFinite(current.end) || !Number.isFinite(next.start) || next.start - current.end < 0.5 || current.end < 0 || next.start > programme.duration) throw new Error("No safe gap between news stories");
+    const at = current.end + 0.18, start = at + inserts.length * soundDuration;
+    inserts.push({ at, start, end: start + soundDuration });
+  }
+  const timeline = [...programme.timeline.map(c => ({ ...c, start: c.start + inserts.filter(p => p.at <= c.start).length * soundDuration, end: c.end + inserts.filter(p => p.at <= c.end).length * soundDuration })), ...inserts.map(p => ({ kind: "divider", start: p.start, end: p.end }))].sort((a, b) => a.start - b.start);
+  const duration = programme.duration + inserts.length * soundDuration;
+  if (!Number.isFinite(duration) || duration > 260) throw new Error("Ausgabe mit Nachrichtentrennern überschreitet das Sendezeitfenster");
+  return { inserts, timeline, duration };
+}
+
+// Insert a short signature into existing silent gaps by concatenation. No voice
+// is cut, no sound is overlaid, and all original pauses remain in the programme.
+export async function insertNewsDividers(programme: { audio: Uint8Array; duration: number; timeline: Cue[] }, sound: { audio: Uint8Array; duration: number }) {
+  const plan = newsDividerTimeline(programme, sound.duration);
+  if (!plan.inserts.length) return programme;
+  const dir = await mkdtemp(join(tmpdir(), "ahd-story-dividers-"));
+  try {
+    const body = join(dir, "body.mp3"), divider = join(dir, "divider.mp3"), output = join(dir, "separated.wav");
+    await writeFile(body, programme.audio); await writeFile(divider, sound.audio);
+    const cuts = [0, ...plan.inserts.map(p => p.at), programme.duration], filters: string[] = [], pieces: string[] = [];
+    filters.push(`[0:a]asplit=${cuts.length - 1}${cuts.slice(1).map((_, i) => `[body${i}]`).join("")}`);
+    filters.push(`[1:a]asplit=${plan.inserts.length}${plan.inserts.map((_, i) => `[sound${i}]`).join("")}`);
+    for (let i = 0; i < cuts.length - 1; i++) {
+      filters.push(`[body${i}]atrim=start=${cuts[i]}:end=${cuts[i + 1]},asetpts=PTS-STARTPTS[p${i}]`); pieces.push(`p${i}`);
+      if (i < plan.inserts.length) { filters.push(`[sound${i}]apad=whole_dur=${sound.duration},atrim=duration=${sound.duration},asetpts=PTS-STARTPTS[d${i}]`); pieces.push(`d${i}`); }
+    }
+    filters.push(`${pieces.map(p => `[${p}]`).join("")}concat=n=${pieces.length}:v=0:a=1[out]`);
+    await command(process.env.FFMPEG_PATH || "ffmpeg", ["-v", "error", "-nostdin", "-i", body, "-i", divider, "-filter_complex", filters.join(";"), "-map", "[out]", "-ar", "44100", "-ac", "2", "-y", output]);
+    const audio = await normalizeAudio(await readFile(output), 270);
+    if (audio.duration > 260) throw new Error("Ausgabe mit Nachrichtentrennern überschreitet das Sendezeitfenster");
+    return { ...audio, timeline: plan.timeline };
+  } finally { await rm(dir, { recursive: true, force: true }); }
+}
 export function dryNewsTimeline(clips: { duration: number; kind: VoiceSegment["kind"] }[], options: DryMixOptions = {}) {
   const cues: Cue[] = [];
   let cursor = 0.25;

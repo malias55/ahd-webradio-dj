@@ -111,15 +111,15 @@ async function main() {
       return turkishFetch(input, init);
     };
     const trSlot = new Date(slot.getTime() - 3600_000);
-    const trContent = { stories: [{ text: "TRT’nin yeni yayını.", sourceIds: [1] }], sources: [], modelCalls: [], language: "tr" as const, editionSlot: trSlot.toISOString() };
+    const trContent = { stories: [{ text: "TRT’nin yeni yayını.", sourceIds: [1] }, { text: "Yeni kültür etkinliği.", sourceIds: [1] }, { text: "Bilim müzesinden yeni sergi.", sourceIds: [1] }], sources: [], modelCalls: [], language: "tr" as const, editionSlot: trSlot.toISOString() };
     const turkish = await renderBulletin(trSlot, trContent);
     const firstRequestCount = trRequests.length;
     await renderBulletin(trSlot, trContent);
-    assert.equal(trRequests.length - firstRequestCount, 1, "static intro, outro and invocation must be cached; only story gets new TTS");
+    assert.equal(trRequests.length - firstRequestCount, 3, "static intro, outro and invocation must be cached; only stories get new TTS");
     assert.ok(trRequests.includes("TERETE’nin yeni yayını."));
     assert.ok(trRequests.some(t => t.includes("Autohaus Dörşuk")));
     assert.equal(turkish.metadata.backgroundMusic, false);
-    assert.deepEqual(turkish.metadata.timeline.filter(c => ["opener", "closer", "divider"].includes(c.kind)).map(c => c.kind), ["opener", "closer"], "only the approved standalone opener and final closer are allowed");
+    assert.deepEqual(turkish.metadata.timeline.filter(c => ["opener", "closer", "divider"].includes(c.kind)).map(c => c.kind), ["opener", "divider", "divider", "closer"], "short signatures only between complete stories, plus approved opener and final closer");
     assert.ok(turkish.script.startsWith(TURKISH_OPENING));
     assert.match(turkish.script, /TERETE/);
     const speechKinds = new Set(["invocation", "intro", "story", "outro"]);

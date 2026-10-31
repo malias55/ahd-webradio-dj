@@ -8,8 +8,8 @@ import { load } from "cheerio";
 import { prisma } from "../prisma";
 import { edenJson, presenterForHour, presenterForSlot, servicePresenter, speech, SERVICE_VOICE_SETTINGS, newsModelConfig, type ModelCall } from "./providers";
 import { withJob } from "./store";
-import { mixDryBulletin, joinNewsParts, frameTurkishProgramme, appendNewsOutro, type Cue } from "./mix";
-import { turkishSignatureAsset, TURKISH_SIGNATURE_KEY, germanOutroAsset, GERMAN_OUTRO_KEY } from "./imaging";
+import { mixDryBulletin, joinNewsParts, frameTurkishProgramme, appendNewsOutro, insertNewsDividers, type Cue } from "./mix";
+import { turkishSignatureAsset, TURKISH_SIGNATURE_KEY, turkishDividerAsset, TURKISH_DIVIDER_KEY, germanOutroAsset, GERMAN_OUTRO_KEY } from "./imaging";
 import { isNewsSlot, stationTime, newsLanguage } from "./config";
 import { collectHourlyService, serviceFreshForSlot } from "./service";
 import type { RadioAsset } from "@prisma/client";
@@ -27,7 +27,7 @@ export const DEFAULT_FEEDS = [
 ];
 export const TURKISH_OPENING = "Rahmân ve Rahîm olan Allah'ın adıyla. ";
 export const TURKISH_OPENING_VERSION = "tr-dry-opening-v3";
-export const TURKISH_NEWS_VERSION = "tr-natural-outro-v8";
+export const TURKISH_NEWS_VERSION = "tr-story-signature-v9";
 
 // The invocation is identical every day: preserve Turkish spelling and language
 // and reuse its spoken audio instead of buying another TTS call per bulletin.
@@ -300,7 +300,8 @@ export async function renderBulletin(slot: Date, content: EditorialContent, exam
   if (language === "tr") {
     const invocation = await turkishInvocation();
     const signature = await turkishSignatureAsset();
-    const combined = await frameTurkishProgramme(invocation, signature, { ...audio, timeline });
+    const separated = await insertNewsDividers({ ...audio, timeline }, await turkishDividerAsset());
+    const combined = await frameTurkishProgramme(invocation, signature, separated);
     timeline = combined.timeline;
     audio = { audio: combined.audio, duration: combined.duration };
   }
@@ -311,7 +312,7 @@ export async function renderBulletin(slot: Date, content: EditorialContent, exam
       authorModel: content.modelCalls.filter(c => c.purpose === "author" && c.status !== "failed").at(-1)?.resolvedModel || newsModelConfig().primary, reviewModel: content.modelCalls.filter(c => c.purpose === "review" && c.status !== "failed").at(-1)?.resolvedModel || newsModelConfig().primary,
       modelPolicy: newsModelConfig(),
       openingVersion: language === "tr" ? TURKISH_OPENING_VERSION : null, pronunciationVersion: language === "tr" ? TURKISH_PRONUNCIATION_VERSION : null,
-      ttsModel: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2", imagingVersion: language === "tr" ? TURKISH_SIGNATURE_KEY : null, dividerVersion: null, timeline,
+      ttsModel: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2", imagingVersion: language === "tr" ? TURKISH_SIGNATURE_KEY : null, dividerVersion: language === "tr" ? TURKISH_DIVIDER_KEY : null, timeline,
       region: language === "tr" ? "Türkiye / Almanya" : process.env.NEWS_REGION || "Mainz und Rheinhessen" } };
 }
 
