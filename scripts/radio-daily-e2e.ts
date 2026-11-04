@@ -116,8 +116,10 @@ async function main() {
     assert.ok(trRequests.some(t => t.includes("Autohaus Dörşuk")));
     assert.equal(turkish.metadata.backgroundMusic, false);
     const activeDivider = await turkishDividerAsset();
-    assert.deepEqual(turkish.metadata.timeline.filter(c => ["opener", "closer", "divider"].includes(c.kind)).map(c => c.kind), activeDivider ? ["opener", "divider", "divider", "closer"] : ["opener", "closer"], "a pending replacement must use clean pauses; active signatures stay between complete stories");
-    assert.equal(turkish.metadata.dividerVersion === null, !activeDivider);
+    assert.deepEqual(turkish.metadata.timeline.filter(c => ["opener", "closer", "divider"].includes(c.kind)).map(c => c.kind), ["opener", "closer"], "Turkish stories use clean pauses even when a legacy divider is stored");
+    assert.equal(turkish.metadata.dividerVersion, null);
+    const stories = turkish.metadata.timeline.filter(c => c.kind === "story");
+    for (let i = 1; i < stories.length; i++) assert.ok(Math.abs(stories[i].start - stories[i - 1].end - 0.7) < 0.001, "natural story pauses remain 0.7 seconds");
     assert.ok(turkish.script.startsWith(TURKISH_OPENING));
     assert.match(turkish.script, /TERETE/);
     const speechKinds = new Set(["invocation", "intro", "story", "outro"]);
@@ -127,7 +129,7 @@ async function main() {
     const ident = await mixStationId(tone, (await imagingAsset("station-bed")).id);
     const germanAudio = (await prisma.radioAsset.findUniqueOrThrow({ where: { id: original.id }, select: { audio: true } })).audio;
     const historicalDivider = activeDivider || await prisma.radioAsset.findUniqueOrThrow({ where: { key: "imaging:tr-original-divider-v2" } });
-    const divided = activeDivider ? { ...turkish, timeline: turkish.metadata.timeline } : await insertNewsDividers({ ...turkish, timeline: turkish.metadata.timeline }, historicalDivider);
+    const divided = await insertNewsDividers({ ...turkish, timeline: turkish.metadata.timeline }, historicalDivider);
     const probes = [{ ...dry, name: "news" }, { audio: germanAudio, timeline: (original.metadata as { timeline: { kind: string; start: number; end: number }[] }).timeline, name: "german-final" }, { ...turkish, timeline: turkish.metadata.timeline, name: "turkish" }, { ...divided, name: "turkish-with-signatures" }, { ...ident, name: "station-id", timeline: [{ kind: "intro", start: 3.3, end: 4.8 }] }];
     for (const probe of probes) {
     const dryPath = join(dir, `${probe.name}.mp3`); await writeFile(dryPath, probe.audio);

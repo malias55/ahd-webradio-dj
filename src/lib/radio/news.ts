@@ -8,8 +8,8 @@ import { load } from "cheerio";
 import { prisma } from "../prisma";
 import { edenJson, presenterForHour, presenterForSlot, servicePresenter, speech, SERVICE_VOICE_SETTINGS, newsModelConfig, type ModelCall } from "./providers";
 import { withJob } from "./store";
-import { mixDryBulletin, joinNewsParts, frameTurkishProgramme, appendNewsOutro, insertNewsDividers, type Cue } from "./mix";
-import { turkishSignatureAsset, TURKISH_SIGNATURE_KEY, turkishDividerAsset, TURKISH_DIVIDER_KEY, germanOutroAsset, GERMAN_OUTRO_KEY } from "./imaging";
+import { mixDryBulletin, joinNewsParts, frameTurkishProgramme, appendNewsOutro, type Cue } from "./mix";
+import { turkishSignatureAsset, TURKISH_SIGNATURE_KEY, germanOutroAsset, GERMAN_OUTRO_KEY } from "./imaging";
 import { isNewsSlot, stationTime, stationHour, dailyNewsPlan, NEWS_SCHEDULE, newsLanguage } from "./config";
 import { collectDailyService, collectHourlyService, serviceValidForDailyEdition } from "./service";
 import type { Prisma, RadioAsset } from "@prisma/client";
@@ -319,14 +319,12 @@ export async function renderBulletin(slot: Date, content: EditorialContent, exam
     segments.push({ audio, kind });
   }
   let { timeline, ...audio } = await mixDryBulletin(segments, { opener: false, closer: false });
-  let dividerVersion: string | null = null;
   if (language === "tr") {
     const invocation = await turkishInvocation();
     const signature = await turkishSignatureAsset();
-    const divider = await turkishDividerAsset();
-    const separated = divider ? await insertNewsDividers({ ...audio, timeline }, divider) : { ...audio, timeline };
-    if (divider) dividerVersion = TURKISH_DIVIDER_KEY;
-    const combined = await frameTurkishProgramme(invocation, signature, separated);
+    // The presenter carries the story transitions. Keep the dry mix's natural
+    // 0.7-second pauses even when a legacy divider asset remains in storage.
+    const combined = await frameTurkishProgramme(invocation, signature, { ...audio, timeline });
     timeline = combined.timeline;
     audio = { audio: combined.audio, duration: combined.duration };
   }
@@ -337,7 +335,7 @@ export async function renderBulletin(slot: Date, content: EditorialContent, exam
       authorModel: content.modelCalls.filter(c => c.purpose === "author" && c.status !== "failed").at(-1)?.resolvedModel || newsModelConfig().primary, reviewModel: content.modelCalls.filter(c => c.purpose === "review" && c.status !== "failed").at(-1)?.resolvedModel || newsModelConfig().primary,
       modelPolicy: newsModelConfig(),
       openingVersion: language === "tr" ? TURKISH_OPENING_VERSION : null, pronunciationVersion: language === "tr" ? TURKISH_PRONUNCIATION_VERSION : null,
-      ttsModel: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2", imagingVersion: language === "tr" ? TURKISH_SIGNATURE_KEY : null, dividerVersion, timeline,
+      ttsModel: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2", imagingVersion: language === "tr" ? TURKISH_SIGNATURE_KEY : null, dividerVersion: null, storyTransitions: "speech-pauses-v1", timeline,
       region: language === "tr" ? "Türkiye / Almanya" : process.env.NEWS_REGION || "Mainz und Rheinhessen" } };
 }
 
