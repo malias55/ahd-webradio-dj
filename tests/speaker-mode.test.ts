@@ -1,22 +1,24 @@
 import test, { beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { startSpeakerMode, stopSpeakerMode, activeSpeakerZone, activeSpeakerHasSource } from "../src/lib/speakerMode";
+import { startSpeakerMode, stopSpeakerMode, activeSpeakerZone, activeSpeakerHasSource, activeSpeakerPlaybackStatus, resumeSpeakerPlayback } from "../src/lib/speakerMode";
 
 class FakeAudio extends EventTarget {
   static instances: FakeAudio[] = [];
   preload = ""; crossOrigin = ""; volume = 1; src = "";
   paused = true; pauses = 0; loads = 0; seeks = 0;
+  frozen = false; rejectPlay: Error | null = null;
+  createdAt = now;
   buffered = { length: 1, start: () => 0, end: () => 60 };
-  get currentTime() { return 1; }
+  get currentTime() { return this.frozen ? 0 : (now - this.createdAt) / 1000; }
   set currentTime(_value: number) { this.seeks++; }
   constructor() { super(); FakeAudio.instances.push(this); }
-  async play() { this.paused = false; }
+  async play() { if (this.rejectPlay) throw this.rejectPlay; this.paused = false; }
   pause() { this.paused = true; this.pauses++; }
   removeAttribute(name: string) { if (name === "src") this.src = ""; }
   load() { this.loads++; }
 }
 
-const originals = { fetch: globalThis.fetch, Audio: globalThis.Audio, setTimeout, clearTimeout, setInterval };
+const originals = { fetch: globalThis.fetch, Audio: globalThis.Audio, setTimeout, clearTimeout, setInterval, dateNow: Date.now };
 const timers = new Map<number, { at: number; fn: () => void }>();
 let now = 0, seq = 0, calls = 0;
 type Reply = (init?: RequestInit) => Promise<Response>;
@@ -42,6 +44,7 @@ function deferred<T>() {
 
 beforeEach(() => {
   now = 0; seq = 0; calls = 0; timers.clear(); FakeAudio.instances = [];
+  Date.now = () => now;
   reply = async () => source();
   globalThis.Audio = FakeAudio as unknown as typeof Audio;
   globalThis.fetch = async (_url, init) => { calls++; return reply(init); };
@@ -56,6 +59,7 @@ afterEach(() => {
   globalThis.fetch = originals.fetch; globalThis.Audio = originals.Audio;
   globalThis.setTimeout = originals.setTimeout; globalThis.clearTimeout = originals.clearTimeout;
   globalThis.setInterval = originals.setInterval;
+  Date.now = originals.dateNow;
 });
 
 test("continuous MP3 playback retains its jitter buffer through repeated polling", async () => {
@@ -150,4 +154,52 @@ test("a changed URL replaces a relay even if its relay ID stays the same", async
   assert.equal(FakeAudio.instances[0].pauses, 1);
   assert.equal(FakeAudio.instances[1].src, "/second.mp3");
   assert.equal(activeSpeakerZone(), "showroom");
+});
+
+test("an open connection with no media progress reconnects without error or ended events", async () => {
+  await startSpeakerMode("showroom");
+  const audio = FakeAudio.instances[0]; audio.frozen = true;
+  await advance(14_000);
+  assert.equal(FakeAudio.instances.length, 1, "short buffering gaps retain the existing player");
+  await advance(2000);
+  assert.equal(activeSpeakerPlaybackStatus(), "reconnecting");
+  await advance(2000);
+  assert.equal(FakeAudio.instances.length, 2);
+  await advance(2000);
+  assert.equal(activeSpeakerPlaybackStatus(), "playing");
+  stopSpeakerMode(); await advance(30_000);
+  assert.equal(timers.size, 0, "stopped playback cannot be resurrected by the watchdog");
+});
+
+test("brief buffering during a server update preserves audio and resumes without a reconnect", async () => {
+  await startSpeakerMode("showroom");
+  const audio = FakeAudio.instances[0];
+  await advance(4000); audio.frozen = true;
+  audio.dispatchEvent(new Event("waiting"));
+  assert.equal(activeSpeakerPlaybackStatus(), "buffering");
+  reply = async () => new Response("restarting", { status: 503 });
+  await advance(8000);
+  assert.equal(audio.pauses, 0);
+  audio.frozen = false; reply = async () => source();
+  await advance(4000);
+  assert.equal(FakeAudio.instances.length, 1);
+  assert.equal(activeSpeakerPlaybackStatus(), "playing");
+});
+
+test("autoplay refusal is visible, does not retry in a loop and can be resumed by a user gesture", async () => {
+  await startSpeakerMode("showroom");
+  const audio = FakeAudio.instances[0];
+  audio.dispatchEvent(new Event("ended"));
+  // Refuse playback on the replacement as a browser can do after a deployment.
+  const nativePlay = FakeAudio.prototype.play;
+  FakeAudio.prototype.play = async function () { throw new DOMException("gesture required", "NotAllowedError"); };
+  try {
+    await advance(2000);
+    assert.equal(activeSpeakerPlaybackStatus(), "blocked");
+    await advance(40_000);
+    assert.equal(FakeAudio.instances.length, 2, "timers cannot bypass browser autoplay policy");
+  } finally { FakeAudio.prototype.play = nativePlay; }
+  resumeSpeakerPlayback(); await flush(); await advance(2000);
+  assert.equal(activeSpeakerPlaybackStatus(), "playing");
+  assert.equal(FakeAudio.instances.length, 2);
 });

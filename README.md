@@ -61,13 +61,29 @@ Dieselbe zentrale Better-Auth-Sitzung wie AHD-DMS unter `auth.doerrschuck.de`, m
 
 Der Lautsprecher-Modus erhält den Audiopuffer des Browsers, statt bei drei Sekunden
 Puffervorsprung nach vorn zu springen. Fehlgeschlagene Statusabfragen lassen den
-laufenden Stream unverändert; nur eine erfolgreich abgefragte Quellenänderung
-oder ein tatsächliches Audio-Ende bzw. Audiofehler löst einen Wechsel aus.
+laufenden Stream unverändert. Eine bestätigte Quellenänderung wechselt die
+Quelle; Audio-Ende, Audiofehler und anhaltender Stillstand verbinden sie neu.
 Statusabfragen laufen nacheinander mit fünf Sekunden Zeitlimit. Stoppen und
 Zonenwechsel entfernen ausstehende Wiederverbindungen und verwerfen alte Antworten.
+Ein eigener Wiedergabewächter prüft alle zwei Sekunden den tatsächlichen
+Fortschritt der Audiozeit. Steht sie mindestens 15 Sekunden still, wird die
+ausgewählte Quelle neu verbunden, auch wenn die HTTP-Verbindung offen bleibt
+und der Browser keinen Audiofehler meldet. Kurzes Puffern wird abgewartet.
+Die Oberfläche unterscheidet Verbindung, Puffern, Wiederverbinden und Wiedergabe.
+Verweigert der Browser `play()` wegen fehlender Nutzerinteraktion, erscheint
+„Ton freigeben“; zeitgesteuerte Wiederholungen umgehen diese Browsersperre nicht.
 Zusätzlich zu `npm test` prüft `node scripts/speaker-playback-e2e.cjs` mit Playwright
 und lokal installiertem Chrome einen echten, zeitgesteuerten MP3-Stream samt zwei
-simulierten Statusfehlern; ohne Datenbankzugriff oder Änderungen am Liveprogramm.
+simulierten Statusfehlern, einer offenen Verbindung ohne weitere Audiodaten und
+einem Server-Neustart mit vorübergehendem HTTP 503; ohne Datenbankzugriff oder
+Änderungen am Liveprogramm.
+
+Webapp und Radioengine laufen derzeit im selben Railway-Service. Ein Deployment
+beendet daher bestehende Stream-Verbindungen. Die Webapp behält verfügbaren
+Audiopuffer und verbindet abgerissene Streams automatisch neu; lückenlose
+Wiedergabe bei jedem Deployment ist damit nicht garantiert. Dafür muss die
+Radioengine unabhängig von Webapp-Deployments betrieben werden. Deployment-
+Überlappung allein ist für den zustandsbehafteten Scheduler kein sicherer Ersatz.
 
 ```sh
 npm ci

@@ -15,12 +15,14 @@ import {
   type CaptureSource,
 } from "@/lib/broadcaster";
 import {
-  activeSpeakerHasSource,
+  activeSpeakerPlaybackStatus,
   activeSpeakerIsLive,
   activeSpeakerZone,
   startSpeakerMode,
   stopSpeakerMode,
   subscribeSpeaker,
+  resumeSpeakerPlayback,
+  type SpeakerPlaybackStatus,
 } from "@/lib/speakerMode";
 
 type ZoneWithDevices = Zone & { devices: Device[] };
@@ -31,7 +33,7 @@ export default function ControlPage() {
   const [liveState, setLiveState] = useState<{ zoneIds: string[]; mode: BroadcastMode; startedAt: number } | null>(null);
   const [speakerZoneId, setSpeakerZoneId] = useState<string | null>(null);
   const [speakerLive, setSpeakerLive] = useState(false);
-  const [speakerHasSource, setSpeakerHasSource] = useState(false);
+  const [speakerStatus, setSpeakerStatus] = useState<SpeakerPlaybackStatus>("idle");
   const [me, setMe] = useState<{ admin: boolean; email?: string; name?: string }>({ admin: false });
 
   useEffect(() => {
@@ -75,7 +77,7 @@ export default function ControlPage() {
     const sync = () => {
       setSpeakerZoneId(activeSpeakerZone());
       setSpeakerLive(activeSpeakerIsLive());
-      setSpeakerHasSource(activeSpeakerHasSource());
+      setSpeakerStatus(activeSpeakerPlaybackStatus());
     };
     sync();
     return subscribeSpeaker(sync);
@@ -167,7 +169,7 @@ export default function ControlPage() {
               speakerActive={speakerZoneId === z.id}
               speakerElsewhere={speakerZoneId !== null && speakerZoneId !== z.id}
               speakerLive={speakerZoneId === z.id && speakerLive}
-              speakerWaiting={speakerZoneId === z.id && !speakerHasSource}
+              speakerStatus={speakerZoneId === z.id ? speakerStatus : "idle"}
               isAdmin={me.admin}
               myEmail={me.email}
               onVolume={(v) => updateVolume(z.id, v)}
@@ -226,7 +228,7 @@ function ZoneCard(props: {
   speakerActive: boolean;
   speakerElsewhere: boolean;
   speakerLive: boolean;
-  speakerWaiting: boolean;
+  speakerStatus: SpeakerPlaybackStatus;
   isAdmin: boolean;
   myEmail?: string;
   onVolume: (v: number) => void;
@@ -234,9 +236,18 @@ function ZoneCard(props: {
   onEndBroadcast: () => void;
   onToggleSpeaker: () => void;
 }) {
-  const { zone, liveHere, liveMode, anyLive, globalAnnounce, speakerActive, speakerElsewhere, speakerLive, speakerWaiting, isAdmin, myEmail } = props;
+  const { zone, liveHere, liveMode, anyLive, globalAnnounce, speakerActive, speakerElsewhere, speakerLive, speakerStatus, isAdmin, myEmail } = props;
   const [volume, setVolume] = useState(zone.volume);
   useEffect(() => { setVolume(zone.volume); }, [zone.volume]);
+  const speakerMessage = {
+    idle: "",
+    waiting: "Warte auf Quelle… Sobald ein Live-Stream oder der native Stream verfügbar ist, wird er abgespielt.",
+    connecting: "Verbinde mit dem Stream…",
+    buffering: "Audiopuffer wird gefüllt. Bei einem Verbindungsabbruch startet die Wiedergabe automatisch neu…",
+    reconnecting: "Verbindung unterbrochen. Der Stream wird automatisch neu verbunden…",
+    blocked: "Der Browser hat die Audiowiedergabe blockiert. Bitte Ton freigeben.",
+    playing: speakerLive ? "Spielt den aktiven Live-Stream dieser Zone ab." : "Spielt den nativen Stream dieser Zone ab.",
+  }[speakerStatus];
 
   const onlineCount = zone.devices?.filter((d) => d.status === "online").length ?? 0;
   const totalCount = zone.devices?.length ?? 0;
@@ -343,13 +354,14 @@ function ZoneCard(props: {
             : <Headphones className="h-4 w-4" aria-hidden />}
           {speakerActive ? "Lautsprecher-Modus beenden" : "Lautsprecher-Modus starten"}
         </button>
-        <p className="mt-1.5 text-xs text-neutral-500">
+        {speakerActive && speakerStatus === "blocked" && (
+          <button onClick={resumeSpeakerPlayback} className="btn-primary mt-2 w-full">
+            <Volume2 className="h-4 w-4" aria-hidden /> Ton freigeben
+          </button>
+        )}
+        <p className="mt-1.5 text-xs text-neutral-500" role="status">
           {speakerActive
-            ? (speakerWaiting
-                ? "Warte auf Quelle… Sobald ein Live-Stream oder der native Stream verfügbar ist, wird er abgespielt."
-                : speakerLive
-                  ? "Spielt den aktiven Live-Stream dieser Zone ab."
-                  : "Spielt den nativen Stream dieser Zone ab.")
+            ? speakerMessage
             : "Dieses Gerät gibt den Zonen-Stream lokal wieder. Bei aktiver Tab-Audio/Durchsage wird automatisch der Live-Stream gespielt."}
         </p>
       </div>
