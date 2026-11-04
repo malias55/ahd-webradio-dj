@@ -1,7 +1,7 @@
 "use client";
 
-const TARGET_LATENCY = 1.0;
-const MAX_DRIFT = 3.0;
+const POLL_MS = 2000;
+const STATUS_TIMEOUT_MS = 5000;
 
 type Source = { url: string; relayId?: string; kind?: string };
 
@@ -13,37 +13,30 @@ type State = {
 };
 
 const audioElements = new Map<string, HTMLAudioElement>();
-const audioCreatedAt = new Map<string, number>();
+const retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const audioCleanup = new Map<string, () => void>();
 let state: State | null = null;
-let pollTimer: ReturnType<typeof setInterval> | null = null;
-let syncTimer: ReturnType<typeof setInterval> | null = null;
+let pollTimer: ReturnType<typeof setTimeout> | null = null;
+let statusRequest: AbortController | null = null;
 const listeners = new Set<() => void>();
 
 function notify() { for (const fn of listeners) fn(); }
 
-function chaseLatency() {
-  const now = Date.now();
-  for (const [key, el] of audioElements) {
-    if (el.buffered.length === 0 || el.paused) continue;
-    const age = now - (audioCreatedAt.get(key) ?? now);
-    if (age < 3000) continue;
-    try {
-      const edge = el.buffered.end(el.buffered.length - 1);
-      const behind = edge - el.currentTime;
-      if (behind > MAX_DRIFT) {
-        el.currentTime = edge - TARGET_LATENCY;
-      }
-    } catch { /* buffered range may be empty */ }
-  }
-}
-
-function keyFor(src: Source): string { return src.relayId || src.url; }
+// buffered.end() is downloaded audio, not a measured live timestamp. Seeking
+// towards it discards the browser's jitter buffer and can repeatedly underrun.
+// Let the media element play continuously, including across short network gaps.
+function keyFor(src: Source): string { return JSON.stringify([src.relayId, src.url]); }
 
 async function resolveSource(
   zoneId: string,
 ): Promise<{ sources: Source[]; live: boolean; volume: number } | null> {
+  const request = new AbortController();
+  statusRequest = request;
+  const timeout = setTimeout(() => request.abort(), STATUS_TIMEOUT_MS);
   try {
-    const r = await fetch(`/api/zones/${zoneId}/current-source`, { cache: "no-store" });
+    const r = await fetch(`/api/zones/${encodeURIComponent(zoneId)}/current-source`, {
+      cache: "no-store", signal: request.signal,
+    });
     if (!r.ok) return null;
     const data = await r.json();
     const vol = typeof data.volume === "number" ? data.volume : 80;
@@ -55,66 +48,69 @@ async function resolveSource(
           : [];
     return { sources, live: data.live ?? false, volume: vol };
   } catch { return null; }
+  finally {
+    clearTimeout(timeout);
+    if (statusRequest === request) statusRequest = null;
+  }
 }
 
-function sourcesChanged(a: Source[], b: Source[]): boolean {
-  if (a.length !== b.length) return true;
-  const aKeys = new Set(a.map(keyFor));
-  for (const s of b) if (!aKeys.has(keyFor(s))) return true;
-  return false;
+function removeAudio(key: string) {
+  const retry = retryTimers.get(key);
+  if (retry) clearTimeout(retry);
+  retryTimers.delete(key);
+  audioCleanup.get(key)?.();
+  audioCleanup.delete(key);
+  const el = audioElements.get(key);
+  audioElements.delete(key);
+  if (!el) return;
+  el.pause();
+  el.removeAttribute("src");
+  el.load();
 }
 
-async function applyState(
-  zoneId: string,
+function applyState(
+  session: State,
   next: { sources: Source[]; live: boolean; volume: number } | null,
 ) {
-  if (!state || state.zoneId !== zoneId) return;
+  // A failed status request is not an explicit instruction to stop the stream.
+  // Session identity also rejects late responses after stop/restart of a zone.
+  if (state !== session || !next) return;
+  const { sources: nextSources, volume: nextVol } = next;
+  session.sources = nextSources;
+  session.live = next.live;
+  session.volume = nextVol;
 
-  const nextSources = next?.sources ?? [];
-  const nextVol = next?.volume ?? state.volume;
+  const nextKeys = new Set(nextSources.map(keyFor));
+  for (const key of new Set([...audioElements.keys(), ...retryTimers.keys()])) {
+    if (!nextKeys.has(key)) removeAudio(key);
+  }
 
-  if (sourcesChanged(state.sources, nextSources)) {
-    state.sources = nextSources;
-    state.live = next?.live ?? false;
-    state.volume = nextVol;
-
-    const nextKeys = new Set(nextSources.map(keyFor));
-    for (const [key, el] of audioElements) {
-      if (!nextKeys.has(key)) {
-        el.pause();
-        el.removeAttribute("src");
-        el.load();
-        audioElements.delete(key);
-        audioCreatedAt.delete(key);
-      }
+  for (const src of nextSources) {
+    const key = keyFor(src);
+    if (!audioElements.has(key) && !retryTimers.has(key)) {
+      const el = new Audio();
+      el.preload = "auto";
+      el.crossOrigin = "anonymous";
+      el.volume = Math.max(0, Math.min(1, nextVol / 100));
+      el.src = src.url;
+      const retry = () => {
+        if (state !== session || audioElements.get(key) !== el) return;
+        removeAudio(key);
+        retryTimers.set(key, setTimeout(() => {
+          retryTimers.delete(key);
+          // Reconnect only the still-selected source. Polling owns source changes.
+          if (state === session) applyState(session, session);
+        }, POLL_MS));
+      };
+      el.addEventListener("error", retry);
+      el.addEventListener("ended", retry);
+      audioCleanup.set(key, () => {
+        el.removeEventListener("error", retry);
+        el.removeEventListener("ended", retry);
+      });
+      audioElements.set(key, el);
+      void el.play().catch(e => console.warn("[speaker] play failed", src.url, e));
     }
-
-    for (const src of nextSources) {
-      const key = keyFor(src);
-      if (!audioElements.has(key)) {
-        const el = new Audio();
-        el.preload = "none";
-        el.crossOrigin = "anonymous";
-        el.volume = Math.max(0, Math.min(1, nextVol / 100));
-        el.src = src.url;
-        audioCreatedAt.set(key, Date.now());
-        const retry = () => {
-          el.pause();
-          el.removeAttribute("src");
-          audioElements.delete(key);
-          audioCreatedAt.delete(key);
-          if (state) state.sources = state.sources.filter(s => keyFor(s) !== key);
-          setTimeout(() => { void recover(); }, 2000);
-        };
-        el.addEventListener("error", retry, { once: true });
-        el.addEventListener("ended", retry, { once: true });
-        audioElements.set(key, el);
-        try { await el.play(); } catch (e) { console.warn("[speaker] play failed", src.url, e); }
-      }
-    }
-  } else {
-    state.live = next?.live ?? state.live;
-    state.volume = nextVol;
   }
 
   for (const el of audioElements.values()) {
@@ -123,42 +119,29 @@ async function applyState(
   notify();
 }
 
-async function recover() {
-  if (!state) return;
-  const next = await resolveSource(state.zoneId);
-  await applyState(state.zoneId, next);
+async function poll(session: State) {
+  const next = await resolveSource(session.zoneId);
+  if (state !== session) return;
+  applyState(session, next);
+  // Schedule after completion so a slow request cannot overtake a newer one.
+  pollTimer = setTimeout(() => { pollTimer = null; void poll(session); }, POLL_MS);
 }
 
 export async function startSpeakerMode(zoneId: string) {
-  if (state && state.zoneId !== zoneId) stopSpeakerMode();
-
-  state = { zoneId, sources: [], live: false, volume: 80 };
-
-  const initial = await resolveSource(zoneId);
-  await applyState(zoneId, initial);
-
-  if (pollTimer) clearInterval(pollTimer);
-  pollTimer = setInterval(async () => {
-    if (!state || state.zoneId !== zoneId) return;
-    const current = await resolveSource(zoneId);
-    await applyState(zoneId, current);
-  }, 2000);
-
-  if (syncTimer) clearInterval(syncTimer);
-  syncTimer = setInterval(chaseLatency, 500);
+  if (state?.zoneId === zoneId) return;
+  stopSpeakerMode();
+  const session: State = { zoneId, sources: [], live: false, volume: 80 };
+  state = session;
+  notify();
+  await poll(session);
 }
 
 export function stopSpeakerMode() {
-  for (const el of audioElements.values()) {
-    el.pause();
-    el.removeAttribute("src");
-    el.load();
-  }
-  audioElements.clear();
-  audioCreatedAt.clear();
-  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-  if (syncTimer) { clearInterval(syncTimer); syncTimer = null; }
   state = null;
+  statusRequest?.abort();
+  statusRequest = null;
+  if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+  for (const key of new Set([...audioElements.keys(), ...retryTimers.keys()])) removeAudio(key);
   notify();
 }
 

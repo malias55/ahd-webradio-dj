@@ -59,6 +59,16 @@ Dieselbe zentrale Better-Auth-Sitzung wie AHD-DMS unter `auth.doerrschuck.de`, m
 
 ## Entwicklung und Prüfung
 
+Der Lautsprecher-Modus erhält den Audiopuffer des Browsers, statt bei drei Sekunden
+Puffervorsprung nach vorn zu springen. Fehlgeschlagene Statusabfragen lassen den
+laufenden Stream unverändert; nur eine erfolgreich abgefragte Quellenänderung
+oder ein tatsächliches Audio-Ende bzw. Audiofehler löst einen Wechsel aus.
+Statusabfragen laufen nacheinander mit fünf Sekunden Zeitlimit. Stoppen und
+Zonenwechsel entfernen ausstehende Wiederverbindungen und verwerfen alte Antworten.
+Zusätzlich zu `npm test` prüft `node scripts/speaker-playback-e2e.cjs` mit Playwright
+und lokal installiertem Chrome einen echten, zeitgesteuerten MP3-Stream samt zwei
+simulierten Statusfehlern; ohne Datenbankzugriff oder Änderungen am Liveprogramm.
+
 ```sh
 npm ci
 npx prisma generate
