@@ -1,5 +1,5 @@
 export const RADIO_TIMEZONE = "Europe/Berlin";
-export const NEWS_SCHEDULE = { mode: "daily-morning", hours: [7, 8], timezone: RADIO_TIMEZONE } as const;
+export const NEWS_SCHEDULE = { mode: "daily-editions", hours: [7, 10, 11, 12, 13, 14, 15, 16, 17, 20], generationHours: { tr: 6, de: 9 }, timezone: RADIO_TIMEZONE } as const;
 export const RADIO_STREAM_PATH = "/api/radio/stream";
 
 export function stationTime(date = new Date()) {
@@ -18,10 +18,31 @@ export function isMusicHours(date = new Date()) {
 }
 export function isTurkishNewsWindow(date = new Date()) {
   const { hour, minute } = stationTime(date);
-  return radioEnabled() && hour === 7 && minute < 5;
+  return radioEnabled() && (hour === 7 || hour === 20) && minute < 5;
 }
 export function isOnAir(date = new Date()) { return isMusicHours(date) || isTurkishNewsWindow(date); }
-export function newsLanguage(slot: Date): "de" | "tr" { return stationTime(slot).hour === 7 ? "tr" : "de"; }
+export function newsLanguage(slot: Date): "de" | "tr" { return [7, 20].includes(stationTime(slot).hour) ? "tr" : "de"; }
+
+export function stationHour(day: string, hour: number) {
+  const { start, end } = stationDayBounds(day);
+  for (let t = start.getTime(); t < end.getTime(); t += 3600_000) {
+    const date = new Date(t); if (stationTime(date).hour === hour) return date;
+  }
+  throw new Error("Diese Ortszeit existiert an diesem Tag nicht");
+}
+type DailyPlan = { language: "tr" | "de"; generateAt: Date; firstBroadcast: Date; lastBroadcast: Date };
+let planCache: { day: string; entries: DailyPlan[] } | undefined;
+export function dailyNewsPlan(date = new Date()): DailyPlan[] {
+  const day = stationTime(date).date;
+  if (planCache?.day !== day) planCache = { day, entries: [
+    { language: "tr", generateAt: stationHour(day, 6), firstBroadcast: stationHour(day, 7), lastBroadcast: stationHour(day, 20) },
+    { language: "de", generateAt: stationHour(day, 9), firstBroadcast: stationHour(day, 10), lastBroadcast: stationHour(day, 17) },
+  ] };
+  return planCache.entries;
+}
+export function dueNewsEditions(date = new Date()) {
+  return dailyNewsPlan(date).filter(p => p.generateAt <= date && p.lastBroadcast > date);
+}
 
 export function stationDayBounds(day: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error("Ungültiges Datum");

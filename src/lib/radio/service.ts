@@ -51,7 +51,7 @@ export function weatherReport(current: unknown, forecast: unknown, now: Date, sl
     forecast: future.map(r => ({ timestamp: text(r.timestamp), temperature: r.temperature as number, precipitationProbability: number(r.precipitation_probability) ? r.precipitation_probability : null })) };
 }
 
-export type TrafficEvent = { id: string; road: string; category: string; location: string; detail: string; distanceKm: number; url: string };
+export type TrafficEvent = { id: string; road: string; category: string; location: string; detail: string; distanceKm: number; url: string; validUntil?: string };
 // Provider period strings are local German time. Compare local wall times, never
 // parse them in the host's timezone. Ignore the later overall-project end date.
 function localPeriodEnd(lines: string[]) {
@@ -102,7 +102,7 @@ export function trafficEvents(value: unknown, road: string, category: "warning" 
     const detail = category === "closure" ? access ? `Die ${access[1].startsWith("Auffahrt") ? "Auffahrt" : "Abfahrt"} an der ${roadText(access[2])} ist gesperrt.`
       : `${operational ? roadText(operational) : location}: Hier wird eine ${event.display_type === "CLOSURE_ENTRY_EXIT" ? "gesperrte Auf- oder Abfahrt" : "Sperrung"} gemeldet.`
       : warningDetail(location, lines);
-    return [{ id, road, category, location, detail: detail.slice(0, 420), distanceKm: Math.round(distance), url: `${AUTOBAHN_URL}/details/${category}/${encodeURIComponent(id)}` }];
+    return [{ id, road, category, location, detail: detail.slice(0, 420), distanceKm: Math.round(distance), url: `${AUTOBAHN_URL}/details/${category}/${encodeURIComponent(id)}`, ...(Number.isFinite(end) ? { validUntil: new Date(end).toISOString() } : {}) }];
   });
 }
 
@@ -148,6 +148,39 @@ export async function collectHourlyService(slot: Date, now = new Date()) {
     } catch { errors.push(`${request.road}: ${request.category} nicht verfügbar`); }
   });
   return { fetchedAt: now.toISOString(), slot: slot.toISOString(), weather, traffic: trafficReport(events, successfulFeeds, now), sources, errors };
+}
+
+export async function collectDailyService(slot: Date, now = new Date()) {
+  const reference = new Date(Math.max(slot.getTime(), Math.ceil(now.getTime() / 3600_000) * 3600_000));
+  const data = await collectHourlyService(reference, now);
+  const forecastUrl = `https://api.brightsky.dev/weather?lat=49.9929&lon=8.2473&date=${encodeURIComponent(reference.toISOString())}&last_date=${encodeURIComponent(new Date(reference.getTime() + Math.max(0, 18 - stationTime(reference).hour) * 3600_000).toISOString())}`;
+  let forecast: unknown = null;
+  try { forecast = await fetchJson(forecastUrl); } catch { /* Honest observation-only fallback below. */ }
+  const f = object(forecast), sources = list(f.sources).map(object);
+  const temperatures = list(f.weather).map(object).filter(r => {
+    const source = sources.find(s => s.id === r.source_id), t = Date.parse(text(r.timestamp));
+    return source?.observation_type === "forecast" && nearMainz(source) && t >= reference.getTime() && stationTime(new Date(t)).date === stationTime(slot).date && stationTime(new Date(t)).hour <= 18 && number(r.temperature) && r.temperature >= -50 && r.temperature <= 55;
+  });
+  let weatherText = "Ihr Wetterausblick für Mainz! ";
+  if (temperatures.length) {
+    const values = temperatures.map(r => Math.round(r.temperature as number)), min = Math.min(...values), max = Math.max(...values);
+    weatherText += `Im weiteren Tagesverlauf sind ${min === max ? `rund ${min}` : `${min} bis ${max}`} Grad vorhergesagt.`;
+    const probabilities = temperatures.map(r => r.precipitation_probability).filter(number).filter(n => n >= 0 && n <= 100);
+    if (probabilities.length === temperatures.length) weatherText += ` Die Regenwahrscheinlichkeit liegt bei bis zu ${Math.round(Math.max(...probabilities))} Prozent.`;
+    data.sources.push({ title: "Mainz · DWD-Tagesvorhersage", url: forecastUrl, publishedAt: now.toISOString(), attribution: "Deutscher Wetterdienst (DWD), bereitgestellt über Bright Sky" });
+  } else if (data.weather.observation && data.weather.observedAt) {
+    const period = stationTime(new Date(data.weather.observedAt)).hour < 12 ? "Am Vormittag" : "Am Nachmittag";
+    weatherText += `${period} wurden rund ${rounded(data.weather.observation.temperature)} Grad gemessen. Eine verlässliche Tagesvorhersage liegt gerade nicht vor.`;
+  } else weatherText += "Eine verlässliche Tagesvorhersage liegt gerade nicht vor.";
+  const persistent = data.traffic.events.filter(e => e.category === "closure" && e.validUntil && Date.parse(e.validUntil) >= slot.getTime() + 8 * 3600_000);
+  const trafficText = "Und ein Hinweis für Ihre Fahrt rund um Mainz! " + (persistent.length ? persistent.map(e => e.detail).join(" ") + " " : "") + "Bitte prüfen Sie vor Ihrer Fahrt die aktuelle Verkehrslage für die A 60, A 63 und A 643. Kurzfristige Störungen können sich im Tagesverlauf ändern.";
+  return { ...data, slot: slot.toISOString(), mode: "daily-snapshot", weather: { ...data.weather, text: weatherText }, traffic: { ...data.traffic, events: persistent, text: trafficText } };
+}
+
+export function serviceValidForDailyEdition(metadata: unknown, edition: Date) {
+  const service = object(object(metadata).service), fetched = Date.parse(text(service.fetchedAt));
+  const first = edition.getTime() - 3600_000, last = edition.getTime() + 7 * 3600_000;
+  return service.mode === "daily-snapshot" && service.slot === edition.toISOString() && Number.isFinite(fetched) && fetched >= first && fetched < last;
 }
 
 // A bulletin prepared early through the dashboard must not carry stale service

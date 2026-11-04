@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isOnAir, upcomingNewsSlot, nativeSource, stationTime, isMusicHours, isNewsSlot, newsLanguage, stationDayBounds } from "../src/lib/radio/config";
+import { isOnAir, upcomingNewsSlot, nativeSource, stationTime, isMusicHours, isNewsSlot, newsLanguage, stationDayBounds, stationHour, dailyNewsPlan, dueNewsEditions } from "../src/lib/radio/config";
 import { parseFeed, validateStories, articleText, germanTopicAllowed, sourcesForProgramme } from "../src/lib/radio/news";
 import { authCookies, userForCookie } from "../src/lib/session";
 import { availableSpeechCredits, elevenLabsError, assertNewsCredits } from "../src/lib/radio/elevenlabs";
@@ -41,14 +41,14 @@ test("Berlin opening hours and morning-only news in winter", () => {
   assert.equal(isOnAir(new Date("2026-10-26T07:00:00Z")), true);
   assert.equal(isOnAir(new Date("2026-10-26T16:59:59Z")), true);
   assert.equal(isOnAir(new Date("2026-10-26T17:00:00Z")), false);
-  assert.equal(upcomingNewsSlot(new Date("2026-10-26T15:59:59Z"))?.toISOString(), "2026-10-27T06:00:00.000Z");
-  assert.equal(upcomingNewsSlot(new Date("2026-10-26T16:00:01Z"))?.toISOString(), "2026-10-27T06:00:00.000Z");
+  assert.equal(upcomingNewsSlot(new Date("2026-10-26T15:59:59Z"))?.toISOString(), "2026-10-26T16:00:00.000Z");
+  assert.equal(upcomingNewsSlot(new Date("2026-10-26T16:00:01Z"))?.toISOString(), "2026-10-26T19:00:00.000Z");
 });
 test("summer time and both DST transition days", () => {
   assert.equal(isOnAir(new Date("2026-07-15T06:00:00Z")), true);
   assert.equal(isOnAir(new Date("2026-07-15T16:00:00Z")), false);
-  assert.equal(upcomingNewsSlot(new Date("2026-03-28T17:01:00Z"))?.toISOString(), "2026-03-29T05:00:00.000Z");
-  assert.equal(upcomingNewsSlot(new Date("2026-10-24T16:01:00Z"))?.toISOString(), "2026-10-25T06:00:00.000Z");
+  assert.equal(upcomingNewsSlot(new Date("2026-03-28T20:01:00Z"))?.toISOString(), "2026-03-29T05:00:00.000Z");
+  assert.equal(upcomingNewsSlot(new Date("2026-10-24T20:01:00Z"))?.toISOString(), "2026-10-25T06:00:00.000Z");
   assert.equal(stationTime(new Date("2026-10-25T07:00:00Z")).hour, 8);
 });
 test("legacy zones never contact the retired stream; silent zones stay silent", () => {
@@ -115,18 +115,32 @@ test("German main news always uses Elias, weather and traffic use Susanne", () =
     }
   }
 });
-test("hourly broadcasts group into fresh two-hour editions", () => {
-  assert.equal(newsEditionSlot(new Date("2026-10-26T07:00:00Z")).toISOString(), "2026-10-26T07:00:00.000Z");
-  assert.equal(newsEditionSlot(new Date("2026-10-26T08:00:00Z")).toISOString(), "2026-10-26T07:00:00.000Z");
-  assert.equal(newsEditionSlot(new Date("2026-10-26T16:00:00Z")).toISOString(), "2026-10-26T15:00:00.000Z");
+test("a single German daily recording serves every hourly slot, Turkish repeats at 20:00", () => {
+  const first = new Date("2026-11-04T09:00:00Z");
+  for (let hour=10; hour<=17; hour++) {
+    const slot = new Date(`2026-11-04T${String(hour-1).padStart(2,'0')}:00:00Z`);
+    assert.equal(newsEditionSlot(slot).toISOString(), first.toISOString());
+    assert.equal(bulletinKey(slot), bulletinKey(first)); assert.equal(mainNewsKey(slot), mainNewsKey(first));
+    assert.equal(isRepeatSlot(slot), hour !== 10); assert.ok(isNewsSlot(slot));
+  }
+  const tr = new Date("2026-11-04T06:00:00Z"), evening = new Date("2026-11-04T19:00:00Z");
+  assert.equal(newsLanguage(evening), "tr"); assert.equal(presenterForSlot(evening).name, "Cavit");
+  assert.equal(bulletinKey(tr), bulletinKey(evening)); assert.ok(isRepeatSlot(evening));
+  assert.ok(isOnAir(evening)); assert.equal(isMusicHours(evening), false);
+  assert.equal(isOnAir(new Date("2026-11-04T19:05:00Z")), false);
+  assert.equal(isNewsSlot(new Date("2026-11-04T08:00:00Z")), false);
+  assert.equal(isNewsSlot(new Date("2026-11-04T17:00:00Z")), false);
 });
-test("main audio key repeats, hourly service bulletin key always changes", () => {
-  for (let hour = 8; hour <= 16; hour += 2) {
-    const original = new Date(`2026-10-26T${String(hour - 1).padStart(2, '0')}:00:00Z`);
-    const repeat = new Date(original.getTime() + 3600_000);
-    assert.equal(mainNewsKey(original), mainNewsKey(repeat));
-    assert.notEqual(bulletinKey(original), bulletinKey(repeat));
-    assert.equal(isRepeatSlot(original), false); assert.equal(isRepeatSlot(repeat), true);
+test("daily generation starts at 06/09 Berlin and remains catch-up capable before the last broadcast", () => {
+  for (const day of ["2026-03-29", "2026-10-25", "2026-11-04"]) {
+    const plans = dailyNewsPlan(stationHour(day,12));
+    assert.equal(stationTime(plans[0].generateAt).hour,6); assert.equal(stationTime(plans[0].firstBroadcast).hour,7); assert.equal(stationTime(plans[0].lastBroadcast).hour,20);
+    assert.equal(stationTime(plans[1].generateAt).hour,9); assert.equal(stationTime(plans[1].firstBroadcast).hour,10);
+    assert.equal(dueNewsEditions(stationHour(day,5)).length,0);
+    assert.deepEqual(dueNewsEditions(stationHour(day,6)).map(p=>p.language),["tr"]);
+    assert.deepEqual(dueNewsEditions(stationHour(day,9)).map(p=>p.language),["tr","de"]);
+    assert.deepEqual(dueNewsEditions(stationHour(day,17)).map(p=>p.language),["tr"]);
+    assert.equal(dueNewsEditions(stationHour(day,20)).length,0);
   }
 });
 test("07:00 Turkish slot is separate and has no music rotation", () => {
@@ -228,10 +242,10 @@ test("daily test schedule has exactly 07 Turkish and 08 German, no hourly purcha
       const date = new Date(`${day}T${String(hour).padStart(2, "0")}:00:00Z`);
       if (isNewsSlot(date)) slots.push(stationTime(date).hour);
     }
-    assert.deepEqual(slots, [7, 8]);
-    const eight = new Date(`${day}T${String(8 - offset).padStart(2, "0")}:00:00Z`);
+    assert.deepEqual(slots, [7, 10, 11, 12, 13, 14, 15, 16, 17, 20]);
+    const eight = new Date(`${day}T${String(10 - offset).padStart(2, "0")}:00:00Z`);
     assert.equal(upcomingNewsSlot(eight)?.getTime(), eight.getTime());
-    assert.equal(stationTime(upcomingNewsSlot(new Date(eight.getTime() + 1))!).hour, 7);
+    assert.equal(stationTime(upcomingNewsSlot(new Date(eight.getTime() + 1))!).hour, 11);
     assert.equal(isNewsSlot(new Date(eight.getTime() + 1)), false);
     assert.equal(isNewsSlot(new Date(eight.getTime() + 60_000)), false);
   }

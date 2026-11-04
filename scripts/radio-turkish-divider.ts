@@ -36,7 +36,7 @@ async function divider() {
 async function main(){
  await mkdir(resolve('artifacts/turkish-generated-divider'),{recursive:true});
  const sound=await divider();await writeFile(resolve('artifacts/turkish-generated-divider/transition-final.mp3'),sound.audio);
- const id=process.argv[2];if(!id)return;
+ const id=process.argv[2];if(!id||id==='--asset-only')return;
  const source=await prisma.radioAsset.findUniqueOrThrow({where:{id}});const m=source.metadata as {language:string;timeline:Cue[]};
  if(source.kind!=='news'||m.language!=='tr'||!source.slot||!familyAssetAllowed(source))throw new Error('Reviewed Turkish news required');
  const baseKey=bulletinKey(source.slot), existing=await prisma.radioAsset.findUnique({where:{key:baseKey},select:{metadata:true}});

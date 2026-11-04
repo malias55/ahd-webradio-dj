@@ -11,7 +11,7 @@ async function main() {
   }
   if (process.argv.includes("--news")) {
     const slot = upcomingNewsSlot();
-    if (!slot || slot.getTime() - Date.now() > 3600_000) throw new Error("Vorbereitung frühestens eine Stunde vor 07:00 oder 08:00 Uhr");
+    if (!slot || slot.getTime() - Date.now() > 3600_000) throw new Error("Vorbereitung frühestens eine Stunde vor dem ersten Sendetermin der Tagesausgabe");
     await prepareNews(slot);
     const asset = await prisma.radioAsset.findUnique({ where: { key: bulletinKey(slot) }, select: { title: true, duration: true, script: true } });
     console.log("News preview:", asset);

@@ -4,7 +4,7 @@ import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { prisma } from "../src/lib/prisma";
-import { prepareNews, bulletinForSlot, bulletinKey, mainNewsKey, renderBulletin, TURKISH_OPENING } from "../src/lib/radio/news";
+import { prepareNews, bulletinForSlot, bulletinKey, mainNewsKey, renderBulletin, TURKISH_OPENING, GERMAN_NEWS_VERSION } from "../src/lib/radio/news";
 import { trackPlayback } from "../src/lib/radio/audit";
 import { servicePresenter } from "../src/lib/radio/providers";
 import { command } from "../src/lib/radio/store";
@@ -13,9 +13,10 @@ import { mixStationId, mixDryBulletin, insertNewsDividers } from "../src/lib/rad
 
 async function main() {
   const dir = await mkdtemp(join(tmpdir(), "ahd-hourly-e2e-"));
-  const slot = new Date(Date.UTC(1990 + randomInt(9), 0, 1 + randomInt(27), 7));
+  const slot = new Date(Date.UTC(1990 + randomInt(9), 0, 1 + randomInt(27), 9));
   const repeat = new Date(slot.getTime() + 86400_000), missing = new Date(repeat.getTime() + 86400_000);
   const mainKey = mainNewsKey(slot), keys = [mainKey, mainNewsKey(repeat), mainNewsKey(missing), bulletinKey(slot), bulletinKey(repeat), bulletinKey(missing)];
+  for (const day of [slot,repeat,missing]) keys.push(`news-service:${GERMAN_NEWS_VERSION}:${day.toISOString()}`,`news-draft:${GERMAN_NEWS_VERSION}:${day.toISOString()}`);
   const ids: string[] = [], originalFetch = globalThis.fetch;
   const originalElevenKey = process.env.ELEVENLABS_API_KEY;
   const testVoice = `e2e-turkish-${randomUUID()}`, originalTurkishVoice = process.env.ELEVENLABS_TURKISH_VOICE_ID;
@@ -26,7 +27,7 @@ async function main() {
     const tonePath = join(dir, "tone.mp3");
     await command(process.env.FFMPEG_PATH || "ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=1.5:sample_rate=44100", "-ac", "2", "-c:a", "libmp3lame", "-b:a", "128k", "-y", tonePath]);
     const tone = await readFile(tonePath);
-    const blockedSlot = new Date(slot.getTime() - 3600_000), blockedKey = bulletinKey(blockedSlot);
+    const blockedSlot = new Date(slot.getTime() - 3 * 3600_000), blockedKey = bulletinKey(blockedSlot);
     keys.push(blockedKey);
     process.env.ELEVENLABS_API_KEY = `e2e-quota-${randomUUID()}`;
     let quotaChecks = 0;
@@ -34,7 +35,7 @@ async function main() {
       assert.equal(String(input), "https://api.elevenlabs.io/v1/user/subscription", "empty quota must stop before editorial, source or TTS requests"); quotaChecks++;
       return Response.json({ character_count: 121198, character_limit: 121305, max_credit_limit_extension: 0 });
     };
-    await assert.rejects(prepareNews(blockedSlot), /107 Credits/);
+    await assert.rejects(prepareNews(blockedSlot, new Date(blockedSlot.getTime()-3600_000)), /107 Credits/);
     assert.equal(quotaChecks, 1);
     assert.match((await prisma.radioJob.findUniqueOrThrow({ where: { key: blockedKey } })).error || "", /Guthaben/);
     if (originalElevenKey === undefined) delete process.env.ELEVENLABS_API_KEY;
@@ -43,7 +44,7 @@ async function main() {
     ids.push(asset.id);
     const secondMain = await prisma.radioAsset.create({ data: { key: mainNewsKey(repeat), kind: "news-main", title: "Isolated next-day edition", slot: repeat, audio: tone, duration: 1.54, script: "Test Hauptnachrichten", metadata: { editionSlot: repeat.toISOString(), timeline: [{ kind: "story", start: 0, end: 1.5 }] } } });
     ids.push(secondMain.id);
-    let ttsCalls = 0, sourceCalls = 0, now = new Date(slot.getTime() - 5 * 60_000), temperature = 12;
+    let ttsCalls = 0, sourceCalls = 0, now = new Date(slot.getTime() - 3600_000), temperature = 12;
     globalThis.fetch = async (input, init) => {
       const url = String(input);
       if (url.endsWith("/v1/user/subscription")) return Response.json({ character_count: 100, character_limit: 100000, max_credit_limit_extension: 0 });
@@ -61,13 +62,13 @@ async function main() {
       if (url.includes("verkehr.autobahn.de")) return Response.json(url.endsWith("/warning") ? { warning: [] } : { closure: [] });
       throw new Error(`Main editorial or male TTS must not be called: ${new URL(url).hostname}`);
     };
-    await prepareNews(slot, new Date(slot.getTime() - 30 * 60_000));
+    await prepareNews(slot, new Date(slot.getTime() - 61 * 60_000));
     assert.equal(ttsCalls, 0); assert.equal(sourceCalls, 0, "early preparation must not collect stale service data");
     await prepareNews(slot, now);
     const original = await bulletinForSlot(slot);
     assert.ok(original); ids.push(original.id);
     assert.equal(((original.metadata as { timeline: { kind: string }[] }).timeline).filter(c => ["divider", "opener", "closer"].includes(c.kind)).length, 1, "German news must contain only one final closing sound");
-    now = new Date(repeat.getTime() - 5 * 60_000); temperature = 15;
+    now = new Date(repeat.getTime() - 3600_000); temperature = 15;
     await prepareNews(repeat, now);
     const reused = await bulletinForSlot(repeat);
     assert.ok(reused); ids.push(reused.id);
@@ -80,24 +81,19 @@ async function main() {
     assert.equal(ttsCalls, 5);
     await prepareNews(repeat, now);
     assert.equal(ttsCalls, 5, "cached morning edition must not spend more TTS");
-    await assert.rejects(prepareNews(new Date(repeat.getTime() + 3600_000), now), /nur um 07 Uhr/);
-    assert.equal(ttsCalls, 5, "09:00 must never generate service or main news"); assert.deepEqual(Buffer.from((await prisma.radioAsset.findUniqueOrThrow({ where: { id: asset.id } })).audio), tone);
-    now = new Date(missing.getTime() - 5 * 60_000);
-    await prepareNews(missing, now);
-    const fallback = await bulletinForSlot(missing);
-    assert.ok(fallback); ids.push(fallback.id);
-    assert.equal((fallback.metadata as { mainUnavailable: boolean }).mainUnavailable, true);
-    assert.equal(ttsCalls, 7, "missing main part still broadcasts female service without generating a replacement main edition");
-    const fallbackAudit = trackPlayback(fallback, "de", missing, 0);
-    await fallbackAudit.started(); await fallbackAudit.finish("completed");
-    assert.equal((await prisma.radioPlayback.findFirstOrThrow({ where: { assetId: fallback.id } })).repeated, false);
-    const audit = trackPlayback(reused, "de", repeat, 2);
-    await audit.started(); await audit.finish("completed");
-    const row = await prisma.radioPlayback.findFirstOrThrow({ where: { assetId: reused.id } });
-    assert.equal(row.repeated, false); assert.equal(row.status, "completed"); assert.equal(row.listeners, 2); assert.ok(row.endedAt);
-
-    // Measure the actual encoded German mix: only a pure 440 Hz test voice may
-    // remain inside speech intervals, including when real production jingles exist.
+    for (let offset=0;offset<=7;offset++) {
+      const broadcast = new Date(slot.getTime()+offset*3600_000);
+      assert.equal((await bulletinForSlot(broadcast))?.id, original.id, "all eight German transmissions reuse the exact daily UUID");
+      await prepareNews(broadcast, new Date(broadcast.getTime()-1000));
+    }
+    assert.equal(ttsCalls,5,"hourly repeats must never buy new speech");
+    now = new Date(missing.getTime()-3600_000);
+    await assert.rejects(prepareNews(missing,now), /Keine aktuellen/);
+    assert.equal(await bulletinForSlot(missing),null,"missing main news must remain a visible failed edition rather than a weather-only success");
+    const audit=trackPlayback(original,"de",new Date(slot.getTime()+7*3600_000),2);
+    await audit.started();await audit.finish("completed");
+    const row=await prisma.radioPlayback.findFirstOrThrow({where:{assetId:original.id}});
+    assert.equal(row.repeated,true);assert.equal(row.status,"completed");assert.equal(row.listeners,2);
     const turkishFetch = globalThis.fetch;
     const trRequests: string[] = [];
     process.env.ELEVENLABS_TURKISH_VOICE_ID = testVoice;
@@ -110,12 +106,12 @@ async function main() {
       }
       return turkishFetch(input, init);
     };
-    const trSlot = new Date(slot.getTime() - 3600_000);
+    const trSlot = new Date(slot.getTime() - 3 * 3600_000);
     const trContent = { stories: [{ text: "TRT’nin yeni yayını.", sourceIds: [1] }, { text: "Yeni kültür etkinliği.", sourceIds: [1] }, { text: "Bilim müzesinden yeni sergi.", sourceIds: [1] }], sources: [], modelCalls: [], language: "tr" as const, editionSlot: trSlot.toISOString() };
     const turkish = await renderBulletin(trSlot, trContent);
     const firstRequestCount = trRequests.length;
     await renderBulletin(trSlot, trContent);
-    assert.equal(trRequests.length - firstRequestCount, 3, "static intro, outro and invocation must be cached; only stories get new TTS");
+    assert.equal(trRequests.length - firstRequestCount, 0, "all already-rendered daily speech is cached on retry");
     assert.ok(trRequests.includes("TERETE’nin yeni yayını."));
     assert.ok(trRequests.some(t => t.includes("Autohaus Dörşuk")));
     assert.equal(turkish.metadata.backgroundMusic, false);
@@ -147,7 +143,7 @@ async function main() {
       assert.ok(Math.sqrt(residual / energy) < 0.03, `music/effects leaked into ${cue.kind}: ${Math.sqrt(residual / energy)}`);
     }
     }
-    console.log("PASS daily morning editions, cached generation, no 09:00 purchases, early service deferred, missing-main fallback, journal persisted; encoded German, Turkish and station-ID speech contain no background music");
+    console.log("PASS 06/09 daily generation, identical UUID for all hourly repeats, no repeated TTS or service fetches, failed-main visibility, repeat audit, dry Turkish/German speech");
   } finally {
     globalThis.fetch = originalFetch;
     if (originalElevenKey === undefined) delete process.env.ELEVENLABS_API_KEY;
@@ -160,7 +156,7 @@ async function main() {
     ids.push(...staticFixtures.map(a => a.id)); keys.push(...staticFixtures.map(a => a.key));
     await prisma.radioPlayback.deleteMany({ where: { assetId: { in: ids } } });
     await prisma.radioJob.deleteMany({ where: { key: { in: keys } } });
-    await prisma.radioAsset.deleteMany({ where: { id: { in: ids } } });
+    await prisma.radioAsset.deleteMany({ where: { OR: [{ id: { in: ids } }, { key: { in: keys } }] } });
     await rm(dir, { recursive: true, force: true });
   }
 }

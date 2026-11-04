@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import type { ServerResponse } from "node:http";
 import { prisma } from "../prisma";
-import { isOnAir, isNewsSlot, NEWS_SCHEDULE, isMusicHours, upcomingNewsSlot, radioEnabled, stationTime, newsLanguage } from "./config";
+import { isOnAir, isNewsSlot, NEWS_SCHEDULE, isMusicHours, upcomingNewsSlot, dueNewsEditions, radioEnabled, stationTime, newsLanguage } from "./config";
 import { assetFile, pruneCache } from "./store";
 import { presenterForSlot, editorialConfigured } from "./providers";
 import { prepareNews, bulletinForSlot, isRepeatSlot, GERMAN_NEWS_VERSION } from "./news";
@@ -27,7 +27,7 @@ const state = globalRadio.__ahdRadio ??= {
 export function radioStatus() {
   return { programmeVersion: GERMAN_NEWS_VERSION, imagingVersion: IMAGING_VERSION, presenter: presenterForSlot(new Date()).name, newsSchedule: NEWS_SCHEDULE, newsRefreshHours: 24, serviceRefreshHours: 24, started: state.started, onAir: isOnAir(), playing: state.playing, startedAt: state.startedAt || null,
     listeners: state.listeners.size, preparing: state.preparing, error: state.error,
-    nextNewsAt: upcomingNewsSlot()?.toISOString() ?? null, timezone: "Europe/Berlin", hours: "07:00 Türkçe · 08:00–18:00 Musik", newsHours: "07:00 Türkçe · 08:00 Deutsch" };
+    nextNewsAt: upcomingNewsSlot()?.toISOString() ?? null, timezone: "Europe/Berlin", hours: "07/20 Uhr Türkçe · 08:00–18:00 Musik", newsHours: "07/20 Uhr Türkçe · 10–17 Uhr stündlich Deutsch" };
 }
 
 export function attachRadio(res: ServerResponse) {
@@ -131,6 +131,8 @@ async function tick(onBoundary: () => Promise<void>) {
   const hour = new Date(Math.floor(now.getTime() / 3_600_000) * 3_600_000);
   if (active && isNewsSlot(hour) && now.getTime() - hour.getTime() < 1500 && state.lastNewsSlot !== hour.toISOString()) {
     state.lastNewsSlot = hour.toISOString();
+    const alreadyPlayed = await prisma.radioPlayback.findFirst({ where: { kind: "news", scheduledFor: hour, status: { in: ["starting", "playing", "completed", "interrupted"] } }, select: { id: true } });
+    if (alreadyPlayed) return;
     const news = await bulletinForSlot(hour);
     if (news && isOnAir() && Date.now() - hour.getTime() < 5000) await play(news, hour);
     else {
@@ -141,11 +143,16 @@ async function tick(onBoundary: () => Promise<void>) {
   }
   if (active && !state.process) await nextMusic();
 
-  const next = upcomingNewsSlot(now);
-  if (radioEnabled() && next && next.getTime() - now.getTime() <= 10 * 60_000 && !state.preparing && Date.now() - state.lastPrepAt > 60_000 && process.env.ELEVENLABS_API_KEY && editorialConfigured()) {
+  const due = dueNewsEditions(now);
+  if (radioEnabled() && due.length && !state.preparing && Date.now() - state.lastPrepAt > 60_000 && process.env.ELEVENLABS_API_KEY && editorialConfigured()) {
     state.lastPrepAt = Date.now();
     state.preparing = true;
-    void prepareNews(next).catch(report).finally(() => { state.preparing = false; });
+    void (async () => {
+      for (const edition of due) {
+        if (await bulletinForSlot(edition.firstBroadcast)) continue;
+        try { await prepareNews(edition.firstBroadcast); state.error = null; } catch (error) { report(error); }
+      }
+    })().catch(report).finally(() => { state.preparing = false; });
   }
 }
 
@@ -161,7 +168,7 @@ export function startRadio(onBoundary: () => Promise<void>) {
   const cleanup = async () => {
     // Keep fortnightly news audio and a compact 90-day transmission journal.
     const cutoff = new Date(Date.now() - 14 * 86400_000), logCutoff = new Date(Date.now() - 90 * 86400_000);
-    await prisma.radioAsset.deleteMany({ where: { kind: { in: ["news", "news-main"] }, createdAt: { lt: cutoff } } });
+    await prisma.radioAsset.deleteMany({ where: { kind: { in: ["news", "news-main", "news-draft", "news-service", "news-voice"] }, createdAt: { lt: cutoff } } });
     await pruneCache();
     await prisma.radioJob.deleteMany({ where: { updatedAt: { lt: logCutoff }, status: { not: "running" } } });
     await prisma.radioPlayback.deleteMany({ where: { startedAt: { lt: logCutoff } } });
