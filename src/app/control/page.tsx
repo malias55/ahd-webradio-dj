@@ -68,7 +68,7 @@ export default function ControlPage() {
   }, []);
 
   useEffect(() => {
-    const onHide = () => { stopBroadcast().catch(() => {}); stopSpeakerMode(); };
+    const onHide = () => { stopBroadcast().catch(() => {}); };
     window.addEventListener("pagehide", onHide);
     return () => window.removeEventListener("pagehide", onHide);
   }, []);

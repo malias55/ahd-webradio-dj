@@ -3,6 +3,7 @@
 const POLL_MS = 2000;
 const STATUS_TIMEOUT_MS = 5000;
 const STALL_TIMEOUT_MS = 15_000;
+const SELECTION_KEY = "ahd:speaker-zone:v1";
 
 export type SpeakerPlaybackStatus = "idle" | "waiting" | "connecting" | "playing" | "buffering" | "reconnecting" | "blocked";
 
@@ -19,7 +20,7 @@ const audioElements = new Map<string, HTMLAudioElement>();
 const retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const audioCleanup = new Map<string, () => void>();
 const playback = new Map<string, {
-  time: number; progressedAt: number; status: SpeakerPlaybackStatus; reconnect: () => void;
+  time: number; progressedAt: number; attempt: number; status: SpeakerPlaybackStatus; reconnect: () => void;
 }>();
 let state: State | null = null;
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
@@ -102,16 +103,26 @@ function applyState(
       el.volume = Math.max(0, Math.min(1, nextVol / 100));
       el.src = src.url;
       const retry = () => {
-        if (state !== session || audioElements.get(key) !== el) return;
-        removeAudio(key);
+        if (state !== session || audioElements.get(key) !== el || retryTimers.has(key)) return;
+        const progress = playback.get(key);
+        if (!progress) return;
+        progress.status = "reconnecting";
         retryTimers.set(key, setTimeout(() => {
           retryTimers.delete(key);
-          // Reconnect only the still-selected source. Polling owns source changes.
-          if (state === session) applyState(session, session);
+          if (state !== session || audioElements.get(key) !== el) return;
+          // Keep the already-authorized media element across server restarts.
+          // Invalidate the previous play promise before load() can abort it.
+          progress.attempt++;
+          progress.time = 0;
+          progress.progressedAt = Date.now();
+          progress.status = "connecting";
+          el.load();
+          playAudio(key, el);
+          notify();
         }, POLL_MS));
         notify();
       };
-      playback.set(key, { time: 0, progressedAt: Date.now(), status: "connecting", reconnect: retry });
+      playback.set(key, { time: 0, progressedAt: Date.now(), attempt: 0, status: "connecting", reconnect: retry });
       const playing = () => {
         const progress = playback.get(key);
         if (!progress || audioElements.get(key) !== el) return;
@@ -150,9 +161,12 @@ function applyState(
 }
 
 function playAudio(key: string, el: HTMLAudioElement) {
+  const current = playback.get(key);
+  if (!current) return;
+  const attempt = ++current.attempt;
   void el.play().catch(error => {
     const progress = playback.get(key);
-    if (audioElements.get(key) !== el || !progress) return;
+    if (audioElements.get(key) !== el || !progress || progress.attempt !== attempt) return;
     if (error?.name === "NotAllowedError") {
       // Retrying in a timer cannot grant user activation. Keep the element so
       // the visible resume button can call play() directly from a user gesture.
@@ -171,6 +185,8 @@ function watchPlayback(session: State) {
       progress.time = el.currentTime;
       progress.progressedAt = Date.now();
       progress.status = "playing";
+      const retry = retryTimers.get(key);
+      if (retry) { clearTimeout(retry); retryTimers.delete(key); }
     } else if (Date.now() - progress.progressedAt >= STALL_TIMEOUT_MS) {
       // An HTTP connection can stay open without producing media errors. Only
       // reconnect after actual playback stops; a growing buffer is healthy.
@@ -191,7 +207,8 @@ async function poll(session: State) {
 
 export async function startSpeakerMode(zoneId: string) {
   if (state?.zoneId === zoneId) return;
-  stopSpeakerMode();
+  suspendSpeakerMode();
+  try { sessionStorage.setItem(SELECTION_KEY, zoneId); } catch { /* Storage can be disabled. */ }
   const session: State = { zoneId, sources: [], live: false, volume: 80 };
   state = session;
   notify();
@@ -200,6 +217,11 @@ export async function startSpeakerMode(zoneId: string) {
 }
 
 export function stopSpeakerMode() {
+  try { sessionStorage.removeItem(SELECTION_KEY); } catch { /* Playback still stops without storage. */ }
+  suspendSpeakerMode();
+}
+
+export function suspendSpeakerMode() {
   state = null;
   statusRequest?.abort();
   statusRequest = null;
@@ -207,6 +229,28 @@ export function stopSpeakerMode() {
   if (watchdogTimer) { clearTimeout(watchdogTimer); watchdogTimer = null; }
   for (const key of new Set([...audioElements.keys(), ...retryTimers.keys()])) removeAudio(key);
   notify();
+}
+
+export async function restoreSpeakerMode() {
+  if (state) return;
+  try {
+    const zoneId = sessionStorage.getItem(SELECTION_KEY);
+    if (zoneId && zoneId.length <= 256) await startSpeakerMode(zoneId);
+  } catch { /* No remembered playback when storage is unavailable. */ }
+}
+
+// Owned by the app layout so route changes do not disable the player lifecycle.
+// Page exit releases resources but preserves intent; explicit Stop clears it.
+export function attachSpeakerLifecycle(target: Pick<Window, "addEventListener" | "removeEventListener">) {
+  const restore = () => { void restoreSpeakerMode(); };
+  target.addEventListener("pagehide", suspendSpeakerMode);
+  target.addEventListener("pageshow", restore);
+  restore();
+  return () => {
+    target.removeEventListener("pagehide", suspendSpeakerMode);
+    target.removeEventListener("pageshow", restore);
+    suspendSpeakerMode();
+  };
 }
 
 export function activeSpeakerZone() { return state?.zoneId ?? null; }
@@ -217,8 +261,8 @@ export function activeSpeakerPlaybackStatus(): SpeakerPlaybackStatus {
   if (!state.sources.length) return "waiting";
   const statuses = [...playback.values()].map(p => p.status);
   if (statuses.includes("blocked")) return "blocked";
-  if (statuses.includes("playing")) return "playing";
   if (retryTimers.size) return "reconnecting";
+  if (statuses.includes("playing")) return "playing";
   if (statuses.includes("buffering")) return "buffering";
   return "connecting";
 }
