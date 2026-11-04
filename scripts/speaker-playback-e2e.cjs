@@ -53,17 +53,24 @@ const server = http.createServer((req, res) => {
   res.writeHead(200, { "Content-Type": "text/html" }).end(`<!doctype html><title>Speaker playback regression</title>
     <button onclick="window.speaker.resumeSpeakerPlayback()">Ton freigeben</button>
     <script type="module">
-      window.metrics = { elements: 0, seeks: 0, pauses: 0, errors: 0 };
+      window.metrics = { elements: 0, loads: 0, seeks: 0, pauses: 0, errors: 0 };
       const NativeAudio = window.Audio;
       window.Audio = function() {
         const el = new NativeAudio(); window.metrics.elements++; window.testAudio = el;
+        const load = el.load.bind(el);
+        el.load = function() { window.metrics.loads++; return load(); };
         for (const [event, key] of [["seeking", "seeks"], ["pause", "pauses"], ["error", "errors"]]) {
           el.addEventListener(event, () => window.metrics[key]++);
         }
         return el;
       };
       const speaker = await import('/player.js'); window.speaker = speaker;
-      await speaker.startSpeakerMode('test'); window.started = true;
+      speaker.attachSpeakerLifecycle(window);
+      if (!sessionStorage.getItem('fixture-initialized')) {
+        sessionStorage.setItem('fixture-initialized', 'true');
+        await speaker.startSpeakerMode('test');
+      }
+      window.started = true;
     </script>`);
 });
 
@@ -82,28 +89,52 @@ const server = http.createServer((req, res) => {
   console.log(JSON.stringify({ phase: "continuous-playback", result: "PASS", ...metrics, audioConnections, statusCalls }));
 
   hungConnection = audioConnections;
-  await page.waitForFunction(() => window.metrics.elements === 2 && window.testAudio.currentTime >= 3, null, { timeout: 40_000 });
+  await page.waitForFunction(() => window.metrics.loads >= 1 && window.testAudio.currentTime >= 3, null, { timeout: 40_000 });
+  assert.equal(await page.evaluate(() => window.metrics.elements), 1, "reconnect retains the authorized element");
   assert.equal(audioConnections, 2, "stalled open response reconnects exactly once");
   assert.equal(await page.evaluate(() => window.speaker.activeSpeakerPlaybackStatus()), "playing");
   console.log(JSON.stringify({ phase: "silent-open-connection", result: "PASS", audioConnections }));
 
   deploymentUntil = Date.now() + 3000;
-  const beforeRestart = await page.evaluate(() => ({ elements: window.metrics.elements, time: window.testAudio.currentTime }));
+  const beforeRestart = await page.evaluate(() => ({ loads: window.metrics.loads, time: window.testAudio.currentTime }));
   for (const res of audioResponses) res.destroy();
-  // Chrome can reconnect the existing media element itself. Either native
-  // recovery or our replacement must play beyond the original four-second buffer.
-  await page.waitForFunction(previous => window.metrics.elements > previous.elements
+  // Chrome can reconnect the media element itself. Native recovery or load()
+  // must play beyond the original four-second buffer without replacing it.
+  await page.waitForFunction(previous => window.metrics.loads > previous.loads
     ? window.testAudio.currentTime >= 4
     : window.testAudio.currentTime >= previous.time + 6, beforeRestart, { timeout: 40_000 });
   assert.ok(audioConnections >= 3, "playback resumes using a new HTTP connection");
   assert.equal(await page.evaluate(() => window.speaker.activeSpeakerPlaybackStatus()), "playing");
+  assert.equal(await page.evaluate(() => window.metrics.elements), 1);
   console.log(JSON.stringify({ phase: "server-restart", result: "PASS", audioConnections, statusCalls }));
+
+  await page.reload();
+  await page.waitForFunction(() => window.started && window.speaker.activeSpeakerZone() === 'test' &&
+    ['playing', 'blocked'].includes(window.speaker.activeSpeakerPlaybackStatus()), null, { timeout: 15_000 });
+  const restoredStatus = await page.evaluate(() => window.speaker.activeSpeakerPlaybackStatus());
+  if (restoredStatus === 'blocked') await page.getByRole('button', { name: 'Ton freigeben' }).click();
+  await page.waitForFunction(() => window.testAudio.currentTime >= 3, null, { timeout: 15_000 });
+  console.log(JSON.stringify({ phase: "page-reload", result: "PASS", rememberedZone: 'test', autoplayBlocked: restoredStatus === 'blocked' }));
+
   await page.evaluate(() => window.speaker.stopSpeakerMode());
   const stoppedConnections = audioConnections;
+  await page.reload();
+  await page.waitForFunction(() => window.started);
   await new Promise(resolve => setTimeout(resolve, 2500));
   assert.equal(audioConnections, stoppedConnections, "stop cancels all reconnect work");
+  assert.equal(await page.evaluate(() => window.speaker.activeSpeakerZone()), null, "explicit stop survives reload");
+
+  await browser.close();
+  browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--autoplay-policy=no-user-gesture-required'] });
+  page = await browser.newPage();
+  await page.goto(`http://127.0.0.1:${server.address().port}`);
+  await page.waitForFunction(() => window.started && window.testAudio?.currentTime >= 2);
+  await page.reload();
+  await page.waitForFunction(() => window.started && window.speaker.activeSpeakerZone() === 'test' && window.testAudio?.currentTime >= 2);
+  await page.evaluate(() => window.speaker.stopSpeakerMode());
+  console.log(JSON.stringify({ phase: "page-reload-autoplay-permitted", result: "PASS", clicks: 0 }));
   console.log(JSON.stringify({ result: "PASS", healthyPlayback: metrics, audioConnections, statusCalls,
-    checked: ["autoplay-unlock", "buffer-retention", "status-failures", "silent-open-connection", "server-restart", "explicit-stop"] }));
+    checked: ["autoplay-unlock", "buffer-retention", "status-failures", "silent-open-connection", "same-element-reconnect", "server-restart", "page-reload", "page-reload-autoplay-permitted", "explicit-stop"] }));
 })().catch(async error => {
   console.error(error);
   if (page) console.error(await page.evaluate(() => ({ ...window.metrics,

@@ -4,6 +4,7 @@ import { getAppUser } from "@/lib/admin";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { TopNav } from "@/components/TopNav";
 import { RegisterSW } from "@/components/RegisterSW";
+import { SpeakerPlaybackLifecycle } from "@/components/SpeakerPlaybackLifecycle";
 
 export const metadata: Metadata = {
   title: "AHD Radio DJ",
@@ -40,7 +41,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <RegisterSW />
         <ThemeProvider>
           <TopNav authEnabled={authEnabled} authenticated={authenticated} user={user} />
-          <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+          <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+            {authenticated && <SpeakerPlaybackLifecycle />}
+            {children}
+          </main>
         </ThemeProvider>
       </body>
     </html>

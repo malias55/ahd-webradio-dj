@@ -69,14 +69,28 @@ Ein eigener Wiedergabewächter prüft alle zwei Sekunden den tatsächlichen
 Fortschritt der Audiozeit. Steht sie mindestens 15 Sekunden still, wird die
 ausgewählte Quelle neu verbunden, auch wenn die HTTP-Verbindung offen bleibt
 und der Browser keinen Audiofehler meldet. Kurzes Puffern wird abgewartet.
+Beim Wiederverbinden bleibt dasselbe Audioelement erhalten; nur seine Verbindung
+wird neu geladen. Alte, dadurch abgebrochene `play()`-Versuche können keinen
+weiteren Neustart auslösen.
 Die Oberfläche unterscheidet Verbindung, Puffern, Wiederverbinden und Wiedergabe.
 Verweigert der Browser `play()` wegen fehlender Nutzerinteraktion, erscheint
 „Ton freigeben“; zeitgesteuerte Wiederholungen umgehen diese Browsersperre nicht.
+Die aktive Zone wird pro Tab in `sessionStorage` gespeichert. Die angemeldete
+App stellt sie nach F5, vollständiger Navigation und Rückkehr aus dem
+Browser-Seitencache automatisch wieder her, einschließlich außerhalb der
+Steuerungsseite. Das Verlassen einer Seite beendet nur die laufenden Ressourcen;
+„Lautsprecher-Modus beenden“ löscht zusätzlich die gespeicherte Auswahl und
+verhindert eine Wiederaufnahme. Gesperrter Browserspeicher verhindert die normale
+Wiedergabe nicht. Nach einem vollständigen Reload kann der Browser erneut einen
+Klick auf „Ton freigeben“ verlangen; ein erzwungener Reload ist deshalb kein
+allgemeiner Ersatz für die automatische Wiederverbindung.
 Zusätzlich zu `npm test` prüft `node scripts/speaker-playback-e2e.cjs` mit Playwright
 und lokal installiertem Chrome einen echten, zeitgesteuerten MP3-Stream samt zwei
 simulierten Statusfehlern, einer offenen Verbindung ohne weitere Audiodaten und
 einem Server-Neustart mit vorübergehendem HTTP 503; ohne Datenbankzugriff oder
-Änderungen am Liveprogramm.
+Änderungen am Liveprogramm. Der Test prüft außerdem die Wiederaufnahme nach
+echtem Seiten-Reload mit erlaubtem und gesperrtem Autoplay sowie einen expliziten
+Stop mit anschließendem Reload.
 
 Webapp und Radioengine laufen derzeit im selben Railway-Service. Ein Deployment
 beendet daher bestehende Stream-Verbindungen. Die Webapp behält verfügbaren
