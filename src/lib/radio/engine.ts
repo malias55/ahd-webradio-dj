@@ -8,11 +8,18 @@ import { prepareNews, bulletinForSlot, isRepeatSlot, GERMAN_NEWS_VERSION } from 
 import { stationIdAsset, IMAGING_VERSION } from "./imaging";
 import { trackPlayback } from "./audit";
 
+const FADE_SECONDS = 3;
+const NEWS_PAUSE_SECONDS = 5;
+const NEWS_LEAD_MS = (FADE_SECONDS + NEWS_PAUSE_SECONDS) * 1000 + 500;
+const HOUR_MS = 3_600_000;
+const ENCODE_MP3 = ["-ar", "44100", "-ac", "2", "-c:a", "libmp3lame", "-b:a", "128k"];
+
 type Item = { id: string; title: string; duration: number; kind: string };
 type RadioState = {
   started: boolean; onAir: boolean; playing: Item | null; startedAt: number;
   listeners: Set<ServerResponse>; process: ChildProcess | null; revision: number;
   timer?: ReturnType<typeof setTimeout>; boundary?: string; lastNewsSlot?: string;
+  lastNewsPreview?: string; trackFile?: string; newsTransition?: boolean; fadeInNextMusic?: boolean;
   lastPrepAt: number; preparing: boolean; error: string | null; lastMusicId?: string;
   musicQueue: Item[]; selecting: boolean; shutdown: boolean;
   musicSinceId: number;
@@ -48,41 +55,58 @@ function stopTrack() {
   const proc = state.process;
   state.process = null;
   state.playing = null;
+  state.trackFile = undefined;
   void state.finishPlayback?.("interrupted");
   state.finishPlayback = undefined;
   proc?.kill("SIGKILL");
 }
 
-async function play(item: Item | null, scheduledFor?: Date) {
+function silenceInput(seconds: number) {
+  return ["-re", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", String(seconds), ...ENCODE_MP3];
+}
+
+type PlayOptions = { scheduledFor?: Date; transition?: boolean; input?: string[] };
+
+async function play(item: Item | null, options: PlayOptions = {}) {
+  const { scheduledFor, transition } = options;
   stopTrack();
   const revision = state.revision;
   const file = item ? await assetFile(item.id) : null;
   if (revision !== state.revision || !isOnAir() || state.shutdown) return;
-  const input = file ? ["-re", "-i", file, "-c:a", "copy"] : [
-    "-re", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", "10", "-c:a", "libmp3lame", "-b:a", "128k",
-  ];
+  const fadeIn = item?.kind === "music" && state.fadeInNextMusic;
+  const codec = fadeIn ? ["-af", `afade=t=in:d=${FADE_SECONDS}:curve=hsin`, ...ENCODE_MP3] : ["-c:a", "copy"];
+  const input = options.input ?? (file ? ["-re", "-i", file, ...codec] : silenceInput(10));
   const proc = spawn(/* turbopackIgnore: true */ process.env.FFMPEG_PATH || "ffmpeg", ["-hide_banner", "-loglevel", "error", "-nostdin", ...input,
     "-vn", "-id3v2_version", "0", "-write_xing", "0", "-flush_packets", "1", "-f", "mp3", "pipe:1"], { stdio: ["ignore", "pipe", "pipe"] });
   state.process = proc;
   state.playing = item;
+  state.trackFile = file ?? undefined;
   if (item?.kind === "news") state.musicSinceId = 0;
   state.startedAt = Date.now();
   const audit = item ? trackPlayback(item, item.kind === "news" && scheduledFor ? newsLanguage(scheduledFor) : item.kind === "music" || item.kind === "imaging" ? "zxx" : "de", scheduledFor, state.listeners.size) : null;
   state.finishPlayback = audit?.finish;
-  proc.stdout.once("data", () => { void audit?.started().catch(report); });
-  proc.stdout.on("data", publish);
+  proc.stdout.once("data", () => {
+    if (revision !== state.revision) return;
+    state.startedAt = Date.now();
+    if (fadeIn) state.fadeInNextMusic = false;
+    void audit?.started().catch(report);
+  });
+  proc.stdout.on("data", chunk => { if (revision === state.revision) publish(chunk); });
   let failed = false;
   proc.stderr.on("data", () => { failed = true; });
   proc.on("error", () => { state.error = "Audiowiedergabe fehlgeschlagen; FFmpeg prüfen."; void audit?.finish("failed", state.error); });
-  proc.on("close", code => {
-    if (revision !== state.revision || state.shutdown) return;
+  const done = new Promise<boolean>(resolve => proc.once("close", code => {
+    if (revision !== state.revision || state.shutdown) { resolve(false); return; }
     state.process = null;
     state.playing = null;
+    state.trackFile = undefined;
     state.finishPlayback = undefined;
     void audit?.finish(code === 0 ? "completed" : "failed", code === 0 ? undefined : `FFmpeg beendet (${code})`);
     if (code !== 0 || failed) state.error = "Audio konnte nicht vollständig abgespielt werden.";
-    setTimeout(() => { void nextMusic().catch(report); }, code === 0 ? 0 : 5000);
-  });
+    if (!transition) setTimeout(() => { void nextMusic().catch(report); }, code === 0 ? 0 : 5000);
+    resolve(true);
+  }));
+  return { done };
 }
 
 function report(error: unknown) {
@@ -91,7 +115,7 @@ function report(error: unknown) {
 }
 
 async function nextMusic() {
-  if (state.selecting || state.process || !isMusicHours() || state.shutdown) return;
+  if (state.selecting || state.process || state.newsTransition || !isMusicHours() || state.shutdown) return;
   state.selecting = true;
   const revision = state.revision;
   try {
@@ -114,6 +138,38 @@ async function nextMusic() {
   } finally { state.selecting = false; }
 }
 
+async function playTransitionStage(item: Item | null, options: Omit<PlayOptions, "transition">) {
+  const stage = await play(item, { ...options, transition: true });
+  return stage?.done ?? false;
+}
+
+async function playNews(news: Item, slot: Date) {
+  state.newsTransition = true;
+  try {
+    if (isMusicHours()) {
+      const file = state.trackFile;
+      if (file && state.playing) {
+        // Continue from the current position for the audible part of the fade.
+        const offset = Math.max(0, (Date.now() - state.startedAt) / 1000);
+        const duration = Math.min(FADE_SECONDS, state.playing.duration - offset);
+        if (duration > 0) {
+          const input = ["-re", "-ss", String(offset), "-i", file, "-t", String(duration),
+            "-af", `afade=t=out:st=0:d=${duration}:curve=hsin`, ...ENCODE_MP3];
+          if (!await playTransitionStage(null, { input })) return;
+        }
+      }
+      const pause = Math.max(NEWS_PAUSE_SECONDS, (slot.getTime() - Date.now()) / 1000);
+      if (!await playTransitionStage(null, { input: silenceInput(pause) })) return;
+    }
+    if (!await playTransitionStage(news, { scheduledFor: slot })) return;
+    if (!await playTransitionStage(null, { input: silenceInput(NEWS_PAUSE_SECONDS) })) return;
+    state.fadeInNextMusic = isMusicHours();
+  } finally {
+    state.newsTransition = false;
+  }
+  await nextMusic();
+}
+
 async function tick(onBoundary: () => Promise<void>) {
   const now = new Date();
   const active = isOnAir(now);
@@ -122,20 +178,28 @@ async function tick(onBoundary: () => Promise<void>) {
     state.boundary = `${stationTime(now).date}:${active}`;
     if (!active) {
       stopTrack();
+      state.fadeInNextMusic = false;
       for (const res of state.listeners) res.end();
       state.listeners.clear();
     }
     await onBoundary();
   }
   // Exact slot identity: never replay an old bulletin after a restart or at 18:00.
-  const hour = new Date(Math.floor(now.getTime() / 3_600_000) * 3_600_000);
-  if (active && isNewsSlot(hour) && now.getTime() - hour.getTime() < 1500 && state.lastNewsSlot !== hour.toISOString()) {
-    state.lastNewsSlot = hour.toISOString();
+  const lead = isMusicHours(now) ? NEWS_LEAD_MS : 0;
+  const hour = new Date(Math.floor((now.getTime() + lead) / HOUR_MS) * HOUR_MS);
+  const slotKey = hour.toISOString();
+  const early = now < hour;
+  if (active && !state.newsTransition && isNewsSlot(hour) && now.getTime() - hour.getTime() < 1500 &&
+      state.lastNewsSlot !== slotKey && (!early || state.lastNewsPreview !== slotKey)) {
+    if (early) state.lastNewsPreview = slotKey;
+    else state.lastNewsSlot = slotKey;
     const alreadyPlayed = await prisma.radioPlayback.findFirst({ where: { kind: "news", scheduledFor: hour, status: { in: ["starting", "playing", "completed", "interrupted"] } }, select: { id: true } });
-    if (alreadyPlayed) return;
+    if (alreadyPlayed) { state.lastNewsSlot = slotKey; return; }
     const news = await bulletinForSlot(hour);
-    if (news && isOnAir() && Date.now() - hour.getTime() < 5000) await play(news, hour);
-    else {
+    if (news && isOnAir() && Date.now() - hour.getTime() < 5000) {
+      state.lastNewsSlot = slotKey;
+      void playNews(news, hour).catch(report);
+    } else if (!early) {
       state.error = "Zur vollen Stunde keine geprüfte Nachrichtenausgabe bereit.";
       await prisma.radioPlayback.create({ data: { title: "Nachrichtenausgabe nicht gesendet", language: newsLanguage(hour), kind: "news", status: "skipped", scheduledFor: hour,
         repeated: isRepeatSlot(hour), endedAt: new Date(), listeners: state.listeners.size, error: state.error } });

@@ -15,6 +15,48 @@ const db=new PrismaClient({datasourceUrl:target.toString()});
 const origin='http://127.0.0.1:3199';let server:ChildProcess|undefined,created=false;
 const wait=(ms:number)=>new Promise(r=>setTimeout(r,ms));
 async function stop(){if(!server)return;const p=server;server=undefined;p.kill('SIGTERM');await new Promise<void>(resolve=>{p.once('close',()=>resolve());setTimeout(()=>{p.kill('SIGKILL');resolve();},4000).unref();});}
+
+async function captureStream(ms: number) {
+  const response = await fetch(origin + '/api/radio/stream');
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type') || '', /audio\/mpeg/);
+  const reader = response.body!.getReader(), chunks: Buffer[] = [];
+  const timer = setTimeout(() => { void reader.cancel(); }, ms);
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) return Buffer.concat(chunks);
+      chunks.push(Buffer.from(value));
+    }
+  } finally { clearTimeout(timer); await reader.cancel().catch(() => {}); }
+}
+
+async function checkTransitions(audio: Buffer, dir: string) {
+  const mp3 = join(dir, 'broadcast.mp3'), raw = join(dir, 'broadcast.pcm');
+  await writeFile(mp3, audio);
+  await command(process.env.FFMPEG_PATH || 'ffmpeg', ['-v', 'error', '-i', mp3, '-ac', '1', '-ar', '8000', '-f', 's16le', '-y', raw]);
+  const pcm = await readFile(raw), levels: number[] = [];
+  const samplesPerWindow = 400; // 50 ms
+  for (let start = 0; start + 2 * samplesPerWindow <= pcm.length; start += 2 * samplesPerWindow) {
+    let power = 0;
+    for (let i = 0; i < samplesPerWindow; i++) power += pcm.readInt16LE(start + 2 * i) ** 2;
+    levels.push(Math.sqrt(power / samplesPerWindow));
+  }
+  const pauses: { start: number; end: number }[] = [];
+  for (let index = 0; index < levels.length; index++) {
+    if (levels[index] >= 10) continue;
+    const start = index;
+    while (index < levels.length && levels[index] < 10) index++;
+    if (index - start >= 99) pauses.push({ start, end: index });
+  }
+  assert.equal(pauses.length, 2, 'continuous stream has two pauses of at least five seconds, within one analysis window');
+  const [before, after] = pauses;
+  assert.ok(after.start - before.end >= 155 && after.start - before.end <= 165, 'complete eight-second bulletin between pauses');
+  assert.ok(levels[before.start - 50] > 2 * levels[before.start - 20], 'music fades down before the bulletin');
+  assert.ok(levels[after.end + 50] > 2 * levels[after.end + 20], 'music fades up after the bulletin');
+  console.log('Measured pauses in the continuous MP3 stream:', pauses.map(pause => (pause.end - pause.start) / 20));
+}
+
 async function main(){
  const dir=await mkdtemp(join(tmpdir(),'ahd-daily-stream-'));
  try{
@@ -34,12 +76,13 @@ async function main(){
    server=spawn(process.execPath,['--require',preload,'dist/server.js'],{env:{...process.env,NODE_ENV:'production',PG_URL:target.toString(),PORT:'3199',RADIO_PUBLIC_URL:origin,SKIP_AUTH:'false',AHD_E2E_CLOCK_OFFSET:String(offset),ELEVENLABS_API_KEY:'',OPENAI_API_KEY:'',EDENAI_API_KEY:''},stdio:['ignore','pipe','pipe']});
    server.stdout!.on('data',b=>{logs=(logs+b).slice(-5000);});server.stderr!.on('data',b=>{logs=(logs+b).slice(-5000);});
    let seen=false;
-   for(let i=0;i<100;i++){try{const h=await fetch(origin+'/api/health').then(r=>r.json());if(h.radio?.title===`Isolated ${hour===20?'tr':'de'} daily news`){seen=true;break;}}catch{}await wait(250);}
-   assert.ok(seen,`scheduled news did not start at ${hour}:00; ${logs.slice(-700)}`);
-   const r=await fetch(origin+'/api/radio/stream');assert.equal(r.status,200);assert.match(r.headers.get('content-type')||'',/audio\/mpeg/);
-   const reader=r.body!.getReader();let bytes=0;const timer=setTimeout(()=>{void reader.cancel();},1500);
-   try{while(true){const x=await reader.read();if(x.done)break;bytes+=x.value.length;}}finally{clearTimeout(timer);await reader.cancel().catch(()=>{});}
+   const expectedTitle = hour === 17 ? 'Isolated test music' : 'Isolated tr daily news';
+   for(let i=0;i<100;i++){try{const h=await fetch(origin+'/api/health').then(r=>r.json());if(h.radio?.title===expectedTitle){seen=true;break;}}catch{}await wait(250);}
+   assert.ok(seen,`expected ${expectedTitle} near ${hour}:00; ${logs.slice(-700)}`);
+   const captured = await captureStream(hour === 17 ? 29_000 : 1500);
+   const bytes = captured.length;
    assert.ok(bytes>1000,'real FFmpeg stream must contain MP3 packets');
+   if (hour === 17) await checkTransitions(captured, dir);
    const a=await db.radioPlayback.findFirstOrThrow({where:{scheduledFor:slot,kind:'news'}});
    assert.equal(a.assetId,voiceIds.get(hour===20?'tr':'de'));assert.equal(a.repeated,true);
    assert.equal(await db.radioAsset.count({where:{kind:'news'}}),2,'broadcast repeats never create another recording');assert.equal(await db.radioJob.count(),0,'streaming must not purchase or prepare speech');
