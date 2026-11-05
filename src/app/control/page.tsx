@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Headphones, Megaphone, MonitorPlay, Square, Volume2 } from "lucide-react";
 import type { Zone, Device } from "@/types";
+import { ZoneNewsControls } from "@/components/ZoneNewsControls";
 import { sendZoneCommand } from "@/lib/apiClient";
 import {
   ANNOUNCE_MAX_MS,
@@ -176,6 +177,7 @@ export default function ControlPage() {
               onBroadcast={(src, mode) => doBroadcast(z.id, src, mode)}
               onEndBroadcast={endBroadcast}
               onToggleSpeaker={() => toggleSpeaker(z)}
+              onNewsChange={reload}
             />
           ))}
         </div>
@@ -235,6 +237,7 @@ function ZoneCard(props: {
   onBroadcast: (src: CaptureSource, mode: BroadcastMode) => void;
   onEndBroadcast: () => void;
   onToggleSpeaker: () => void;
+  onNewsChange: () => void;
 }) {
   const { zone, liveHere, liveMode, anyLive, globalAnnounce, speakerActive, speakerElsewhere, speakerLive, speakerStatus, isAdmin, myEmail } = props;
   const [volume, setVolume] = useState(zone.volume);
@@ -342,6 +345,8 @@ function ZoneCard(props: {
           </button>
         )}
       </div>
+
+      <ZoneNewsControls zone={zone} busy={liveHere || !!zone.streamInfo?.broadcasting} onChange={props.onNewsChange} />
 
       <div>
         <button

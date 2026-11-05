@@ -11,7 +11,8 @@ import { withJob } from "./store";
 import { mixDryBulletin, joinNewsParts, frameTurkishProgramme, appendNewsOutro, type Cue } from "./mix";
 import { bulletinOpenerAsset, turkishSignatureAsset, TURKISH_SIGNATURE_KEY, germanOutroAsset, GERMAN_OUTRO_KEY } from "./imaging";
 import { isNewsSlot, stationTime, stationHour, dailyNewsPlan, NEWS_SCHEDULE, newsLanguage } from "./config";
-import { collectDailyService, collectHourlyService, serviceValidForDailyEdition } from "./service";
+import { collectDailyService, collectHourlyService, serviceFreshForSlot, serviceValidForDailyEdition } from "./service";
+import { collectMarketReport } from "./market";
 import type { Prisma, RadioAsset } from "@prisma/client";
 
 export const GERMAN_NEWS_VERSION = "daily-repeat-v10";
@@ -81,8 +82,10 @@ export async function serviceOutroSpeech(slot = new Date()) {
   const presenter = servicePresenter(slot), model = process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2";
   const settings = serviceVoiceSettings(slot);
   const key = `speech-static:de:outro:${createHash("sha256").update(JSON.stringify({ text: GERMAN_SERVICE_OUTRO, voice: presenter.voiceId, model, settings })).digest("hex").slice(0, 24)}`;
+  if (usesSlotUpdates(slot)) await recoverQuotaJob(key);
   await withJob(key, async () => {
     if (await prisma.radioAsset.findUnique({ where: { key } })) return;
+    if (usesSlotUpdates(slot)) await assertNewsCredits();
     const { normalizeAudio } = await import("./store");
     const audio = await normalizeAudio(await speech(GERMAN_SERVICE_OUTRO, presenter.voiceId, "de", "service", slot));
     await prisma.radioAsset.create({ data: { key, kind: "speech-static", title: `Abschluss · ${presenter.name}`, script: GERMAN_SERVICE_OUTRO, ...audio,
@@ -95,6 +98,8 @@ export const DEFAULT_TR_FEEDS = [
   "https://www.trthaber.com/manset_articles.rss",
   "https://www.trthaber.com/dunya_articles.rss",
   "https://www.aa.com.tr/tr/rss/default?cat=dunya",
+  "https://www.aa.com.tr/tr/rss/default?cat=ekonomi",
+  "https://www.aa.com.tr/tr/rss/default?cat=spor",
   "https://www.trthaber.com/turkiye_articles.rss",
   "https://www.trthaber.com/kultur_sanat_articles.rss",
   "https://www.trthaber.com/bilim_teknoloji_articles.rss",
@@ -145,7 +150,7 @@ export async function collectSources(now = new Date(), language: "de" | "tr" = "
   const configured = language === "tr" ? process.env.NEWS_TR_FEED_URLS : process.env.NEWS_FEED_URLS;
   const urls = configured?.split(",").map(s => s.trim()).filter(Boolean) || (language === "tr" ? DEFAULT_TR_FEEDS : DEFAULT_FEEDS);
   const perFeed = language === "tr" ? 24 : 20;
-  const results = await Promise.allSettled(urls.slice(0, 8).map(async (url, index) => {
+  const results = await Promise.allSettled(urls.slice(0, language === "tr" ? 10 : 8).map(async (url, index) => {
     const u = new URL(url);
     if (u.protocol !== "https:") throw new Error("News feeds must use HTTPS");
     const r = await fetch(url, { headers: { "User-Agent": "AHD-Radio/1.0" }, signal: AbortSignal.timeout(15_000) });
@@ -239,20 +244,30 @@ export function validateStories(value: unknown, sources: NewsSource[]): Story[] 
 export function newsEditionSlot(slot: Date) {
   return stationHour(stationTime(slot).date, newsLanguage(slot) === "tr" ? 7 : 10);
 }
+export const NEWS_REFRESH_LEAD_MS = 6 * 60_000;
+export function usesSlotUpdates(slot: Date) { return stationTime(slot).date >= "2026-11-06"; }
 export function mainNewsKey(slot: Date) { return `news-main:${GERMAN_NEWS_VERSION}:${newsEditionSlot(slot).toISOString()}`; }
-export function bulletinKey(slot: Date) { return newsLanguage(slot) === "tr" ? `news:${TURKISH_NEWS_VERSION}:${newsEditionSlot(slot).toISOString()}` : `news-daily:${GERMAN_NEWS_VERSION}:${newsEditionSlot(slot).toISOString()}`; }
+export function bulletinKey(slot: Date) {
+  const tr = newsLanguage(slot) === "tr", version = tr ? TURKISH_NEWS_VERSION : GERMAN_NEWS_VERSION;
+  return usesSlotUpdates(slot) ? `news-slot:${version}:${slot.toISOString()}` : `${tr ? "news" : "news-daily"}:${version}:${newsEditionSlot(slot).toISOString()}`;
+}
 export function isRepeatSlot(slot: Date) { return newsEditionSlot(slot).getTime() !== slot.getTime(); }
 export async function bulletinForSlot(slot: Date) {
   const asset = await prisma.radioAsset.findUnique({ where: { key: bulletinKey(slot) }, select: { id: true, title: true, duration: true, kind: true, metadata: true } });
-  return asset && familyContentAllowed(String((asset.metadata as { stories?: Story[] })?.stories?.map(s => s.text).join(" ") || "")) && (newsLanguage(slot) === "tr" || serviceValidForDailyEdition(asset.metadata, newsEditionSlot(slot))) ? asset : null;
+  const tr = newsLanguage(slot) === "tr";
+  const market = (asset?.metadata as { market?: MarketReport } | null)?.market;
+  const fresh = usesSlotUpdates(slot) ? serviceFreshForSlot(tr ? { service: market } : asset?.metadata, slot) : tr || serviceValidForDailyEdition(asset?.metadata, newsEditionSlot(slot));
+  return asset && fresh && familyContentAllowed(String((asset.metadata as { stories?: Story[] })?.stories?.map(s => s.text).join(" ") || "")) ? asset : null;
 }
 
 async function newsSegmentSpeech(text: string, voiceId: string, language: "de" | "tr", edition: Date, delivery: "standard" | "service" = "standard") {
   const spoken = speechText(naturalRadioText(text), language), model = process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2";
   const settings = delivery === "service" ? serviceVoiceSettings(edition) : { stability: 0.65, similarity_boost: 0.75, style: 0.15, use_speaker_boost: true };
   const key = `news-voice:${stationTime(edition).date}:${createHash("sha256").update(JSON.stringify({ spoken, voiceId, language, model, settings })).digest("hex")}`;
+  if (usesSlotUpdates(edition)) await recoverQuotaJob(key);
   await withJob(key, async () => {
     if (await prisma.radioAsset.findUnique({ where: { key }, select: { id: true } })) return;
+    if (usesSlotUpdates(edition)) await assertNewsCredits();
     const { normalizeAudio } = await import("./store");
     const audio = await normalizeAudio(await speech(spoken, voiceId, language, delivery, edition));
     await prisma.radioAsset.create({ data: { key, kind: "news-voice", title: "Gespeicherter Nachrichten-Sprachabschnitt", script: spoken, ...audio, metadata: { voiceId, language, ttsModel: model, delivery } } });
@@ -285,7 +300,7 @@ export async function editorialContent(slot: Date): Promise<EditorialContent> {
   const [collected, recent] = await Promise.all([
     collectSources(redaktionszeit, language),
     language === "tr"
-      ? prisma.radioAsset.findMany({ where: { kind: "news", slot: { lt: editionSlot }, metadata: { path: ["language"], equals: "tr" } },
+      ? prisma.radioAsset.findMany({ where: { OR: [{ kind: "news", key: { startsWith: "news:" } }, { kind: "news-main" }], slot: { lt: editionSlot }, metadata: { path: ["language"], equals: "tr" } },
         orderBy: [{ slot: "desc" }, { createdAt: "desc" }], distinct: ["slot"], take: 7, select: { slot: true, metadata: true } })
       : prisma.radioAsset.findMany({ where: { kind: { in: ["news", "news-main"] }, slot: { lt: slot, gte: new Date(slot.getTime() - 8 * 3_600_000) } },
         orderBy: { slot: "desc" }, take: 4, select: { slot: true, metadata: true } }),
@@ -297,10 +312,11 @@ export async function editorialContent(slot: Date): Promise<EditorialContent> {
   const previouslyUsed = [...new Set(previousEditions.flatMap(edition => edition.sources.map(source => source.url)))];
   const candidates = sourcesForProgramme(collected, language).filter(s => lastBroadcast.getTime() - Date.parse(s.publishedAt) <= (/daad-turkiye/.test(s.url) ? 168 : 72) * 3600_000);
   const ordered = language === "tr" ? turkishSourceOrder(candidates, previouslyUsed) : candidates.sort((a, b) => Number(b.local) - Number(a.local));
-  const sources = sourcesForProgramme(await Promise.all(ordered.slice(0, 18).map(enrichSource)), language).slice(0, 12);
+  const expanded = language === "tr" && usesSlotUpdates(editionSlot);
+  const sources = sourcesForProgramme(await Promise.all(ordered.slice(0, expanded ? 24 : 18).map(enrichSource)), language).slice(0, expanded ? 18 : 12);
   if (!sources.length) throw new Error("Keine aktuellen Quellen passend zur redaktionellen Themenauswahl verfügbar.");
-  const editorialPolicy = language === "tr" ? TURKISH_NEWS_POLICY : `${NEWS_POLICY}\n${GERMAN_TOPIC_POLICY}\nABWEICHENDE LÄNGE für den deutschen Hauptteil: Ziel 220–270 Wörter für die Meldungen, höchstens 290. Das ist keine Mindestlänge: Eine kürzere, belegte Auswahl ist zulässig und darf nicht allein wegen der Wortzahl abgelehnt oder künstlich aufgefüllt werden. Wetter und Verkehr werden separat ergänzt, hier nicht schreiben. Vier kurze unterschiedliche Meldungen bevorzugen. Der Hauptteil wird bis 17 Uhr wiederholt. Keine Live-Behauptungen. Mindestens ein belegtes geeignetes Thema aus localSourceIds muss enthalten sein; der lokale Bezug steht vor neuen überregionalen Themen.`;
-  const context = { language, desiredStoryCount: Math.min(4, sources.length), region: language === "tr" ? "Türkiye, Almanya ve dünyadan" : process.env.NEWS_REGION || "Mainz und Rheinhessen", sendetermin: firstActualBroadcast.toISOString(), tagesausgabe: editionSlot.toISOString(), redaktionszeit: redaktionszeit.toISOString(), wiederholungen: language === "tr" ? "Dieselbe Aufnahme um 07 und 20 Uhr" : "Dieselbe Aufnahme von 10 bis 17 Uhr; keine Live-Behauptungen oder kurzfristigen Ankündigungen, die beim Wiederholen bereits vorbei sind", sources, previouslyUsed,
+  const editorialPolicy = language === "tr" ? TURKISH_NEWS_POLICY + (expanded ? "\nWenn genügend Substanz vorliegt, fünf bis sechs Meldungen und insgesamt etwa 250 bis 310 Wörter. Erkläre Zusammenhänge und Folgen mit belegten Fakten, statt Meldungen zu strecken. Beziehe relevante Wirtschafts- und Sportnachrichten ein, wenn sie bis zur Abendwiederholung sinnvoll bleiben. Keine Wetten und keine Anlageempfehlungen. Wechselkurse, Gold, Brent und Börsenstände werden vor jeder Sendung getrennt aktualisiert und gehören nicht in deinen Text." : "") : `${NEWS_POLICY}\n${GERMAN_TOPIC_POLICY}\nABWEICHENDE LÄNGE für den deutschen Hauptteil: Ziel 220–270 Wörter für die Meldungen, höchstens 290. Das ist keine Mindestlänge: Eine kürzere, belegte Auswahl ist zulässig und darf nicht allein wegen der Wortzahl abgelehnt oder künstlich aufgefüllt werden. Wetter und Verkehr werden separat ergänzt, hier nicht schreiben. Vier kurze unterschiedliche Meldungen bevorzugen. Der Hauptteil wird bis 17 Uhr wiederholt. Keine Live-Behauptungen. Mindestens ein belegtes geeignetes Thema aus localSourceIds muss enthalten sein; der lokale Bezug steht vor neuen überregionalen Themen.`;
+  const context = { language, desiredStoryCount: Math.min(expanded ? 6 : 4, sources.length), minimumStoryCount: expanded ? 1 : undefined, region: language === "tr" ? "Türkiye, Almanya ve dünyadan" : process.env.NEWS_REGION || "Mainz und Rheinhessen", sendetermin: firstActualBroadcast.toISOString(), tagesausgabe: editionSlot.toISOString(), redaktionszeit: redaktionszeit.toISOString(), wiederholungen: language === "tr" ? "Dieselben Hauptmeldungen um 07 und 20 Uhr" : "Dieselben Hauptmeldungen von 10 bis 17 Uhr; keine Live-Behauptungen oder kurzfristigen Ankündigungen, die beim Wiederholen bereits vorbei sind", sources, previouslyUsed,
     localSourceIds: language === "de" ? sources.filter(s => s.local).map(s => s.id) : [],
     previousStories: language === "tr" ? previousEditions.map(({ slot, stories }) => ({ slot, stories })) : undefined,
     instruction: language === "tr" ? "Prüfe die Quellen zuerst auf die wichtigsten Entwicklungen, auch nationale Wahlergebnisse mit internationaler Bedeutung. Vergleiche die Sachstände mit previousStories und lasse bloße Wiederholungen aus."
@@ -315,6 +331,10 @@ export async function editorialContent(slot: Date): Promise<EditorialContent> {
     if(new Set(citedIds).size!==citedIds.length){feedback="Vier eigenständige Themen aus vier verschiedenen Quellen wählen. Eine Quellen-ID darf nicht für mehrere Meldungen verwendet werden.";continue;}
     if (stories.some(s => !familyContentAllowed(s.text))) {
       feedback = "Ausschließlich jugendfreie, auch für kleine Kinder geeignete Meldungen wählen. Nicht geeignete Themen ganz ersetzen; keine Erotik, Horror, drastische Gewalt, Drogen, Glücksspiel oder nicht jugendfreie Kulturangebote.";
+      continue;
+    }
+    if (expanded && stories.map(s => s.text).join(" ").split(/\s+/).length > 320) {
+      feedback = "Höchstens 320 Wörter für die Hauptmeldungen, damit Platz für den gesonderten Marktteil bleibt.";
       continue;
     }
     if (language === "de" && stories.some(s => !germanTopicAllowed(s.text))) {
@@ -342,7 +362,9 @@ export async function editorialContent(slot: Date): Promise<EditorialContent> {
   return { stories, sources: sources.filter(s => used.has(s.id)).map(({ id, title, url, publishedAt, local }) => ({ id, title, url, publishedAt, local })), editionSlot: editionSlot.toISOString(), language, modelCalls };
 }
 
-export async function renderBulletin(slot: Date, content: EditorialContent, example = false, mainPart = false) {
+type MarketReport = Awaited<ReturnType<typeof collectMarketReport>>;
+
+export async function renderBulletin(slot: Date, content: EditorialContent, example = false, mainPart = false, market?: MarketReport) {
   const presenter = presenterForSlot(slot), language = content.language;
   content.stories.forEach(story => assertFamilyContent(story.text));
   if (language === "de" && content.stories.some(story => !germanBrandingAllowed(story.text))) throw new Error("Deutsche Nachrichten müssen senderneutral bleiben");
@@ -353,7 +375,7 @@ export async function renderBulletin(slot: Date, content: EditorialContent, exam
     ? TURKISH_OUTRO
     : mainPart ? GERMAN_HANDOVER
     : GERMAN_SERVICE_OUTRO;
-  const paragraphs = [intro, ...content.stories.map(s => s.text), outro];
+  const paragraphs = [intro, ...content.stories.map(s => s.text), ...(market ? [market.text] : []), outro];
   const segments = [];
   for (let i = 0; i < paragraphs.length; i++) {
     const kind = i === 0 ? "intro" as const : i === paragraphs.length - 1 ? "outro" as const : "story" as const;
@@ -380,7 +402,8 @@ export async function renderBulletin(slot: Date, content: EditorialContent, exam
   if (audio.duration > 260) throw new Error("Die fertige Ausgabe überschreitet das Sendezeitfenster.");
   return { ...audio, script: `${language === "tr" ? TURKISH_OPENING : ""}${paragraphs.map(p => speechText(naturalRadioText(p), language)).join("\n\n")}`,
     metadata: { programmeVersion: language === "tr" ? TURKISH_NEWS_VERSION : GERMAN_NEWS_VERSION, voiceId: presenter.voiceId, presenter: presenter.name, language, gender: presenter.gender, aiGenerated: true, backgroundMusic: false, editorialVersion: language === "de" ? GERMAN_EDITORIAL_VERSION : null, familyContentVersion: FAMILY_CONTENT_VERSION,
-      sources: content.sources, stories: content.stories, modelCalls: content.modelCalls, editionSlot: content.editionSlot, example,
+      sources: [...content.sources, ...(market?.sources || []).map((s, i) => ({ ...s, id: Math.max(0, ...content.sources.map(ref => ref.id)) + i + 1, local: false }))], stories: content.stories, modelCalls: content.modelCalls, editionSlot: content.editionSlot, example,
+      market: market ?? null,
       authorModel: content.modelCalls.filter(c => c.purpose === "author" && c.status !== "failed").at(-1)?.resolvedModel || newsModelConfig().primary, reviewModel: content.modelCalls.filter(c => c.purpose === "review" && c.status !== "failed").at(-1)?.resolvedModel || newsModelConfig().primary,
       modelPolicy: newsModelConfig(),
       openingVersion: language === "tr" ? TURKISH_OPENING_VERSION : null, pronunciationVersion: language === "tr" ? TURKISH_PRONUNCIATION_VERSION : null,
@@ -416,7 +439,7 @@ export async function renderGermanHourly(slot: Date, main: MainAudio | null, exa
     programmeVersion: GERMAN_NEWS_VERSION, editorialVersion: GERMAN_EDITORIAL_VERSION, familyContentVersion: FAMILY_CONTENT_VERSION, language: "de", aiGenerated: true, backgroundMusic: false, example,
     presenter: main ? `Elias · ${presenter.name} (Wetter und Verkehr)` : `${presenter.name} · Wetter und Verkehr`, mainAssetId: main?.id || null,
     mainReused: !!main && !example && isRepeatSlot(slot), mainUnavailable: !main, editionSlot: m.editionSlot || newsEditionSlot(slot).toISOString(),
-    mainCreatedFor: main?.slot?.toISOString() || null, serviceRefreshHours: 24, service,
+    mainCreatedFor: main?.slot?.toISOString() || null, serviceRefreshHours: usesSlotUpdates(slot) ? 1 : 24, service,
     presenters: [{ name: presenterForSlot(slot).name, voiceId: presenterForSlot(slot).voiceId, role: "Hauptnachrichten" }, { name: presenter.name, voiceId: presenter.voiceId, role: "Wetter und Verkehr" }],
     sources: [...mainSources, ...service.sources.map((s, i) => ({ ...s, id: maxId + i + 1, local: true }))],
     modelCalls: !example && isRepeatSlot(slot) ? [] : m.modelCalls || [], authorModel: m.authorModel || null, reviewModel: m.reviewModel || null,
@@ -425,21 +448,72 @@ export async function renderGermanHourly(slot: Date, main: MainAudio | null, exa
   } };
 }
 
+async function prepareSlotNews(slot: Date, edition: Date, now: Date, simulatedNow?: Date) {
+  const language = newsLanguage(slot), version = language === "tr" ? TURKISH_NEWS_VERSION : GERMAN_NEWS_VERSION;
+  const mainKey = language === "tr" ? `news-main:${version}:${edition.toISOString()}` : mainNewsKey(edition);
+  const draftKey = `news-draft:${version}:${edition.toISOString()}`;
+  let main = await prisma.radioAsset.findUnique({ where: { key: mainKey }, select: { id: true } });
+  if (!main) {
+    await recoverQuotaJob(mainKey);
+    await withJob(mainKey, async () => {
+      if (await prisma.radioAsset.findUnique({ where: { key: mainKey }, select: { id: true } })) return;
+      await assertNewsCredits();
+      const draft = await approvedDraft(edition, draftKey);
+      const rendered = await renderBulletin(edition, draft, false, true);
+      await prisma.radioAsset.create({ data: { key: mainKey, kind: "news-main", title: "Hauptnachrichten · Tagesausgabe", slot: edition, ...rendered } });
+    });
+    main = await prisma.radioAsset.findUnique({ where: { key: mainKey }, select: { id: true } });
+  }
+  if (!main || now >= slot || slot.getTime() - now.getTime() > NEWS_REFRESH_LEAD_MS) return !!main;
+  const key = bulletinKey(slot), mainId = main.id;
+  await recoverQuotaJob(key);
+  return withJob(key, async () => {
+    if (await bulletinForSlot(slot)) return;
+    const fetchedAt = simulatedNow ?? new Date();
+    if (fetchedAt >= slot) throw new Error("Sendezeit für die aktuellen Servicedaten verstrichen");
+    const serviceKey = `news-service:${version}:${slot.toISOString()}:slot`;
+    let snapshot = await prisma.radioAsset.findUnique({ where: { key: serviceKey }, select: { metadata: true } });
+    if (!snapshot) {
+      const service = await (language === "tr" ? collectMarketReport(slot, fetchedAt) : collectHourlyService(slot, fetchedAt));
+      snapshot = await prisma.radioAsset.create({ data: { key: serviceKey, kind: "news-service", title: "Daten für den Sendetermin", slot, audio: Buffer.alloc(0), duration: 0, metadata: { service } as Prisma.InputJsonValue }, select: { metadata: true } });
+    }
+    const service = (snapshot.metadata as { service: unknown }).service;
+    const rendered = language === "tr"
+      ? await renderBulletin(slot, await approvedDraft(edition, draftKey), false, false, service as MarketReport)
+      : await renderGermanHourly(slot, await prisma.radioAsset.findUniqueOrThrow({ where: { id: mainId } }), false, fetchedAt, service as Awaited<ReturnType<typeof collectHourlyService>>);
+    await prisma.radioAsset.create({ data: { key, kind: "news", title: language === "tr" ? "Türkçe Haberler · Cavit" : "Nachrichten · Elias & Susanne", slot, ...rendered } });
+  });
+}
+
+async function approvedDraft(edition: Date, key: string): Promise<EditorialContent> {
+  const draft = await prisma.radioAsset.findUnique({ where: { key }, select: { metadata: true } });
+  if (draft) return (draft.metadata as unknown as { content: EditorialContent }).content;
+  const content = await editorialContent(edition);
+  await prisma.radioAsset.create({ data: { key, kind: "news-draft", title: "Geprüfter Tages-Nachrichtentext", slot: edition, audio: Buffer.alloc(0), duration: 0,
+    script: content.stories.map(s => s.text).join("\n\n"), metadata: { content } as unknown as Prisma.InputJsonValue } });
+  return content;
+}
+
+async function recoverQuotaJob(key: string) {
+  const job = await prisma.radioJob.findUnique({ where: { key } });
+  if (job?.status === "failed" && job.attempts >= 3 && /Guthaben nicht ausreichend:/.test(job.error || "")) {
+    await assertNewsCredits();
+    await prisma.radioJob.updateMany({ where: { key, status: "failed", attempts: job.attempts }, data: { status: "pending", attempts: 0, leaseUntil: null } });
+  }
+}
+
 export async function prepareNews(slot: Date, simulatedNow?: Date) {
   const now = simulatedNow ?? new Date();
   if (!isNewsSlot(slot)) throw new Error("Ungültiger Nachrichtentermin: Türkisch 07/20 Uhr, Deutsch 10–17 Uhr");
   const edition = newsEditionSlot(slot), language = newsLanguage(slot), plan = dailyNewsPlan(edition).find(p => p.language === language)!;
   if (now < plan.generateAt) return false;
   if (now >= plan.lastBroadcast) throw new Error("Letzter Sendetermin der Tagesausgabe verstrichen");
+  if (usesSlotUpdates(slot)) return await bulletinForSlot(slot) ? true : prepareSlotNews(slot, edition, now, simulatedNow);
   const key = bulletinKey(edition);
   if (await bulletinForSlot(edition)) return true;
   // A top-up can revive a quota-blocked day. Approved texts and finished speech
   // fragments are cached separately, so retries never redraft or rebuy them.
-  const job = await prisma.radioJob.findUnique({ where: { key } });
-  if (job?.status === "failed" && job.attempts >= 3 && /Guthaben nicht ausreichend:/.test(job.error || "")) {
-    await assertNewsCredits();
-    await prisma.radioJob.updateMany({ where: { key, status: "failed", attempts: job.attempts }, data: { status: "pending", attempts: 0, leaseUntil: null } });
-  }
+  await recoverQuotaJob(key);
   return withJob(key, async () => {
     if (await bulletinForSlot(edition)) return;
     await assertNewsCredits();

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { PrismaClient } from '@prisma/client';
 import { stationTime, stationHour } from '../src/lib/radio/config';
-import { bulletinKey, newsEditionSlot } from '../src/lib/radio/news';
+import { bulletinKey, newsEditionSlot, usesSlotUpdates } from '../src/lib/radio/news';
 import { FAMILY_CONTENT_VERSION } from '../src/lib/radio/family';
 import { command } from '../src/lib/radio/store';
 const root=new PrismaClient(),schema=`ahd_radio_e2e_${randomBytes(6).toString('hex')}`;
@@ -64,11 +64,15 @@ async function main(){
   for(const table of ['users','zones','devices','radio_assets','radio_playbacks','radio_jobs'])await root.$executeRawUnsafe(`CREATE TABLE "${schema}"."${table}" (LIKE public."${table}" INCLUDING ALL)`);
   const tone=join(dir,'voice.mp3');await command(process.env.FFMPEG_PATH||'ffmpeg',['-v','error','-nostdin','-f','lavfi','-i','sine=frequency=440:duration=8:sample_rate=44100','-ac','2','-c:a','libmp3lame','-b:a','128k','-y',tone]);const audio=await readFile(tone);
   await db.radioAsset.create({data:{key:'test-music',kind:'music',title:'Isolated test music',audio,duration:8}});
-  const day=stationTime().date;
+  const day=process.env.AHD_E2E_STATION_DAY || stationTime().date;
+  const updated=usesSlotUpdates(stationHour(day,17));
   const voiceIds=new Map<string,string>();
   for(const hour of [10,7]){
-   const slot=stationHour(day,hour),language=hour===7?'tr':'de';
-   const a=await db.radioAsset.create({data:{key:bulletinKey(slot),kind:'news',title:`Isolated ${language} daily news`,audio,duration:8,slot,script:'Freundliche Meldung aus Mainz.',metadata:{language,familyContentVersion:FAMILY_CONTENT_VERSION,stories:[{text:'Freundliche Meldung aus Mainz.'}],service:language==='de'?{mode:'daily-snapshot',slot:slot.toISOString(),fetchedAt:stationHour(day,9).toISOString()}:undefined}}});voiceIds.set(language,a.id);
+   const language=hour===7?'tr':'de';
+   const slot=stationHour(day,updated ? (language==='tr'?20:17) : hour);
+   const snapshot={slot:slot.toISOString(),fetchedAt:new Date(slot.getTime()-60_000).toISOString()};
+   const service=language==='de' ? (updated ? snapshot : {mode:'daily-snapshot',slot:slot.toISOString(),fetchedAt:stationHour(day,9).toISOString()}) : undefined;
+   const a=await db.radioAsset.create({data:{key:bulletinKey(slot),kind:'news',title:`Isolated ${language} daily news`,audio,duration:8,slot,script:'Freundliche Meldung aus Mainz.',metadata:{language,familyContentVersion:FAMILY_CONTENT_VERSION,stories:[{text:'Freundliche Meldung aus Mainz.'}],service,market:updated&&language==='tr'?snapshot:undefined}}});voiceIds.set(language,a.id);
   }
   const preload=join(dir,'clock.cjs');await writeFile(preload,`const R=Date,o=Number(process.env.AHD_E2E_CLOCK_OFFSET);function D(...a){if(new.target)return Reflect.construct(R,a.length?a:[R.now()+o],new.target);return new R(R.now()+o).toString();}Object.setPrototypeOf(D,R);D.prototype=R.prototype;D.now=()=>R.now()+o;D.parse=R.parse;D.UTC=R.UTC;global.Date=D;`);
   for(const hour of [17,20]){
@@ -84,12 +88,12 @@ async function main(){
    assert.ok(bytes>1000,'real FFmpeg stream must contain MP3 packets');
    if (hour === 17) await checkTransitions(captured, dir);
    const a=await db.radioPlayback.findFirstOrThrow({where:{scheduledFor:slot,kind:'news'}});
-   assert.equal(a.assetId,voiceIds.get(hour===20?'tr':'de'));assert.equal(a.repeated,true);
+   assert.equal(a.assetId,voiceIds.get(hour===20?'tr':'de'));assert.equal(a.repeated,!updated);
    assert.equal(await db.radioAsset.count({where:{kind:'news'}}),2,'broadcast repeats never create another recording');assert.equal(await db.radioJob.count(),0,'streaming must not purchase or prepare speech');
    assert.equal(newsEditionSlot(slot).getTime(),stationHour(day,hour===20?7:10).getTime());
    console.log(JSON.stringify({hour,language:hour===20?'tr':'de',bytes,repeated:a.repeated,isolatedDatabase:true}));await stop();
   }
-  console.log('PASS real 17:00 German and 20:00 Turkish MP3 streams, canonical daily recordings, repeat journal and zero provider calls; production data untouched');
+  console.log('PASS real 17:00 German and 20:00 Turkish MP3 streams, matching editions, playback journal and zero provider calls; production data untouched');
  }finally{await stop();await db.$disconnect();if(created)await root.$executeRawUnsafe(`DROP SCHEMA "${schema}" CASCADE`);await root.$disconnect();await rm(dir,{recursive:true,force:true});}
 }
 main().catch(e=>{console.error(e instanceof Error?e.message:'Isolated stream test failed');process.exitCode=1;});

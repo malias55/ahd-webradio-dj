@@ -4,7 +4,7 @@ import { prisma } from "../prisma";
 import { isOnAir, isNewsSlot, NEWS_SCHEDULE, isMusicHours, upcomingNewsSlot, dueNewsEditions, radioEnabled, stationTime, newsLanguage } from "./config";
 import { assetFile, pruneCache } from "./store";
 import { presenterForSlot, editorialConfigured } from "./providers";
-import { prepareNews, bulletinForSlot, isRepeatSlot, GERMAN_NEWS_VERSION } from "./news";
+import { prepareNews, bulletinForSlot, isRepeatSlot, usesSlotUpdates, NEWS_REFRESH_LEAD_MS, GERMAN_NEWS_VERSION } from "./news";
 import { stationIdAsset, IMAGING_VERSION } from "./imaging";
 import { trackPlayback } from "./audit";
 
@@ -32,7 +32,7 @@ const state = globalRadio.__ahdRadio ??= {
 };
 
 export function radioStatus() {
-  return { programmeVersion: GERMAN_NEWS_VERSION, imagingVersion: IMAGING_VERSION, presenter: presenterForSlot(new Date()).name, newsSchedule: NEWS_SCHEDULE, newsRefreshHours: 24, serviceRefreshHours: 24, started: state.started, onAir: isOnAir(), playing: state.playing, startedAt: state.startedAt || null,
+  return { programmeVersion: GERMAN_NEWS_VERSION, imagingVersion: IMAGING_VERSION, presenter: presenterForSlot(new Date()).name, newsSchedule: NEWS_SCHEDULE, newsRefreshHours: 24, serviceRefreshHours: usesSlotUpdates(new Date()) ? 1 : 24, started: state.started, onAir: isOnAir(), playing: state.playing, startedAt: state.startedAt || null,
     listeners: state.listeners.size, preparing: state.preparing, error: state.error,
     nextNewsAt: upcomingNewsSlot()?.toISOString() ?? null, timezone: "Europe/Berlin", hours: "07/20 Uhr Türkçe · 08:00–18:00 Musik", newsHours: "07/20 Uhr Türkçe · 10–17 Uhr stündlich Deutsch" };
 }
@@ -40,6 +40,10 @@ export function radioStatus() {
 export function attachRadio(res: ServerResponse) {
   state.listeners.add(res);
   res.on("close", () => state.listeners.delete(res));
+}
+
+export function hasRadioMusic() {
+  return isMusicHours() && !state.newsTransition && !!state.playing && state.playing.kind !== "news";
 }
 
 function publish(chunk: Buffer) {
@@ -202,19 +206,22 @@ async function tick(onBoundary: () => Promise<void>) {
     } else if (!early) {
       state.error = "Zur vollen Stunde keine geprüfte Nachrichtenausgabe bereit.";
       await prisma.radioPlayback.create({ data: { title: "Nachrichtenausgabe nicht gesendet", language: newsLanguage(hour), kind: "news", status: "skipped", scheduledFor: hour,
-        repeated: isRepeatSlot(hour), endedAt: new Date(), listeners: state.listeners.size, error: state.error } });
+        repeated: !usesSlotUpdates(hour) && isRepeatSlot(hour), endedAt: new Date(), listeners: state.listeners.size, error: state.error } });
     }
   }
   if (active && !state.process) await nextMusic();
 
-  const due = dueNewsEditions(now);
+  const due = dueNewsEditions(now).map(edition => edition.firstBroadcast);
+  const upcoming = new Date(Math.ceil(now.getTime() / HOUR_MS) * HOUR_MS);
+  if (upcoming.getTime() - now.getTime() <= NEWS_REFRESH_LEAD_MS && isNewsSlot(upcoming) && usesSlotUpdates(upcoming) &&
+      !due.some(slot => slot.getTime() === upcoming.getTime())) due.unshift(upcoming);
   if (radioEnabled() && due.length && !state.preparing && Date.now() - state.lastPrepAt > 60_000 && process.env.ELEVENLABS_API_KEY && editorialConfigured()) {
     state.lastPrepAt = Date.now();
     state.preparing = true;
     void (async () => {
-      for (const edition of due) {
-        if (await bulletinForSlot(edition.firstBroadcast)) continue;
-        try { await prepareNews(edition.firstBroadcast); state.error = null; } catch (error) { report(error); }
+      for (const slot of due) {
+        if (await bulletinForSlot(slot)) continue;
+        try { await prepareNews(slot); state.error = null; } catch (error) { report(error); }
       }
     })().catch(report).finally(() => { state.preparing = false; });
   }

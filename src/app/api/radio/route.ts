@@ -24,7 +24,7 @@ export async function GET(req: Request) {
   return NextResponse.json({ ...radioStatus(), day, assets: assets.filter(familyAssetAllowed), failures, jobs, playbacks, generationEnabled: false,
     configured: { elevenlabs: !!process.env.ELEVENLABS_API_KEY, edenai: !!process.env.EDENAI_API_KEY, editorial: editorialConfigured() },
     region: process.env.NEWS_REGION || "Mainz und Rheinhessen", model: newsModelConfig().primary, modelPolicy: newsModelConfig(),
-    newsRefreshHours: 24, serviceRefreshHours: 24, nextPresenter: upcomingNewsSlot() ? `${presenterForSlot(upcomingNewsSlot()!).name}${newsLanguage(upcomingNewsSlot()!) === "tr" ? "" : ` · ${servicePresenter().name} für Wetter und Verkehr`}` : null });
+    nextPresenter: upcomingNewsSlot() ? `${presenterForSlot(upcomingNewsSlot()!).name}${newsLanguage(upcomingNewsSlot()!) === "tr" ? "" : ` · ${servicePresenter().name} für Wetter und Verkehr`}` : null });
 }
 
 export async function POST(req: Request) {

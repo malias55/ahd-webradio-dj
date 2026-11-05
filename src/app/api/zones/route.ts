@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { hasAnyRelay, getStreamInfo } from "@/lib/broadcast";
 import { radioStatus } from "@/lib/radio/engine";
 import { isOnAir } from "@/lib/radio/config";
+import { manualNewsStatus } from "@/lib/radio/zone-news";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,7 @@ export async function GET() {
       ...z,
       liveBroadcast: hasAnyRelay(z.id),
       streamInfo: getStreamInfo(z.id),
+      manualNews: manualNewsStatus(z.id),
       nowPlaying: ["radio", "azuracast"].includes(z.defaultSource) ? { online: isOnAir() && !!radioStatus().playing, title: radioStatus().playing?.title, artist: "Autohaus Dörrschuck Radio" } : null,
     })),
   );

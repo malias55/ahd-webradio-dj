@@ -1,10 +1,10 @@
 import { prisma } from "../prisma";
-import { isRepeatSlot } from "./news";
+import { isRepeatSlot, usesSlotUpdates } from "./news";
 
 export function trackPlayback(asset: { id: string; title: string; kind: string; metadata?: unknown }, language: string, scheduledFor: Date | undefined, listeners: number) {
   const record = prisma.radioPlayback.create({ data: {
     assetId: asset.id, title: asset.title, kind: asset.kind, language, scheduledFor,
-    repeated: !!scheduledFor && isRepeatSlot(scheduledFor), listeners, status: "starting",
+    repeated: !!scheduledFor && !usesSlotUpdates(scheduledFor) && isRepeatSlot(scheduledFor), listeners, status: "starting",
   } }).catch(error => { console.error("[radio audit]", error instanceof Error ? error.message : "failed"); return null; });
   let finished: Promise<void> | undefined;
   return {

@@ -2,6 +2,7 @@ import { nativeSource, publicOrigin } from "./radio/config";
 import { prisma } from "./prisma";
 import { sendToDevice, joinZoneRoom } from "./deviceHub";
 import { currentMode, announceRelaysForZone } from "./broadcast";
+import { manualZoneSource } from "./radio/zone-news";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const io = () => (global as any).__io as import("socket.io").Server | undefined;
 
@@ -47,7 +48,7 @@ export async function pushConfigForDevice(serial: string) {
     return;
   }
 
-  const streamUrl = nativeSource(zone);
+  const streamUrl = manualZoneSource(zone.id, origin) ?? nativeSource(zone);
   if (streamUrl) {
     sendToDevice(serial, { type: "play", url: streamUrl });
     sendToDevice(serial, { type: "volume", value: zone.volume });

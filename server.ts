@@ -30,6 +30,7 @@ import { userForCookie } from "./src/lib/session";
 import { nativeSource, isOnAir, RADIO_STREAM_PATH, publicOrigin } from "./src/lib/radio/config";
 import { attachRadio, startRadio, stopRadio } from "./src/lib/radio/engine";
 import { pushConfigForZone } from "./src/lib/serverActions";
+import { attachZoneNews, manualZoneSource, stopAllZoneNews } from "./src/lib/radio/zone-news";
 
 const dev = process.env.NODE_ENV !== "production";
 const port = Number(process.env.PORT || 3000);
@@ -60,6 +61,7 @@ async function isAuthenticated(req: IncomingMessage): Promise<boolean> {
 
 const LIVE_RE = /^\/api\/zones\/([^/]+)\/live\/?$/;
 const CURRENT_SOURCE_RE = /^\/api\/zones\/([^/]+)\/current-source\/?$/;
+const ZONE_NEWS_RE = /^\/api\/zones\/([^/]+)\/news-stream\/([\da-f-]{36})$/;
 
 // ── /api/zones/:id/live — raw Node.js handler for real-time MP3 streaming ──
 // Runs in server.ts context so relay state is always accessible. Uses
@@ -126,6 +128,7 @@ async function handleCurrentSource(req: IncomingMessage, res: ServerResponse) {
 
   const mode = currentMode(zoneId);
   const origin = resolveOrigin(req);
+  const manual = manualZoneSource(zoneId, origin);
   let body: Record<string, unknown>;
 
   if (mode === "announce") {
@@ -139,6 +142,8 @@ async function handleCurrentSource(req: IncomingMessage, res: ServerResponse) {
   } else if (mode === "stream") {
     const liveUrl = `${origin}/api/zones/${zoneId}/live?m=stream`;
     body = { zoneId, zoneName: zone.name, url: liveUrl, sources: [{ url: liveUrl, kind: "stream" }], live: true, mode: "stream", volume: zone.volume };
+  } else if (manual) {
+    body = { zoneId, zoneName: zone.name, url: manual, sources: [], live: false, mode: null, volume: zone.volume };
   } else {
     body = { zoneId, zoneName: zone.name, url: nativeSource(zone, origin), sources: [], live: false, mode: null, volume: zone.volume };
   }
@@ -155,7 +160,8 @@ async function pushConfig(socket: Socket, serial: string) {
   joinZoneRoom(socket, device.zoneId);
 
   const zone = device.zone;
-  const streamUrl = zone ? nativeSource(zone, resolveOrigin(socket.request)) : null;
+  const origin = resolveOrigin(socket.request);
+  const streamUrl = zone ? manualZoneSource(zone.id, origin) ?? nativeSource(zone, origin) : null;
 
   broadcastConfig(serial, {
     zone: zone
@@ -169,6 +175,12 @@ async function pushConfig(socket: Socket, serial: string) {
 app.prepare().then(() => {
   const httpServer = createServer((req, res) => {
     const pathname = req.url?.split("?")[0] || "/";
+    const zoneNews = pathname.match(ZONE_NEWS_RE);
+    if (zoneNews) {
+      if (req.method !== "GET") { res.writeHead(405).end(); return; }
+      if (!attachZoneNews(zoneNews[1], zoneNews[2], res)) res.writeHead(404).end();
+      return;
+    }
 
     if (pathname === RADIO_STREAM_PATH) {
       if (req.method !== "GET") { res.writeHead(405).end(); return; }
@@ -374,7 +386,7 @@ app.prepare().then(() => {
         const zone = await prisma.zone.findUnique({ where: { id: zid } });
         if (!zone) return;
         sendToZone(zid, { type: "stop" });
-        const source = nativeSource(zone);
+        const source = manualZoneSource(zid, resolveOrigin(socket.request)) ?? nativeSource(zone);
         if (source) {
           sendToZone(zid, { type: "play", url: source });
           sendToZone(zid, { type: "volume", value: zone.volume });
@@ -407,5 +419,5 @@ app.prepare().then(() => {
   });
 });
 
-process.on("SIGTERM", async () => { await stopRadio(); process.exit(0); });
-process.on("SIGINT", async () => { await stopRadio(); process.exit(0); });
+process.on("SIGTERM", async () => { stopAllZoneNews(); await stopRadio(); process.exit(0); });
+process.on("SIGINT", async () => { stopAllZoneNews(); await stopRadio(); process.exit(0); });

@@ -6,6 +6,7 @@ export type Zone = {
   volume: number;
   devices?: Device[];
   liveBroadcast?: boolean;
+  manualNews?: { id: string; language: "tr" | "de" } | null;
   streamInfo?: {
     broadcasting: boolean;
     kind?: "stream" | "announce";
