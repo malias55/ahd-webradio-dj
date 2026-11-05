@@ -7,6 +7,7 @@ import { presenterForSlot, editorialConfigured } from "./providers";
 import { prepareNews, bulletinForSlot, isRepeatSlot, usesSlotUpdates, NEWS_REFRESH_LEAD_MS, GERMAN_NEWS_VERSION } from "./news";
 import { stationIdAsset, IMAGING_VERSION } from "./imaging";
 import { trackPlayback } from "./audit";
+import { NEWS_PLAYBACK_CODEC } from "./playback-level";
 
 const FADE_SECONDS = 3;
 const NEWS_PAUSE_SECONDS = 5;
@@ -78,7 +79,8 @@ async function play(item: Item | null, options: PlayOptions = {}) {
   const file = item ? await assetFile(item.id) : null;
   if (revision !== state.revision || !isOnAir() || state.shutdown) return;
   const fadeIn = item?.kind === "music" && state.fadeInNextMusic;
-  const codec = fadeIn ? ["-af", `afade=t=in:d=${FADE_SECONDS}:curve=hsin`, ...ENCODE_MP3] : ["-c:a", "copy"];
+  const codec = item?.kind === "news" ? NEWS_PLAYBACK_CODEC
+    : fadeIn ? ["-af", `afade=t=in:d=${FADE_SECONDS}:curve=hsin`, ...ENCODE_MP3] : ["-c:a", "copy"];
   const input = options.input ?? (file ? ["-re", "-i", file, ...codec] : silenceInput(10));
   const proc = spawn(/* turbopackIgnore: true */ process.env.FFMPEG_PATH || "ffmpeg", ["-hide_banner", "-loglevel", "error", "-nostdin", ...input,
     "-vn", "-id3v2_version", "0", "-write_xing", "0", "-flush_packets", "1", "-f", "mp3", "pipe:1"], { stdio: ["ignore", "pipe", "pipe"] });

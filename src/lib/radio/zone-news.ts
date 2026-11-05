@@ -4,6 +4,7 @@ import type { ServerResponse } from "node:http";
 import { currentMode } from "../broadcast";
 import { isOnAir, RADIO_STREAM_PATH } from "./config";
 import { attachRadio, hasRadioMusic } from "./engine";
+import { NEWS_PLAYBACK_CODEC } from "./playback-level";
 
 type Language = "tr" | "de";
 type Session = {
@@ -97,7 +98,7 @@ export function startZoneNews(zoneId: string, language: Language, file: string, 
   if (previous) dispose(previous, true);
   // Allow the browser and assigned devices to connect before the first note.
   session.timer = setTimeout(() => {
-    pipe(zoneId, session, ["-re", "-i", file, "-c:a", "copy"], () => {
+    pipe(zoneId, session, ["-re", "-i", file, ...NEWS_PLAYBACK_CODEC], () => {
       session.phase = "returning";
       pipe(zoneId, session, silence, () => returnToSource(zoneId, session));
     });
