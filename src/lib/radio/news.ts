@@ -6,10 +6,10 @@ import { speechText, TURKISH_PRONUNCIATION_VERSION } from "./pronunciation";
 import { XMLParser } from "fast-xml-parser";
 import { load } from "cheerio";
 import { prisma } from "../prisma";
-import { edenJson, presenterForHour, presenterForSlot, servicePresenter, speech, SERVICE_VOICE_SETTINGS, newsModelConfig, type ModelCall } from "./providers";
+import { edenJson, presenterForHour, presenterForSlot, servicePresenter, speech, serviceVoiceSettings, newsModelConfig, type ModelCall } from "./providers";
 import { withJob } from "./store";
 import { mixDryBulletin, joinNewsParts, frameTurkishProgramme, appendNewsOutro, type Cue } from "./mix";
-import { turkishSignatureAsset, TURKISH_SIGNATURE_KEY, germanOutroAsset, GERMAN_OUTRO_KEY } from "./imaging";
+import { bulletinOpenerAsset, turkishSignatureAsset, TURKISH_SIGNATURE_KEY, germanOutroAsset, GERMAN_OUTRO_KEY } from "./imaging";
 import { isNewsSlot, stationTime, stationHour, dailyNewsPlan, NEWS_SCHEDULE, newsLanguage } from "./config";
 import { collectDailyService, collectHourlyService, serviceValidForDailyEdition } from "./service";
 import type { Prisma, RadioAsset } from "@prisma/client";
@@ -77,15 +77,16 @@ export async function germanIntroSpeech() {
   });
   return prisma.radioAsset.findUniqueOrThrow({ where: { key } });
 }
-export async function serviceOutroSpeech() {
-  const presenter = servicePresenter(), model = process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2";
-  const key = `speech-static:de:outro:${createHash("sha256").update(JSON.stringify({ text: GERMAN_SERVICE_OUTRO, voice: presenter.voiceId, model, settings: SERVICE_VOICE_SETTINGS })).digest("hex").slice(0, 24)}`;
+export async function serviceOutroSpeech(slot = new Date()) {
+  const presenter = servicePresenter(slot), model = process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2";
+  const settings = serviceVoiceSettings(slot);
+  const key = `speech-static:de:outro:${createHash("sha256").update(JSON.stringify({ text: GERMAN_SERVICE_OUTRO, voice: presenter.voiceId, model, settings })).digest("hex").slice(0, 24)}`;
   await withJob(key, async () => {
     if (await prisma.radioAsset.findUnique({ where: { key } })) return;
     const { normalizeAudio } = await import("./store");
-    const audio = await normalizeAudio(await speech(GERMAN_SERVICE_OUTRO, presenter.voiceId, "de", "service"));
+    const audio = await normalizeAudio(await speech(GERMAN_SERVICE_OUTRO, presenter.voiceId, "de", "service", slot));
     await prisma.radioAsset.create({ data: { key, kind: "speech-static", title: `Abschluss · ${presenter.name}`, script: GERMAN_SERVICE_OUTRO, ...audio,
-      metadata: { language: "de", role: "outro", voiceId: presenter.voiceId, ttsModel: model, aiGenerated: true, backgroundMusic: false, delivery: SERVICE_VOICE_SETTINGS } } });
+      metadata: { language: "de", role: "outro", voiceId: presenter.voiceId, ttsModel: model, aiGenerated: true, backgroundMusic: false, delivery: settings } } });
   });
   return prisma.radioAsset.findUniqueOrThrow({ where: { key } });
 }
@@ -248,12 +249,12 @@ export async function bulletinForSlot(slot: Date) {
 
 async function newsSegmentSpeech(text: string, voiceId: string, language: "de" | "tr", edition: Date, delivery: "standard" | "service" = "standard") {
   const spoken = speechText(naturalRadioText(text), language), model = process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2";
-  const settings = delivery === "service" ? SERVICE_VOICE_SETTINGS : { stability: 0.65, similarity_boost: 0.75, style: 0.15, use_speaker_boost: true };
+  const settings = delivery === "service" ? serviceVoiceSettings(edition) : { stability: 0.65, similarity_boost: 0.75, style: 0.15, use_speaker_boost: true };
   const key = `news-voice:${stationTime(edition).date}:${createHash("sha256").update(JSON.stringify({ spoken, voiceId, language, model, settings })).digest("hex")}`;
   await withJob(key, async () => {
     if (await prisma.radioAsset.findUnique({ where: { key }, select: { id: true } })) return;
     const { normalizeAudio } = await import("./store");
-    const audio = await normalizeAudio(await speech(spoken, voiceId, language, delivery));
+    const audio = await normalizeAudio(await speech(spoken, voiceId, language, delivery, edition));
     await prisma.radioAsset.create({ data: { key, kind: "news-voice", title: "Gespeicherter Nachrichten-Sprachabschnitt", script: spoken, ...audio, metadata: { voiceId, language, ttsModel: model, delivery } } });
   });
   return Buffer.from((await prisma.radioAsset.findUniqueOrThrow({ where: { key }, select: { audio: true } })).audio);
@@ -363,14 +364,18 @@ export async function renderBulletin(slot: Date, content: EditorialContent, exam
     segments.push({ audio, kind });
   }
   let { timeline, ...audio } = await mixDryBulletin(segments, { opener: false, closer: false });
+  let openerAssetId: string | null = null, outroAssetId: string | null = null;
   if (language === "tr") {
     const invocation = await turkishInvocation();
     const signature = await turkishSignatureAsset();
+    const opener = await bulletinOpenerAsset(slot) ?? signature;
     // The presenter carries the story transitions. Keep the dry mix's natural
     // 0.7-second pauses even when a legacy divider asset remains in storage.
-    const combined = await frameTurkishProgramme(invocation, signature, { ...audio, timeline });
+    const combined = await frameTurkishProgramme(invocation, opener, { ...audio, timeline }, signature);
     timeline = combined.timeline;
     audio = { audio: combined.audio, duration: combined.duration };
+    openerAssetId = opener.id;
+    outroAssetId = signature.id;
   }
   if (audio.duration > 260) throw new Error("Die fertige Ausgabe überschreitet das Sendezeitfenster.");
   return { ...audio, script: `${language === "tr" ? TURKISH_OPENING : ""}${paragraphs.map(p => speechText(naturalRadioText(p), language)).join("\n\n")}`,
@@ -379,7 +384,7 @@ export async function renderBulletin(slot: Date, content: EditorialContent, exam
       authorModel: content.modelCalls.filter(c => c.purpose === "author" && c.status !== "failed").at(-1)?.resolvedModel || newsModelConfig().primary, reviewModel: content.modelCalls.filter(c => c.purpose === "review" && c.status !== "failed").at(-1)?.resolvedModel || newsModelConfig().primary,
       modelPolicy: newsModelConfig(),
       openingVersion: language === "tr" ? TURKISH_OPENING_VERSION : null, pronunciationVersion: language === "tr" ? TURKISH_PRONUNCIATION_VERSION : null,
-      ttsModel: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2", imagingVersion: language === "tr" ? TURKISH_SIGNATURE_KEY : null, dividerVersion: null, storyTransitions: "speech-pauses-v1", timeline,
+      ttsModel: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2", imagingVersion: language === "tr" ? TURKISH_SIGNATURE_KEY : null, openerAssetId, outroAssetId, dividerVersion: null, storyTransitions: "speech-pauses-v1", timeline,
       region: language === "tr" ? "Türkiye / Almanya" : process.env.NEWS_REGION || "Mainz und Rheinhessen" } };
 }
 
@@ -387,18 +392,24 @@ type MainAudio = Pick<RadioAsset, "id" | "audio" | "script" | "metadata" | "dura
 export async function renderGermanHourly(slot: Date, main: MainAudio | null, example = false, now = new Date(), suppliedService?: Awaited<ReturnType<typeof collectDailyService>> | Awaited<ReturnType<typeof collectHourlyService>>) {
   if (main?.script) assertFamilyContent(main.script);
   if (main?.script && !germanBrandingAllowed(main.script)) throw new Error("Deutsche Nachrichten müssen senderneutral bleiben");
-  const presenter = servicePresenter(), service = suppliedService ?? await collectDailyService(slot, now);
+  const presenter = servicePresenter(slot), service = suppliedService ?? await collectDailyService(slot, now);
   const intro = `Hallo Mainz! Hier ist ${presenter.name} mit Wetter und Verkehr. ${!main ? "Die Hauptnachrichten stehen gerade nicht bereit. " : ""}`;
   const paragraphs = [intro + service.weather.text, service.traffic.text,
     GERMAN_SERVICE_OUTRO];
   const segments = [];
-  for (let i = 0; i < paragraphs.length; i++) segments.push({ audio: i === 2 ? Buffer.from((await serviceOutroSpeech()).audio) : await newsSegmentSpeech(paragraphs[i], presenter.voiceId, "de", slot, "service"), kind: i === 0 ? "weather" as const : i === 1 ? "traffic" as const : "outro" as const });
+  for (let i = 0; i < paragraphs.length; i++) segments.push({ audio: i === 2 ? Buffer.from((await serviceOutroSpeech(slot)).audio) : await newsSegmentSpeech(paragraphs[i], presenter.voiceId, "de", slot, "service"), kind: i === 0 ? "weather" as const : i === 1 ? "traffic" as const : "outro" as const });
   const rendered = await mixDryBulletin(segments, { opener: false, closer: false });
-  const audio = main ? await joinNewsParts(main.audio, rendered.audio) : { audio: rendered.audio, duration: rendered.duration };
+  let audio = main ? await joinNewsParts(main.audio, rendered.audio) : { audio: rendered.audio, duration: rendered.duration };
   const m = (main?.metadata || {}) as { sources?: SourceReference[]; modelCalls?: ModelCall[]; timeline?: Cue[]; authorModel?: string; reviewModel?: string; editionSlot?: string };
   const offset = main ? main.duration + 0.45 : 0;
   const mainSources = m.sources || [], maxId = Math.max(0, ...mainSources.map(s => s.id));
-  const completeTimeline = [...(m.timeline || []), ...rendered.timeline.map(c => ({ ...c, start: c.start + offset, end: c.end + offset }))];
+  let completeTimeline = [...(m.timeline || []), ...rendered.timeline.map(c => ({ ...c, start: c.start + offset, end: c.end + offset }))];
+  const opener = await bulletinOpenerAsset(slot);
+  if (opener) {
+    audio = await joinNewsParts(opener.audio, audio.audio);
+    const shift = opener.duration + 0.45;
+    completeTimeline = [{ kind: "opener", start: 0, end: opener.duration }, ...completeTimeline.map(c => ({ ...c, start: c.start + shift, end: c.end + shift }))];
+  }
   const closing = await germanOutroAsset();
   const finished = await appendNewsOutro({ ...audio, timeline: completeTimeline }, closing);
   return { audio: finished.audio, duration: finished.duration, script: [main?.script, ...paragraphs.map(naturalRadioText)].filter(Boolean).join("\n\n"), metadata: {
@@ -409,8 +420,8 @@ export async function renderGermanHourly(slot: Date, main: MainAudio | null, exa
     presenters: [{ name: presenterForSlot(slot).name, voiceId: presenterForSlot(slot).voiceId, role: "Hauptnachrichten" }, { name: presenter.name, voiceId: presenter.voiceId, role: "Wetter und Verkehr" }],
     sources: [...mainSources, ...service.sources.map((s, i) => ({ ...s, id: maxId + i + 1, local: true }))],
     modelCalls: !example && isRepeatSlot(slot) ? [] : m.modelCalls || [], authorModel: m.authorModel || null, reviewModel: m.reviewModel || null,
-    modelPolicy: newsModelConfig(), serviceTextMethod: "deterministic-from-structured-data", serviceVoiceSettings: SERVICE_VOICE_SETTINGS, ttsModel: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2",
-    imagingVersion: GERMAN_OUTRO_KEY, outroAssetId: closing.id, dividerVersion: null, region: "Mainz und Rheinhessen", timeline: finished.timeline,
+    modelPolicy: newsModelConfig(), serviceTextMethod: "deterministic-from-structured-data", serviceVoiceSettings: serviceVoiceSettings(slot), ttsModel: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2",
+    imagingVersion: GERMAN_OUTRO_KEY, openerAssetId: opener?.id ?? null, outroAssetId: closing.id, dividerVersion: null, region: "Mainz und Rheinhessen", timeline: finished.timeline,
   } };
 }
 

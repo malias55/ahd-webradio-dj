@@ -206,7 +206,7 @@ export async function prependInvocation(invocation: Buffer, programme: Uint8Arra
 
 // Invocation remains the first spoken content. The approved signature occupies a
 // separate interval after it; no instrumental audio is loaded under any voice.
-export async function frameTurkishProgramme(invocation: { audio: Uint8Array; duration: number }, signature: { audio: Uint8Array; duration: number }, body: { audio: Uint8Array; duration: number; timeline: Cue[] }) {
+export async function frameTurkishProgramme(invocation: { audio: Uint8Array; duration: number }, signature: { audio: Uint8Array; duration: number }, body: { audio: Uint8Array; duration: number; timeline: Cue[] }, closer = signature) {
   const dir = await mkdtemp(join(tmpdir(), "ahd-tr-frame-"));
   try {
     const first = join(dir, "invocation.mp3"), sound = join(dir, "signature.mp3"), speech = join(dir, "body.mp3"), output = join(dir, "framed.wav");
@@ -217,7 +217,7 @@ export async function frameTurkishProgramme(invocation: { audio: Uint8Array; dur
     const audio = await normalizeAudio(await readFile(output), 270);
     if (audio.duration > 260) throw new Error("Türkische Ausgabe überschreitet das Sendezeitfenster");
     const framed = { ...audio, timeline: [{ kind: "invocation", start: 0, end: invocation.duration }, { kind: "opener", start: signatureStart, end: signatureStart + signature.duration }, ...body.timeline.map(c => ({ ...c, start: c.start + offset, end: c.end + offset }))] };
-    return appendNewsOutro(framed, signature);
+    return appendNewsOutro(framed, closer);
   } finally { await rm(dir, { recursive: true, force: true }); }
 }
 

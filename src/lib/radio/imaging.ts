@@ -4,6 +4,13 @@ import { command, normalizeAudio, withJob } from "./store";
 import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { usesUpdatedBulletinAudio } from "./presentation";
+
+export const BULLETIN_OPENER_KEY = "imaging:approved-bulletin-opener-2026-11-06";
+export async function bulletinOpenerAsset(slot: Date) {
+  if (!usesUpdatedBulletinAudio(slot)) return null;
+  return prisma.radioAsset.findUniqueOrThrow({ where: { key: BULLETIN_OPENER_KEY }, select: { id: true, audio: true, duration: true } });
+}
 
 export const GERMAN_OUTRO_KEY = "imaging:de-energetic-outro-v3";
 export async function germanOutroAsset() {

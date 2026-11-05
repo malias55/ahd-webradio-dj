@@ -1,3 +1,9 @@
+import { stationTime } from "./config";
+
+export function usesUpdatedBulletinAudio(slot: Date) {
+  return stationTime(slot).date >= "2026-11-06";
+}
+
 // Audience-facing speech never reads out internal control-panel instructions or
 // measurement bookkeeping. Event times and useful traffic restrictions remain.
 export function germanBrandingAllowed(text: string) {

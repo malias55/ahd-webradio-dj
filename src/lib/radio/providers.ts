@@ -1,4 +1,4 @@
-import { naturalRadioText } from "./presentation";
+import { naturalRadioText, usesUpdatedBulletinAudio } from "./presentation";
 import { assertFamilyContent } from "./family";
 import { speechText } from "./pronunciation";
 import { prisma } from "../prisma";
@@ -13,8 +13,9 @@ export function presenterForHour(hour: number) {
   if (hour === 7 || hour === 20) return { gender: "male" as const, name: "Cavit", language: "tr" as const, voiceId: process.env.ELEVENLABS_TURKISH_VOICE_ID || "Q2IX97JeHBY3vNGzgM5s", assistant: "yapay zekâ haber sunucunuz" };
   return { gender: "male" as const, name: "Elias", language: "de" as const, voiceId: process.env.ELEVENLABS_MALE_VOICE_ID || "1h6gHcRvQugDNZgdAo9N", assistant: "Ihr KI-Nachrichtenassistent" };
 }
-export function servicePresenter() {
-  return { gender: "female" as const, name: process.env.ELEVENLABS_SERVICE_VOICE_NAME || "Susanne", language: "de" as const, voiceId: process.env.ELEVENLABS_SERVICE_VOICE_ID || "mjTSjCqHhkhULvdsy68o", assistant: "Ihre KI-Moderatorin für Wetter und Verkehr" };
+export function servicePresenter(slot = new Date()) {
+  const defaultVoice = usesUpdatedBulletinAudio(slot) ? "NX39CipaoYitJ3sMwH5I" : "mjTSjCqHhkhULvdsy68o";
+  return { gender: "female" as const, name: process.env.ELEVENLABS_SERVICE_VOICE_NAME || "Susanne", language: "de" as const, voiceId: process.env.ELEVENLABS_SERVICE_VOICE_ID || defaultVoice, assistant: "Ihre KI-Moderatorin für Wetter und Verkehr" };
 }
 
 export function composeMusic(prompt: string, seconds: number) {
@@ -64,14 +65,17 @@ export async function germanVoice() {
 }
 
 export type SpeechDelivery = "standard" | "service";
-export const SERVICE_VOICE_SETTINGS = { stability: 0.4, similarity_boost: 0.75, style: 0.15, speed: 1.06, use_speaker_boost: true };
-export async function speech(text: string, voiceId: string, language: "de" | "tr" = "de", delivery: SpeechDelivery = "standard") {
+export function serviceVoiceSettings(slot: Date) {
+  const updated = usesUpdatedBulletinAudio(slot);
+  return { stability: updated ? 0.48 : 0.4, similarity_boost: 0.75, style: updated ? 0.08 : 0.15, speed: updated ? 1.03 : 1.06, use_speaker_boost: true };
+}
+export async function speech(text: string, voiceId: string, language: "de" | "tr" = "de", delivery: SpeechDelivery = "standard", slot = new Date()) {
   assertFamilyContent(text);
   const spoken = naturalRadioText(text);
   if (!spoken) throw new Error("Kein verwendbarer Radiotext");
   return eleven(`/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`, {
     text: speechText(spoken, language), model_id: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2", language_code: language,
-    voice_settings: delivery === "service" ? SERVICE_VOICE_SETTINGS : { stability: 0.65, similarity_boost: 0.75, style: 0.15, use_speaker_boost: true },
+    voice_settings: delivery === "service" ? serviceVoiceSettings(slot) : { stability: 0.65, similarity_boost: 0.75, style: 0.15, use_speaker_boost: true },
   });
 }
 
