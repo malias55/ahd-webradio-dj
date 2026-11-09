@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildMusicQueue, musicAvailableAt, QUIET_MUSIC_EXCLUDED_IDS } from "../src/lib/radio/music-policy";
+import { buildMusicQueue, musicAvailableAt, musicRotationEnabled, QUIET_MUSIC_EXCLUDED_IDS } from "../src/lib/radio/music-policy";
+import { musicLibraryTrack } from "../src/lib/radio/music-library";
+import { musicPlayBlockedReason } from "../src/lib/radio/music-controls";
 
 const winter = new Date("2026-11-09T12:00:00Z");
 const tracks = Array.from({ length: 8 }, (_, i) => ({ id: String(i), kind: "music", metadata: { season: i === 7 ? "winter" : "all" } }));
@@ -46,4 +48,45 @@ test("small pools remain playable and stale history never revives excluded music
 test("the winter accent is spaced from recently played seasonal music", () => {
   const queue = buildMusicQueue(tracks, ["7", "0", "1", "2"], winter, () => 0.9999);
   assert.ok(queue.findIndex(track => track.id === "7") >= 4);
+});
+
+test("manual rotation preferences persist for ordinary, excluded and candidate tracks", () => {
+  const excluded = { id: QUIET_MUSIC_EXCLUDED_IDS[0], kind: "music" };
+  const candidate = { id: "candidate", kind: "music-candidate" };
+  assert.equal(musicRotationEnabled(excluded), false);
+  assert.equal(musicRotationEnabled(candidate), false);
+  for (const track of [tracks[0], excluded, candidate]) {
+    const enabled = { ...track, metadata: { rotationEnabled: true } };
+    const disabled = { ...track, metadata: { rotationEnabled: false } };
+    assert.equal(musicAvailableAt(enabled, winter), true);
+    assert.equal(musicAvailableAt(disabled, winter), false);
+    assert.deepEqual(buildMusicQueue([enabled, { ...disabled, id: "disabled" }], [], winter).map(item => item.id), [track.id]);
+  }
+  assert.equal(musicRotationEnabled({ id: "news", kind: "news", metadata: { rotationEnabled: true } }), false);
+  assert.equal(musicAvailableAt({ ...tracks[7], metadata: { season: "winter", rotationEnabled: true } }, new Date("2027-07-01T12:00:00Z")), false, "enabling retains seasonal scheduling");
+});
+
+test("library exposes disabled originals and seasonal pauses without leaking provider metadata", () => {
+  const base = { id: "original", title: "Amber", kind: "music-candidate", duration: 240, createdAt: winter, metadata: { prompt: "private provider prompt", gentleMusicReview: { approvedEditId: "edit" } } };
+  const item = musicLibraryTrack(base, winter);
+  assert.equal(item.rotationEnabled, false);
+  assert.equal(item.version, "Originalfassung");
+  assert.match(item.note!, /ruhigere Fassung/);
+  assert.equal("metadata" in item, false);
+  const seasonal = musicLibraryTrack({ ...base, kind: "music", metadata: { season: "winter" } }, new Date("2027-07-01T12:00:00Z"));
+  assert.equal(seasonal.rotationEnabled, true);
+  assert.equal(seasonal.inRotation, false);
+});
+
+test("direct play respects news, programme hours and concurrent transitions", () => {
+  const state = { started: true, shutdown: false, selecting: false, playing: { kind: "music" } };
+  const ordinary = new Date("2026-11-09T12:30:00Z");
+  assert.equal(musicPlayBlockedReason(state, ordinary), null);
+  assert.match(musicPlayBlockedReason(state, new Date("2026-11-09T17:00:00Z"))!, /08 bis 18/);
+  assert.match(musicPlayBlockedReason(state, new Date("2026-11-09T12:59:50Z"))!, /Nachrichten beginnen/);
+  assert.match(musicPlayBlockedReason({ ...state, playing: { kind: "news" } }, ordinary)!, /laufen Nachrichten/);
+  assert.match(musicPlayBlockedReason({ ...state, newsTransition: true, playing: null }, ordinary)!, /laufen Nachrichten/);
+  assert.match(musicPlayBlockedReason({ ...state, musicControlBusy: true }, ordinary)!, /gewechselt/);
+  assert.match(musicPlayBlockedReason({ ...state, selecting: true }, ordinary)!, /gewechselt/);
+  assert.match(musicPlayBlockedReason({ ...state, shutdown: true }, ordinary)!, /gestartet/);
 });

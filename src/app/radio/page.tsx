@@ -1,6 +1,7 @@
 "use client";
 
 import { FAMILY_CONTENT_VERSION } from "@/lib/radio/family";
+import Link from "next/link";
 import { musicInRotation } from "@/lib/radio/music-policy";
 import { useCallback, useEffect, useState } from "react";
 
@@ -44,7 +45,7 @@ export default function RadioPage() {
   const examples = status.assets.filter(a => a.kind === "demo" && a.metadata?.language && a.metadata?.backgroundMusic === false && a.metadata?.familyContentVersion === FAMILY_CONTENT_VERSION && (a.metadata?.language !== "de" || a.metadata?.programmeVersion === status.programmeVersion)).filter(a => { const key = a.metadata?.language || "mixed"; if (seenExamples.has(key)) return false; seenExamples.add(key); return true; });
   const imaging = status.assets.filter(a => a.kind === "imaging" || (a.kind === "station-id" && a.metadata?.backgroundMusic === false));
   return <div className="space-y-6">
-    <div><h1 className="text-2xl font-bold">Autohaus Radio</h1><p className="text-sm text-neutral-500">Mainz, gute Musik und ein freundlicher Start in den Tag.</p></div>
+    <div className="flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-2xl font-bold">Autohaus Radio</h1><p className="text-sm text-neutral-500">Mainz, gute Musik und ein freundlicher Start in den Tag.</p></div><Link href="/musik" className="btn-outline">Musikbibliothek öffnen</Link></div>
     <div className="card space-y-3">
       <div className="flex items-center justify-between gap-3"><h2 className="font-semibold">{status.onAir ? "Auf Sendung" : "Sendepause"}</h2><span className={status.onAir ? "badge-online" : "badge-offline"}>07/20 Uhr Türkçe · 08–18 Uhr Musik</span></div>
       <p>{status.playing?.title || "Nächster Start: türkisches Magazin um 07:00 Uhr, Musik ab 08:00 Uhr."}</p>
@@ -66,7 +67,7 @@ export default function RadioPage() {
       <h2 className="font-semibold">Musiktitel importieren</h2>
       <form onSubmit={e => { e.preventDefault(); void upload(e.currentTarget); }} className="space-y-2"><label className="block text-sm font-medium" htmlFor="music-file">Musiktitel importieren</label><input id="music-file" name="audio" type="file" accept="audio/*" required className="input" /><input name="title" aria-label="Musiktitel" placeholder="Titel" className="input" maxLength={100} /><button type="submit" className="btn-outline" disabled={busy}>Audio hinzufügen</button><p className="text-xs text-neutral-500">Bis 20 MB und 10 Minuten. Maximal 24 Musiktitel.</p></form>{message && <p role="status" className="text-sm">{message}</p>}
     </div>}
-    <div className="card space-y-4"><h2 className="font-semibold">Musikpool · {music.length} Titel</h2>{music.map(a => <details key={a.id}><summary className="cursor-pointer text-sm font-medium">{a.title} · {duration(a.duration)}</summary><div className="mt-3"><AudioDetails asset={a} /></div></details>)}</div>
+    <div className="card space-y-4"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="font-semibold">Musikpool · {music.length} Titel</h2><Link href="/musik" className="btn-outline">Alle Titel verwalten</Link></div>{music.map(a => <details key={a.id}><summary className="cursor-pointer text-sm font-medium">{a.title} · {duration(a.duration)}</summary><div className="mt-3"><AudioDetails asset={a} /></div></details>)}</div>
     <div className="card space-y-4"><h2 className="font-semibold">Jingles und Senderkennungen</h2>{imaging.map(a => <details key={a.id}><summary className="cursor-pointer text-sm font-medium">{a.title} · {duration(a.duration)}</summary><div className="mt-3"><AudioDetails asset={a} /></div></details>)}</div>
   </div>;
 }

@@ -8,7 +8,8 @@ import { prepareNews, bulletinForSlot, isRepeatSlot, usesSlotUpdates, NEWS_REFRE
 import { stationIdAsset, IMAGING_VERSION } from "./imaging";
 import { trackPlayback } from "./audit";
 import { NEWS_PLAYBACK_CODEC } from "./playback-level";
-import { QUIET_MUSIC_EXCLUDED_IDS, musicInRotation, musicSeason, buildMusicQueue } from "./music-policy";
+import { isMusicTrack, musicInRotation, musicRotationEnabled, musicSeason, buildMusicQueue } from "./music-policy";
+import { MUSIC_FADE_SECONDS, musicPlayBlockedReason } from "./music-controls";
 
 const FADE_SECONDS = 3;
 const NEWS_PAUSE_SECONDS = 5;
@@ -16,7 +17,7 @@ const NEWS_LEAD_MS = (FADE_SECONDS + NEWS_PAUSE_SECONDS) * 1000 + 500;
 const HOUR_MS = 3_600_000;
 const ENCODE_MP3 = ["-ar", "44100", "-ac", "2", "-c:a", "libmp3lame", "-b:a", "128k"];
 
-type Item = { id: string; title: string; duration: number; kind: string; season?: string };
+type Item = { id: string; title: string; duration: number; kind: string; season?: string; rotationEnabled?: boolean };
 type RadioState = {
   started: boolean; onAir: boolean; playing: Item | null; startedAt: number;
   listeners: Set<ServerResponse>; process: ChildProcess | null; revision: number;
@@ -25,6 +26,7 @@ type RadioState = {
   lastPrepAt: number; preparing: boolean; error: string | null; lastMusicId?: string;
   musicQueue: Item[]; selecting: boolean; shutdown: boolean;
   musicSinceId: number;
+  musicControlBusy?: boolean; musicLibraryRevision?: number;
   finishPlayback?: (status: "completed" | "interrupted" | "failed", error?: string) => Promise<void>;
 };
 const globalRadio = globalThis as unknown as { __ahdRadio?: RadioState };
@@ -122,9 +124,10 @@ function report(error: unknown) {
 }
 
 async function nextMusic() {
-  if (state.selecting || state.process || state.newsTransition || !isMusicHours() || state.shutdown) return;
+  if (!state.started || state.selecting || state.process || state.newsTransition || state.musicControlBusy || !isMusicHours() || state.shutdown) return;
   state.selecting = true;
   const revision = state.revision;
+  const libraryRevision = state.musicLibraryRevision || 0;
   try {
     if ((state.musicSinceId || 0) >= 3) {
       const ident = await stationIdAsset(new Date());
@@ -134,18 +137,94 @@ async function nextMusic() {
     state.musicQueue = state.musicQueue.filter(musicInRotation);
     if (!state.musicQueue.length) {
       const [tracks, recent] = await Promise.all([
-        prisma.radioAsset.findMany({ where: { kind: "music", id: { notIn: QUIET_MUSIC_EXCLUDED_IDS } }, select: { id: true, title: true, duration: true, kind: true, metadata: true } }),
+        prisma.radioAsset.findMany({ where: { kind: { in: ["music", "music-candidate"] } }, select: { id: true, title: true, duration: true, kind: true, metadata: true } }),
         prisma.radioPlayback.findMany({ where: { kind: "music", assetId: { not: null }, status: { in: ["playing", "completed", "interrupted"] } }, orderBy: { startedAt: "desc" }, take: 24, select: { assetId: true } }),
       ]);
       const history = recent.flatMap(item => item.assetId ? [item.assetId] : []);
       if (state.lastMusicId && history[0] !== state.lastMusicId) history.unshift(state.lastMusicId);
-      state.musicQueue = buildMusicQueue(tracks.map(({ metadata, ...track }) => ({ ...track, season: musicSeason({ metadata }) })), history);
+      if (libraryRevision !== (state.musicLibraryRevision || 0)) return;
+      state.musicQueue = buildMusicQueue(tracks.map(({ metadata, ...track }) => ({ ...track, season: musicSeason({ metadata }), rotationEnabled: musicRotationEnabled({ ...track, metadata }) })), history);
     }
-    if (revision !== state.revision || state.process) return;
+    if (revision !== state.revision || libraryRevision !== (state.musicLibraryRevision || 0) || state.process || state.newsTransition || state.musicControlBusy) return;
     const item = state.musicQueue.shift() ?? null;
     if (item) { state.lastMusicId = item.id; state.musicSinceId = (state.musicSinceId || 0) + 1; }
-    await play(item);
+    // Candidates can be explicitly enabled by an administrator. Treat their
+    // transmission as music without changing the archived source classification.
+    await play(item ? { ...item, kind: "music" } : null);
   } finally { state.selecting = false; }
+}
+
+export class MusicControlError extends Error {
+  constructor(message: string, readonly status = 409) { super(message); }
+}
+
+export function musicLibraryPlayback() {
+  return { playing: state.playing ? { id: state.playing.id, title: state.playing.title, kind: state.playing.kind } : null, playNowBlockedReason: musicPlayBlockedReason(state) };
+}
+
+async function fadeCurrentMusic() {
+  if (!state.process) return true;
+  const file = state.trackFile;
+  if (!file || !state.playing) { stopTrack(); return true; }
+  const offset = Math.max(0, (Date.now() - state.startedAt) / 1000);
+  const duration = Math.min(MUSIC_FADE_SECONDS, state.playing.duration - offset);
+  if (duration <= 0) { stopTrack(); return true; }
+  return playTransitionStage(null, { input: ["-re", "-ss", String(offset), "-i", file, "-t", String(duration),
+    "-af", `afade=t=out:st=0:d=${duration}:curve=hsin`, ...ENCODE_MP3] });
+}
+
+export async function playMusicNow(id: string) {
+  const blocked = musicPlayBlockedReason(state);
+  if (blocked) throw new MusicControlError(blocked);
+  state.musicControlBusy = true;
+  try {
+    const asset = await prisma.radioAsset.findUnique({ where: { id }, select: { id: true, title: true, duration: true, kind: true } });
+    if (!asset || !isMusicTrack(asset)) throw new MusicControlError("Musiktitel nicht gefunden.", 404);
+    // Load before interrupting the current song. A failed read must leave it on air.
+    await assetFile(asset.id);
+    let reason = musicPlayBlockedReason({ ...state, musicControlBusy: false });
+    if (reason) throw new MusicControlError(reason);
+    if (!await fadeCurrentMusic()) throw new MusicControlError("Das Programm hat inzwischen gewechselt. Bitte erneut versuchen.");
+    reason = musicPlayBlockedReason({ ...state, musicControlBusy: false });
+    if (reason) throw new MusicControlError(reason);
+    state.musicQueue = [];
+    state.fadeInNextMusic = true;
+    const started = await play({ ...asset, kind: "music" });
+    if (!started) throw new MusicControlError("Das Programm hat inzwischen gewechselt. Bitte erneut versuchen.");
+    state.lastMusicId = asset.id;
+    state.musicSinceId = (state.musicSinceId || 0) + 1;
+    return { id: asset.id, title: asset.title };
+  } finally {
+    state.musicControlBusy = false;
+    if (!state.process && !state.newsTransition) void nextMusic().catch(report);
+  }
+}
+
+export async function musicLibraryChanged(id: string, enabled: boolean) {
+  state.musicLibraryRevision = (state.musicLibraryRevision || 0) + 1;
+  state.musicQueue = [];
+  // Disabling the song currently on air also skips it gently. News and other
+  // manual operations retain priority; a queued selection sees the new revision.
+  if (!enabled && state.playing?.id === id && !state.newsTransition && !state.musicControlBusy && !state.selecting) {
+    state.musicControlBusy = true;
+    try { if (await fadeCurrentMusic()) state.fadeInNextMusic = true; }
+    finally { state.musicControlBusy = false; }
+  }
+  if (enabled && !state.playing && !state.newsTransition && !state.musicControlBusy && !state.selecting) stopTrack();
+  await nextMusic();
+}
+
+export async function skipMusic(id: string) {
+  const blocked = musicPlayBlockedReason(state);
+  if (blocked) throw new MusicControlError(blocked);
+  if (state.playing?.id !== id) throw new MusicControlError("Inzwischen läuft ein anderer Titel. Die Ansicht wurde aktualisiert.");
+  state.musicControlBusy = true;
+  try {
+    if (!await fadeCurrentMusic()) throw new MusicControlError("Das Programm hat inzwischen gewechselt.");
+    state.musicQueue = state.musicQueue.filter(item => item.id !== id);
+    state.fadeInNextMusic = true;
+  } finally { state.musicControlBusy = false; }
+  await nextMusic();
 }
 
 async function playTransitionStage(item: Item | null, options: Omit<PlayOptions, "transition">) {

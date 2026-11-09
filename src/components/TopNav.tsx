@@ -10,6 +10,7 @@ import { doSignOut } from "@/app/actions/auth";
 const links = [
   { href: "/control", label: "Steuerung" },
   { href: "/radio", label: "Radioprogramm" },
+  { href: "/musik", label: "Musik" },
   { href: "/nachrichten", label: "Nachrichten" },
   { href: "/admin/devices", label: "Geräte" },
   { href: "/admin/zones", label: "Zonen" },
@@ -47,7 +48,7 @@ export function TopNav({
         </Link>
 
         {/* Desktop nav */}
-        <nav className="hidden items-center gap-1 md:flex">
+        <nav className="hidden items-center gap-1 lg:flex">
           {showLinks && links.map((l) => (
             <NavLink key={l.href} href={l.href} active={isActive(pathname, l.href)}>{l.label}</NavLink>
           ))}
@@ -66,7 +67,7 @@ export function TopNav({
         </nav>
 
         {/* Mobile: theme + burger */}
-        <div className="flex items-center gap-1 md:hidden">
+        <div className="flex items-center gap-1 lg:hidden">
           <button
             onClick={toggle}
             aria-label={theme === "dark" ? "Helles Design" : "Dunkles Design"}
@@ -97,7 +98,7 @@ export function TopNav({
 
       {/* Mobile drawer */}
       {open && (
-        <div className="border-t border-neutral-200 bg-white md:hidden dark:border-neutral-800 dark:bg-neutral-950">
+        <div className="border-t border-neutral-200 bg-white lg:hidden dark:border-neutral-800 dark:bg-neutral-950">
           <nav className="mx-auto flex max-w-6xl flex-col gap-1 px-4 py-3 sm:px-6">
             {showLinks && links.map((l) => (
               <NavLink key={l.href} href={l.href} active={isActive(pathname, l.href)} block>
