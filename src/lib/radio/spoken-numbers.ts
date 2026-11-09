@@ -90,11 +90,11 @@ function normalize(text: string, language: Language) {
       const euros = integer(parsed.whole, language), cents = Number(parsed.fraction);
       return `${euros === "eins" ? "ein" : euros} Euro${cents ? ` und ${cents === 1 ? "ein" : integer(String(cents), language)} Cent` : ""}`;
     };
-    result = result.replace(new RegExp(`€\\s*(${NUM})`, "gu"), (_m, value) => value === "1" ? "ein Euro" : euro(value));
-    result = result.replace(new RegExp(`(?<![\\p{L}\\d])(${NUM})\\s*(?:Euro\\b|€)`, "gu"), (_m, value) => value === "1" ? "ein Euro" : euro(value));
+    result = result.replace(new RegExp(`€\\s*(${NUM})`, "gu"), (_m, value) => value === "1" ? "1 Euro" : euro(value));
+    result = result.replace(new RegExp(`(?<![\\p{L}\\d])(${NUM})\\s*(?:Euro\\b|€)`, "gu"), (_m, value) => value === "1" ? "1 Euro" : euro(value));
   }
   const currency = (symbol: string) => language === "de" ? ({ "€": "Euro", "$": "US-Dollar", "₺": "türkische Lira" }[symbol]!) : ({ "€": "avro", "$": "Amerikan doları", "₺": "Türk lirası" }[symbol]!);
-  const amount = (value: string, symbol: string) => `${language === "de" && value === "1" ? symbol === "₺" ? "eine" : "ein" : spokenNumber(value, language)} ${currency(symbol)}`;
+  const amount = (value: string, symbol: string) => `${language === "de" && value === "1" ? "1" : spokenNumber(value, language)} ${currency(symbol)}`;
   result = result.replace(new RegExp(`([€$₺])\\s*(${NUM})`, "gu"), (_match, symbol, value) => amount(value, symbol));
   result = result.replace(new RegExp(`(?<![\\p{L}\\d])(${NUM})\\s*([€$₺])`, "gu"), (_match, value, symbol) => amount(value, symbol));
   const percent = (value: string) => language === "de" ? spokenNumber(value, language) + " Prozent" : "yüzde " + spokenNumber(value, language);
@@ -112,8 +112,9 @@ function normalize(text: string, language: Language) {
     let spoken = spokenNumber(value, language);
     if (language === "de" && value === "1") {
       const following = result.slice(offset + match.length);
-      if (/^\s+(?:Euro|US-Dollar|Dollar|Grad|Prozent|Kilometer|Liter|Jahr|Tag|Monat|Uhr)\b/i.test(following)) spoken = "ein";
-      else if (/^\s+(?:Million|Milliarde|Billion|Minute|Stunde|Woche)\b/i.test(following)) spoken = "eine";
+      // ein/eine/einen/einem depends on gender and case (mit 1 Euro). Let the
+      // provider infer this from the sentence instead of inserting "eins".
+      if (/^\s+\p{L}/u.test(following)) return match;
     }
     return spoken + (suffix ? (language === "tr" ? suffix : "’" + suffix) : "");
   });

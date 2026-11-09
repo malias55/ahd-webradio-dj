@@ -8,8 +8,9 @@ test("German quantities preserve thousands, decimal zeroes, signs and units", ()
   assert.equal(speechText("1.234 Besucher, 3,05 Prozent und 12,50 Euro.", "de"), "eintausendzweihundertvierunddreißig Besucher, drei Komma null fünf Prozent und zwölf Euro und fünfzig Cent.");
   assert.equal(speechText("€12,05, 1,01 Euro und 2,00 €", "de"), "zwölf Euro und fünf Cent, ein Euro und ein Cent und zwei Euro");
   assert.equal(speechText("-3,5 °C, 37 km/h, +2,00 % und 3–5 Minuten.", "de"), "minus drei Komma fünf Grad Celsius, siebenunddreißig Kilometer pro Stunde, plus zwei Komma null null Prozent und drei bis fünf Minuten.");
-  assert.equal(speechText("€1, $2,641.08 und ₺41,05", "de"), "ein Euro, zweitausendsechshunderteinundvierzig Komma null acht US-Dollar und einundvierzig Komma null fünf türkische Lira");
-  assert.equal(speechText("1 Euro, 1 Minute, 1 Grad, -3,05%", "de"), "ein Euro, eine Minute, ein Grad, minus drei Komma null fünf Prozent");
+  assert.equal(speechText("€1, $2,641.08 und ₺41,05", "de"), "1 Euro, zweitausendsechshunderteinundvierzig Komma null acht US-Dollar und einundvierzig Komma null fünf türkische Lira");
+  assert.equal(speechText("1 Euro, 1 Minute, 1 Grad, -3,05%", "de"), "1 Euro, 1 Minute, 1 Grad, minus drei Komma null fünf Prozent");
+  assert.equal(speechText("mit 1 Euro, für 1 Minute und 1 Kind", "de"), "mit 1 Euro, für 1 Minute und 1 Kind", "the provider must infer gender and grammatical case");
 });
 
 test("Turkish market prices preserve magnitude and the first zero after the comma", () => {
