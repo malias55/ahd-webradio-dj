@@ -15,13 +15,57 @@ test("German quantities preserve thousands, decimal zeroes, signs and units", ()
 
 test("Turkish market prices preserve magnitude and the first zero after the comma", () => {
   const cases = [
-    ["41,05", "kırk bir virgül sıfır beş"], ["2.641,08", "iki bin altı yüz kırk bir virgül sıfır sekiz"],
-    ["73,25", "yetmiş üç virgül yirmi beş"], ["9.876,54", "dokuz bin sekiz yüz yetmiş altı virgül elli dört"],
-    ["0,0050", "sıfır virgül sıfır sıfır beş sıfır"], ["2,00", "iki virgül sıfır sıfır"],
+    ["41,05", "kırk bir nokta sıfır beş"], ["2.641,08", "iki bin altı yüz kırk bir nokta sıfır sekiz"],
+    ["73,25", "yetmiş üç nokta iki beş"], ["9.876,54", "dokuz bin sekiz yüz yetmiş altı nokta beş dört"],
+    ["0,0050", "sıfır nokta sıfır sıfır beş sıfır"], ["2,00", "iki nokta sıfır sıfır"],
   ];
   for (const [input, expected] of cases) assert.equal(spokenNumber(input, "tr"), expected);
-  assert.equal(speechText("%3,05 ve 2,5%", "tr"), "yüzde üç virgül sıfır beş ve yüzde iki virgül beş");
-  assert.equal(speechText("₺41,05, $73,25 ve €1", "tr"), "kırk bir virgül sıfır beş Türk lirası, yetmiş üç virgül yirmi beş Amerikan doları ve bir avro");
+  assert.equal(speechText("%3,05 ve 2,5%", "tr"), "yüzde üç nokta sıfır beş ve yüzde iki nokta beş");
+  assert.equal(speechText("₺41,05, $73,25 ve €1", "tr"), "kırk bir nokta sıfır beş Türk lirası, yetmiş üç nokta iki beş Amerikan doları ve bir avro");
+});
+
+test("requested station pronunciation reads every decimal digit with nokta or Komma", () => {
+  const cases = [
+    ["41,05", "einundvierzig Komma null fünf", "kırk bir nokta sıfır beş"],
+    ["1.234,50", "eintausendzweihundertvierunddreißig Komma fünf null", "bin iki yüz otuz dört nokta beş sıfır"],
+    ["3,05%", "drei Komma null fünf Prozent", "yüzde üç nokta sıfır beş"],
+    ["0,005‰", "null Komma null null fünf Promille", "binde sıfır nokta sıfır sıfır beş"],
+    ["%-3,05", "minus drei Komma null fünf Prozent", "eksi yüzde üç nokta sıfır beş"],
+    ["73,25", "dreiundsiebzig Komma zwei fünf", "yetmiş üç nokta iki beş"],
+  ];
+  for (const [input, de, tr] of cases) {
+    assert.equal(speechText(input, "de"), de);
+    assert.equal(speechText(input, "tr"), tr);
+  }
+  assert.equal(speechText("Kırk bir virgül sıfır beş. Bu cümlede virgül kullanılır.", "tr"), "Kırk bir nokta sıfır beş. Bu cümlede virgül kullanılır.");
+  assert.equal(speechText("Değer 41,05. Sonraki değer 73,25.", "tr"), "Değer kırk bir nokta sıfır beş. Sonraki değer yetmiş üç nokta iki beş.");
+  assert.equal(speechText("Der Kurs beträgt 41,05. Es folgt der nächste Wert.", "de"), "Der Kurs beträgt einundvierzig Komma null fünf. Es folgt der nächste Wert.");
+});
+
+test("fractions and mixed numbers preserve their exact value in both languages", () => {
+  const cases = [
+    ["1/2", "ein Halb", "yarım"], ["3/4", "drei Viertel", "dörtte üç"],
+    ["3/2", "drei Halbe", "ikide üç"], ["0½", "ein Halb", "yarım"],
+    ["2/3", "zwei Drittel", "üçte iki"], ["1/10", "ein Zehntel", "onda bir"],
+    ["1/16", "eins geteilt durch sechzehn", "bir bölü on altı"],
+    ["½", "ein Halb", "yarım"], ["¾", "drei Viertel", "dörtte üç"],
+    ["2⁄3", "zwei Drittel", "üçte iki"], ["1½", "eineinhalb", "bir buçuk"],
+    ["2 1/2", "zweieinhalb", "iki buçuk"], ["2¾", "zwei und drei Viertel", "iki tam dörtte üç"],
+    ["-3/4", "minus drei Viertel", "eksi dörtte üç"], ["½%", "ein halbes Prozent", "yüzde sıfır nokta beş"],
+    ["%1/2", "ein halbes Prozent", "yüzde sıfır nokta beş"],
+    ["3/100%", "drei Hundertstel Prozent", "yüzde sıfır nokta sıfır üç"],
+    ["%1/3", "ein Drittel Prozent", "yüzde üçte bir"],
+  ];
+  for (const [input, de, tr] of cases) {
+    assert.equal(speechText(input, "de"), de, input);
+    assert.equal(speechText(input, "tr"), tr, input);
+    assert.equal(speechText(de, "de"), de, "normalization stays idempotent");
+    assert.equal(speechText(tr, "tr"), tr, "normalization stays idempotent");
+  }
+  assert.equal(speechText("3/4 € und 1½ Euro", "de"), "fünfundsiebzig Cent und ein Euro und fünfzig Cent");
+  assert.equal(speechText("3/4 ₺ ve 1½ €", "tr"), "dörtte üç Türk lirası ve bir buçuk avro");
+  for (const input of ["2026/27", "09/11/2026", "A60/63", "3/0", "3/00", "3⁄0", "24/7", "50/50"]) for (const language of ["de", "tr"] as const)
+    assert.equal(speechText(input, language), input, "dates, seasons, road references and invalid fractions are not silently reinterpreted");
 });
 
 test("dates, event times, years and roads have explicit spoken forms", () => {
@@ -35,7 +79,7 @@ test("dates, event times, years and roads have explicit spoken forms", () => {
 
 test("large quantities and feed number formats do not round or change magnitude", () => {
   assert.equal(spokenNumber("1.234.567,08", "de"), "eine Million zweihundertvierunddreißigtausendfünfhundertsiebenundsechzig Komma null acht");
-  assert.equal(spokenNumber("1.234.567,08", "tr"), "bir milyon iki yüz otuz dört bin beş yüz altmış yedi virgül sıfır sekiz");
+  assert.equal(spokenNumber("1.234.567,08", "tr"), "bir milyon iki yüz otuz dört bin beş yüz altmış yedi nokta sıfır sekiz");
   assert.equal(spokenNumber("1 234,56", "tr"), spokenNumber("1.234,56", "tr"));
   assert.equal(spokenNumber("1\u202f234,56", "de"), spokenNumber("1,234.56", "de"));
   assert.equal(spokenNumber("1.000.000.000", "de"), "eine Milliarde");
@@ -70,7 +114,7 @@ test("actual ElevenLabs request always uses normalized words and enabled provide
     await speech("Auf der A643: 8 Minuten Zeitverlust.", "test-voice", "de", "service", slot);
     await speech("Bir dolar 41,05 Türk lirası.", "test-voice", "tr");
     assert.equal(requests[0].text, "Auf der A sechshundertdreiundvierzig: acht Minuten Zeitverlust.");
-    assert.equal(requests[1].text, "Bir dolar kırk bir virgül sıfır beş Türk lirası.");
+    assert.equal(requests[1].text, "Bir dolar kırk bir nokta sıfır beş Türk lirası.");
     for (const request of requests) assert.equal(request.apply_text_normalization, "on");
     assert.deepEqual(requests[0].voice_settings, serviceVoiceSettings(slot));
     assert.equal(requests[1].language_code, "tr");

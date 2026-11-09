@@ -1,6 +1,6 @@
 import { spokenNumbers } from "./spoken-numbers";
-export const TURKISH_PRONUNCIATION_VERSION = "tr-dorsuk-terete-numbers-v2";
-export const NUMBER_PRONUNCIATION_VERSION = "de-tr-spoken-numbers-v1";
+export const TURKISH_PRONUNCIATION_VERSION = "tr-dorsuk-terete-nokta-v3";
+export const NUMBER_PRONUNCIATION_VERSION = "de-tr-spoken-numbers-v2";
 
 // Normalize only the speaking copy; source material and values stay unchanged.
 export function speechText(text: string, language: "de" | "tr") {

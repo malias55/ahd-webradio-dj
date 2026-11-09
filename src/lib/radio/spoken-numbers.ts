@@ -47,11 +47,60 @@ export function spokenNumber(raw: string, language: Language): string {
   const { whole, fraction } = parsed;
   const head = whole.length > 1 && whole.startsWith("0") ? [...whole].map(d => (language === "de" ? DE : TR)[+d]).join(" ") : integer(whole, language);
   // Preserve every decimal place, especially leading/trailing zeroes in quotes.
-  const tail = fraction && (language === "tr" && fraction.length <= 2 && !fraction.startsWith("0") ? integer(fraction, language) : [...fraction].map(d => (language === "de" ? DE : TR)[+d]).join(" "));
-  return head + (tail ? (language === "de" ? " Komma " : " virgül ") + tail : "");
+  const tail = fraction && [...fraction].map(d => (language === "de" ? DE : TR)[+d]).join(" ");
+  // Station preference: Turkish "nokta", German "Komma". Read each decimal
+  // digit separately in both languages, including leading and trailing zeroes.
+  return head + (tail ? (language === "de" ? " Komma " : " nokta ") + tail : "");
 }
 
 const NUM = "\\d+(?:[.,]\\d+)*(?:[\\u00a0\\u202f ]\\d{3})*(?:,\\d+)?";
+const VULGAR: Record<string, [number, number]> = { "½": [1, 2], "⅓": [1, 3], "⅔": [2, 3], "¼": [1, 4], "¾": [3, 4], "⅕": [1, 5], "⅖": [2, 5], "⅗": [3, 5], "⅘": [4, 5], "⅙": [1, 6], "⅚": [5, 6], "⅛": [1, 8], "⅜": [3, 8], "⅝": [5, 8], "⅞": [7, 8] };
+const FRACTION = `(?:(?:\\d+\\s+)?\\d+\\s*[/⁄]\\s*\\d+|(?:\\d+\\s*)?[${Object.keys(VULGAR).join("")}])`;
+const VALUE = `(?:${FRACTION}|${NUM})`;
+
+function fractionParts(raw: string) {
+  const slash = raw.match(/^(?:(\d+)\s+)?(\d+)\s*[/⁄]\s*(\d+)$/u);
+  const glyph = raw.match(new RegExp(`^(\\d+)?\\s*([${Object.keys(VULGAR).join("")}])$`, "u"));
+  if (!slash && !glyph) return null;
+  const whole = slash?.[1] ?? glyph?.[1];
+  const [numerator, denominator] = slash ? [BigInt(slash[2]), BigInt(slash[3])] : VULGAR[glyph![2]].map(BigInt);
+  return { whole: whole && BigInt(whole) !== 0n ? whole : undefined, numerator, denominator };
+}
+
+function spokenQuantity(raw: string, language: Language): string {
+  const parsed = fractionParts(raw);
+  if (!parsed) return spokenNumber(raw, language);
+  const { whole, numerator, denominator } = parsed;
+  // A zero denominator is invalid, not a quantity to repair or invent.
+  if (denominator === 0n) return raw;
+  const count = integer(String(numerator), language);
+  let fraction: string;
+  if (language === "de") {
+    const names: Record<string, string> = { "2": "Halb", "3": "Drittel", "4": "Viertel", "5": "Fünftel", "6": "Sechstel", "7": "Siebtel", "8": "Achtel", "9": "Neuntel", "10": "Zehntel", "100": "Hundertstel", "1000": "Tausendstel" };
+    fraction = names[String(denominator)] ? `${numerator === 1n ? "ein" : count} ${denominator === 2n && numerator !== 1n ? "Halbe" : names[String(denominator)]}` : `${count} geteilt durch ${integer(String(denominator), language)}`;
+    if (whole && numerator === 1n && denominator === 2n) return (BigInt(whole) === 1n ? "ein" : integer(whole, language)) + "einhalb";
+    return whole ? `${BigInt(whole) === 1n ? "ein" : integer(whole, language)} und ${fraction}` : fraction;
+  }
+  const denominators: Record<string, string> = { "2": "ikide", "3": "üçte", "4": "dörtte", "5": "beşte", "6": "altıda", "7": "yedide", "8": "sekizde", "9": "dokuzda", "10": "onda", "100": "yüzde", "1000": "binde" };
+  if (numerator === 1n && denominator === 2n) return whole ? `${integer(whole, language)} buçuk` : "yarım";
+  fraction = denominators[String(denominator)] ? `${denominators[String(denominator)]} ${count}` : `${count} bölü ${integer(String(denominator), language)}`;
+  return whole ? `${integer(whole, language)} tam ${fraction}` : fraction;
+}
+
+function exactFractionDecimal(raw: string): string | null {
+  const fraction = fractionParts(raw);
+  if (!fraction || fraction.denominator === 0n) return null;
+  const total = BigInt(fraction.whole || "0") * fraction.denominator + fraction.numerator;
+  const whole = total / fraction.denominator;
+  let rest = total % fraction.denominator, decimals = "";
+  for (let i = 0; rest && i < 12; i++) {
+    rest *= 10n;
+    decimals += String(rest / fraction.denominator);
+    rest %= fraction.denominator;
+  }
+  // Repeating fractions must stay fractions: never round a reported value.
+  return rest ? null : String(whole) + (decimals ? "," + decimals : "");
+}
 const MONTHS = {
   de: ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"],
   tr: ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"],
@@ -80,26 +129,37 @@ function normalize(text: string, language: Language) {
   // Resolve signs while digits are still present (including before a currency
   // or percentage). A dash between two unsigned numbers denotes a range.
   result = result.replace(/(\d)\s*[–−-]\s*(?=\d)/gu, language === "de" ? "$1 bis " : "$1 ila ");
-  result = result.replace(new RegExp(`(?<![\\p{L}\\d])([+−-])(?=${NUM}|[€$₺])`, "gu"), (_m, sign) => sign === "+" ? (language === "de" ? "plus " : "artı ") : (language === "de" ? "minus " : "eksi "));
+  result = result.replace(/([%‰])\s*([+−-])(?=\d)/gu, "$2$1");
+  result = result.replace(new RegExp(`(?<![\\p{L}\\d])([+−-])(?=${VALUE}|[€$₺%‰])`, "gu"), (_m, sign) => sign === "+" ? (language === "de" ? "plus " : "artı ") : (language === "de" ? "minus " : "eksi "));
   // German prices sound more natural as euros and cents than as a sequence of
   // decimal digits. Exact fractions other than two places remain decimals.
   if (language === "de") {
     const euro = (value: string) => {
-      const parsed = parts(value);
-      if (!parsed || parsed.fraction?.length !== 2) return `${spokenNumber(value, language)} Euro`;
+      let parsed = parts(value);
+      const fraction = fractionParts(value);
+      if (fraction && fraction.denominator > 0n) {
+        const cents = (BigInt(fraction.whole || "0") * fraction.denominator + fraction.numerator) * 100n;
+        if (cents % fraction.denominator === 0n) {
+          const total = cents / fraction.denominator;
+          parsed = { whole: String(total / 100n), fraction: String(total % 100n).padStart(2, "0") };
+        }
+      }
+      if (!parsed || parsed.fraction?.length !== 2) return `${spokenQuantity(value, language)} Euro`;
       const euros = integer(parsed.whole, language), cents = Number(parsed.fraction);
+      if (euros === "null" && cents) return `${cents === 1 ? "ein" : integer(String(cents), language)} Cent`;
       return `${euros === "eins" ? "ein" : euros} Euro${cents ? ` und ${cents === 1 ? "ein" : integer(String(cents), language)} Cent` : ""}`;
     };
-    result = result.replace(new RegExp(`€\\s*(${NUM})`, "gu"), (_m, value) => value === "1" ? "1 Euro" : euro(value));
-    result = result.replace(new RegExp(`(?<![\\p{L}\\d])(${NUM})\\s*(?:Euro\\b|€)`, "gu"), (_m, value) => value === "1" ? "1 Euro" : euro(value));
+    result = result.replace(new RegExp(`€\\s*(${VALUE})`, "gu"), (_m, value) => value === "1" ? "1 Euro" : euro(value));
+    result = result.replace(new RegExp(`(?<![\\p{L}\\d])(${VALUE})\\s*(?:Euro\\b|€)`, "gu"), (_m, value) => value === "1" ? "1 Euro" : euro(value));
   }
   const currency = (symbol: string) => language === "de" ? ({ "€": "Euro", "$": "US-Dollar", "₺": "türkische Lira" }[symbol]!) : ({ "€": "avro", "$": "Amerikan doları", "₺": "Türk lirası" }[symbol]!);
-  const amount = (value: string, symbol: string) => `${language === "de" && value === "1" ? "1" : spokenNumber(value, language)} ${currency(symbol)}`;
-  result = result.replace(new RegExp(`([€$₺])\\s*(${NUM})`, "gu"), (_match, symbol, value) => amount(value, symbol));
-  result = result.replace(new RegExp(`(?<![\\p{L}\\d])(${NUM})\\s*([€$₺])`, "gu"), (_match, value, symbol) => amount(value, symbol));
-  const percent = (value: string) => language === "de" ? spokenNumber(value, language) + " Prozent" : "yüzde " + spokenNumber(value, language);
-  result = result.replace(new RegExp(`%\\s*(${NUM})`, "gu"), (_match, value) => percent(value));
-  result = result.replace(new RegExp(`(?<![\\p{L}\\d])(${NUM})\\s*%`, "gu"), (_match, value) => percent(value));
+  const amount = (value: string, symbol: string) => `${language === "de" && value === "1" ? "1" : spokenQuantity(value, language)} ${currency(symbol)}`;
+  result = result.replace(new RegExp(`([€$₺])\\s*(${VALUE})`, "gu"), (_match, symbol, value) => amount(value, symbol));
+  result = result.replace(new RegExp(`(?<![\\p{L}\\d])(${VALUE})\\s*([€$₺])`, "gu"), (_match, value, symbol) => amount(value, symbol));
+  const proportion = (value: string, symbol: string) => language === "de" ? spokenQuantity(value, language).replace(/^ein Halb$/, "ein halbes") + (symbol === "%" ? " Prozent" : " Promille") : (symbol === "%" ? "yüzde " : "binde ") + spokenQuantity(exactFractionDecimal(value) ?? value, language);
+  result = result.replace(new RegExp(`([%‰])\\s*(${VALUE})`, "gu"), (_match, symbol, value) => proportion(value, symbol));
+  result = result.replace(new RegExp(`(?<![\\p{L}\\d])(${VALUE})\\s*([%‰])`, "gu"), (_match, value, symbol) => proportion(value, symbol));
+  result = result.replace(new RegExp(`(?<![\\p{L}\\d/⁄])${FRACTION}(?![\\p{L}\\d/⁄])`, "gu"), value => spokenQuantity(value, language));
   result = result.replace(/°\s*C\b/gu, language === "de" ? "Grad Celsius" : "santigrat derece").replace(/\bkm\/h\b/gu, language === "de" ? "Kilometer pro Stunde" : "kilometre bölü saat");
   // Apostrophised Turkish numeric suffixes stay attached to the spoken number.
   result = result.replace(new RegExp(`(?<![\\p{L}\\d.,])(${NUM})(?:['’](\\p{L}+))?(?![\\p{L}\\d])`, "gu"), (match, value, suffix, offset) => {
@@ -107,7 +167,7 @@ function normalize(text: string, language: Language) {
     if (!parsed) return match;
     // Grammar-dependent ordinals and Turkish suffixes needing consonant
     // changes remain available to the enabled provider normalizer.
-    if (/^\.\s*\p{L}/u.test(result.slice(offset + match.length))) return match;
+    if (/^\d+$/u.test(value) && /^\.\s*\p{L}/u.test(result.slice(offset + match.length))) return match;
     if (suffix && language === "tr" && !/^(?:da|de|ta|te|dan|den|tan|ten)$/u.test(suffix)) return match;
     let spoken = spokenNumber(value, language);
     if (language === "de" && value === "1") {
@@ -118,12 +178,18 @@ function normalize(text: string, language: Language) {
     }
     return spoken + (suffix ? (language === "tr" ? suffix : "’" + suffix) : "");
   });
+  if (language === "tr") {
+    // An author may already have spelled a decimal out. Apply the station's
+    // preferred separator only between number words, not to ordinary prose.
+    const words = [...TR, ...TR_TENS.filter(Boolean), "yüz", "bin", "milyon", "milyar", "trilyon"].join("|");
+    result = result.replace(new RegExp(`(?<!\\p{L})(${words})\\s+virgül(?=\\s+(?:${words})(?!\\p{L}))`, "giu"), "$1 nokta");
+  }
   return result;
 }
 
 export function spokenNumbers(text: string, language: Language) {
   // Leave URLs, email addresses and machine identifiers untouched. Only the
   // speaking copy is transformed; structured source numbers stay unchanged.
-  return text.split(/(https?:\/\/[^\s]+|[\w.+-]+@[\w.-]+\.[a-z]{2,}|\b\d{4}-\d{2}-\d{2}(?:T[^\s]+)?\b)/giu)
+  return text.split(/(https?:\/\/[^\s]+|[\w.+-]+@[\w.-]+\.[a-z]{2,}|\b\d{4}-\d{2}-\d{2}(?:T[^\s]+)?\b|\b\d{1,4}\/\d{1,2}\/\d{1,4}\b|\b\d{4}\/\d{2,4}\b|\b[A-Z]+\d+(?:\/\d+)+\b|\b\d+\s*[/⁄]\s*0+\b|\b(?:24\/7|50\/50)\b)/giu)
     .map((part, index) => index % 2 ? part : normalize(part, language)).join("");
 }
