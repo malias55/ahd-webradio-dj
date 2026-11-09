@@ -8,7 +8,8 @@ import urllib.request
 
 music = "--music" in sys.argv
 transitions = "--transitions" in sys.argv
-args = [a for a in sys.argv if a not in ("--music", "--transitions")]
+numbers = "--numbers" in sys.argv
+args = [a for a in sys.argv if a not in ("--music", "--transitions", "--numbers")]
 output = Path(args[1])
 paths = [Path(p) for p in args[2:]]
 if not paths or len(paths) > 6:
@@ -18,11 +19,13 @@ if music:
     content = [{"type": "text", "text": "Listen critically to these actual music inputs. We are expanding a quiet car-showroom instrumental rotation: refined lounge jazz, ambient jazz and smooth jazz. The reference is an already approved existing track; new tracks should add modest variety while staying warm, optimistic, unobtrusive, suitable for all ages and comfortable under conversation. Each review-N.mp3 contains three seven-second excerpts from the beginning, middle and ending of ONE complete four-minute track; ignore the intentional review-edit cuts between samples. Assess actual audible instruments, vocals or vocal samples (none wanted), pace, energy, harshness, distracting solos, excessive drama/club drops or melancholy. Do not infer from names or assert you heard the whole track. Return concise JSON {tracks:[{file,heard_description,vocals,energy_1_to_5,harshness_1_to_5,suitable,issues,reason}],comparisonToExisting}. If unable to perceive audio say so. The reference file is named existing-reference.mp3 and should not be selected for new publication."}]
 if transitions:
     content = [{"type": "text", "text": "Listen critically to the actual attached Turkish radio story-transition excerpts. Assess the audible ending of one story, the interval, and the beginning of the next. Describe what you actually hear: voice clarity, any music/effect/bleep between stories or underneath speech, silence length, abrupt cutoff or missing syllables. Our desired result is a calm natural spoken bulletin with a brief quiet pause between complete stories, no sonic punctuation, no background music, and no clipped words. Do not infer from filenames or pretend to hear unavailable audio. Compare the excerpts and return concise JSON {clips:[{file,heard_description,transitionGap,musicUnderSpeech,soundBetweenStories,clippedSpeech,suitable,issues}],preferred,rationale}. This is only a short excerpt review, not a whole-recording assessment."}]
+if numbers:
+    content = [{"type": "text", "text": "Listen to the actual attached German or Turkish speech recordings. This is a BLIND number pronunciation audit: you have no reference script or desired values. For each clip, transcribe exactly what you hear in the ORIGINAL language. Write all spoken numbers as WORDS, including decimal parts, zeroes, years, times, dates, road numbers, prices and percentages. Do not silently correct odd pronunciations or infer missing digits from context. Then list the numerical values the heard words actually imply; preserve signs and all decimal digits. Identify stumbles, unexpected language switches, mispronounced number words and awkward pauses. Compare clarity and naturalness among the clips without assuming that a particular filename is the improved version. If audio is not accessible explicitly say so and do not fabricate a transcript. Return JSON {clips:[{file,transcript_words,heard_values,pronunciation_issues,naturalness_1_to_5}],preferred,rationale}."}]
 for path in paths:
     if path.stat().st_size > 2_000_000:
         raise SystemExit("Use short excerpts under 2 MB each")
     content.extend([{"type": "text", "text": "Clip: " + path.name}, {"type": "input_audio", "input_audio": {"data": base64.b64encode(path.read_bytes()).decode(), "format": "mp3"}}])
-body = {"model": "gpt-audio-1.5", "modalities": ["text"], "messages": [{"role": "user", "content": content}], "max_completion_tokens": 1600, "store": False}
+body = {"model": "gpt-audio-1.5", "modalities": ["text"], "messages": [{"role": "user", "content": content}], "max_completion_tokens": 3200 if numbers else 1600, "store": False}
 r = urllib.request.Request("https://api.openai.com/v1/chat/completions", data=json.dumps(body).encode(), headers={"Authorization": "Bearer " + os.environ["OPENAI_API_KEY"], "Content-Type": "application/json"})
 try:
     with urllib.request.urlopen(r, timeout=100) as response:

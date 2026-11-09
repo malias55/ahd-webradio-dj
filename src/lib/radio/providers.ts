@@ -76,6 +76,9 @@ export async function speech(text: string, voiceId: string, language: "de" | "tr
   if (!spoken) throw new Error("Kein verwendbarer Radiotext");
   return eleven(`/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`, {
     text: speechText(spoken, language), model_id: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2", language_code: language,
+    // Explicit German/Turkish words anchor the language even for Multilingual
+    // v2 (which ignores language_code); normalize remaining ordinal grammar.
+    apply_text_normalization: "on",
     voice_settings: delivery === "service" ? serviceVoiceSettings(slot) : { stability: 0.65, similarity_boost: 0.75, style: 0.15, use_speaker_boost: true },
   });
 }

@@ -2,7 +2,7 @@ import { naturalRadioText, germanBrandingAllowed } from "./presentation";
 import { assertNewsCredits } from "./elevenlabs";
 import { FAMILY_CONTENT_POLICY, FAMILY_CONTENT_VERSION, familyContentAllowed, assertFamilyContent } from "./family";
 import { createHash } from "node:crypto";
-import { speechText, TURKISH_PRONUNCIATION_VERSION } from "./pronunciation";
+import { speechText, TURKISH_PRONUNCIATION_VERSION, NUMBER_PRONUNCIATION_VERSION } from "./pronunciation";
 import { XMLParser } from "fast-xml-parser";
 import { load } from "cheerio";
 import { prisma } from "../prisma";
@@ -263,14 +263,16 @@ export async function bulletinForSlot(slot: Date) {
 async function newsSegmentSpeech(text: string, voiceId: string, language: "de" | "tr", edition: Date, delivery: "standard" | "service" = "standard") {
   const spoken = speechText(naturalRadioText(text), language), model = process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2";
   const settings = delivery === "service" ? serviceVoiceSettings(edition) : { stability: 0.65, similarity_boost: 0.75, style: 0.15, use_speaker_boost: true };
-  const key = `news-voice:${stationTime(edition).date}:${createHash("sha256").update(JSON.stringify({ spoken, voiceId, language, model, settings })).digest("hex")}`;
+  // Do not reuse an old auto-normalized recording for grammar-dependent
+  // numerals that intentionally remain as digits in the speaking copy.
+  const key = `news-voice:${stationTime(edition).date}:${createHash("sha256").update(JSON.stringify({ spoken, voiceId, language, model, settings, normalization: "on" })).digest("hex")}`;
   if (usesSlotUpdates(edition)) await recoverQuotaJob(key);
   await withJob(key, async () => {
     if (await prisma.radioAsset.findUnique({ where: { key }, select: { id: true } })) return;
     if (usesSlotUpdates(edition)) await assertNewsCredits();
     const { normalizeAudio } = await import("./store");
     const audio = await normalizeAudio(await speech(spoken, voiceId, language, delivery, edition));
-    await prisma.radioAsset.create({ data: { key, kind: "news-voice", title: "Gespeicherter Nachrichten-Sprachabschnitt", script: spoken, ...audio, metadata: { voiceId, language, ttsModel: model, delivery } } });
+    await prisma.radioAsset.create({ data: { key, kind: "news-voice", title: "Gespeicherter Nachrichten-Sprachabschnitt", script: spoken, ...audio, metadata: { voiceId, language, ttsModel: model, delivery, numberPronunciationVersion: NUMBER_PRONUNCIATION_VERSION } } });
   });
   return Buffer.from((await prisma.radioAsset.findUniqueOrThrow({ where: { key }, select: { audio: true } })).audio);
 }
@@ -413,7 +415,7 @@ export async function renderBulletin(slot: Date, content: EditorialContent, exam
       market: market ?? null,
       authorModel: content.modelCalls.filter(c => c.purpose === "author" && c.status !== "failed").at(-1)?.resolvedModel || newsModelConfig().primary, reviewModel: content.modelCalls.filter(c => c.purpose === "review" && c.status !== "failed").at(-1)?.resolvedModel || newsModelConfig().primary,
       modelPolicy: newsModelConfig(),
-      openingVersion: language === "tr" ? TURKISH_OPENING_VERSION : null, pronunciationVersion: language === "tr" ? TURKISH_PRONUNCIATION_VERSION : null,
+      openingVersion: language === "tr" ? TURKISH_OPENING_VERSION : null, pronunciationVersion: language === "tr" ? TURKISH_PRONUNCIATION_VERSION : null, numberPronunciationVersion: NUMBER_PRONUNCIATION_VERSION,
       ttsModel: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2", imagingVersion: language === "tr" ? TURKISH_SIGNATURE_KEY : null, openerAssetId, outroAssetId, dividerVersion: null, storyTransitions: "speech-pauses-v1", timeline,
       region: language === "tr" ? "Türkiye / Almanya" : process.env.NEWS_REGION || "Mainz und Rheinhessen" } };
 }
@@ -430,7 +432,7 @@ export async function renderGermanHourly(slot: Date, main: MainAudio | null, exa
   for (let i = 0; i < paragraphs.length; i++) segments.push({ audio: i === 2 ? Buffer.from((await serviceOutroSpeech(slot)).audio) : await newsSegmentSpeech(paragraphs[i], presenter.voiceId, "de", slot, "service"), kind: i === 0 ? "weather" as const : i === 1 ? "traffic" as const : "outro" as const });
   const rendered = await mixDryBulletin(segments, { opener: false, closer: false });
   let audio = main ? await joinNewsParts(main.audio, rendered.audio) : { audio: rendered.audio, duration: rendered.duration };
-  const m = (main?.metadata || {}) as { sources?: SourceReference[]; modelCalls?: ModelCall[]; timeline?: Cue[]; authorModel?: string; reviewModel?: string; editionSlot?: string };
+  const m = (main?.metadata || {}) as { sources?: SourceReference[]; modelCalls?: ModelCall[]; timeline?: Cue[]; authorModel?: string; reviewModel?: string; editionSlot?: string; numberPronunciationVersion?: string };
   const offset = main ? main.duration + 0.45 : 0;
   const mainSources = m.sources || [], maxId = Math.max(0, ...mainSources.map(s => s.id));
   let completeTimeline = [...(m.timeline || []), ...rendered.timeline.map(c => ({ ...c, start: c.start + offset, end: c.end + offset }))];
@@ -446,6 +448,7 @@ export async function renderGermanHourly(slot: Date, main: MainAudio | null, exa
     programmeVersion: GERMAN_NEWS_VERSION, editorialVersion: GERMAN_EDITORIAL_VERSION, familyContentVersion: FAMILY_CONTENT_VERSION, language: "de", aiGenerated: true, backgroundMusic: false, example,
     presenter: main ? `Elias · ${presenter.name} (Wetter und Verkehr)` : `${presenter.name} · Wetter und Verkehr`, mainAssetId: main?.id || null,
     mainReused: !!main && !example && isRepeatSlot(slot), mainUnavailable: !main, editionSlot: m.editionSlot || newsEditionSlot(slot).toISOString(),
+    serviceNumberPronunciationVersion: NUMBER_PRONUNCIATION_VERSION, mainNumberPronunciationVersion: m.numberPronunciationVersion || null,
     mainCreatedFor: main?.slot?.toISOString() || null, serviceRefreshHours: usesSlotUpdates(slot) ? 1 : 24, service,
     presenters: [{ name: presenterForSlot(slot).name, voiceId: presenterForSlot(slot).voiceId, role: "Hauptnachrichten" }, { name: presenter.name, voiceId: presenter.voiceId, role: "Wetter und Verkehr" }],
     sources: [...mainSources, ...service.sources.map((s, i) => ({ ...s, id: maxId + i + 1, local: true }))],
