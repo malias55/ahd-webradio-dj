@@ -1,6 +1,7 @@
 "use client";
 
 import { FAMILY_CONTENT_VERSION } from "@/lib/radio/family";
+import { musicInRotation } from "@/lib/radio/music-policy";
 import { useCallback, useEffect, useState } from "react";
 
 import { AudioDetails, type Asset, time, duration, languageLabel } from "@/components/RadioAudioDetails";
@@ -37,7 +38,7 @@ export default function RadioPage() {
     } catch (e) { setMessage((e as Error).message); } finally { setBusy(false); }
   };
   if (!status) return <div className="card">{message || "Radioprogramm laden…"}</div>;
-  const music = status.assets.filter(a => a.kind === "music");
+  const music = status.assets.filter(musicInRotation);
   const news = status.assets.filter(a => a.kind === "news" && !a.metadata?.supersededBy);
   const seenExamples = new Set<string>();
   const examples = status.assets.filter(a => a.kind === "demo" && a.metadata?.language && a.metadata?.backgroundMusic === false && a.metadata?.familyContentVersion === FAMILY_CONTENT_VERSION && (a.metadata?.language !== "de" || a.metadata?.programmeVersion === status.programmeVersion)).filter(a => { const key = a.metadata?.language || "mixed"; if (seenExamples.has(key)) return false; seenExamples.add(key); return true; });

@@ -8,6 +8,7 @@ import { prepareNews, bulletinForSlot, isRepeatSlot, usesSlotUpdates, NEWS_REFRE
 import { stationIdAsset, IMAGING_VERSION } from "./imaging";
 import { trackPlayback } from "./audit";
 import { NEWS_PLAYBACK_CODEC } from "./playback-level";
+import { QUIET_MUSIC_EXCLUDED_IDS, musicInRotation } from "./music-policy";
 
 const FADE_SECONDS = 3;
 const NEWS_PAUSE_SECONDS = 5;
@@ -130,8 +131,9 @@ async function nextMusic() {
       if (revision !== state.revision || state.process) return;
       if (ident) { state.musicSinceId = 0; await play(ident); return; }
     }
+    state.musicQueue = state.musicQueue.filter(musicInRotation);
     if (!state.musicQueue.length) {
-      const tracks = await prisma.radioAsset.findMany({ where: { kind: "music" }, select: { id: true, title: true, duration: true, kind: true } });
+      const tracks = await prisma.radioAsset.findMany({ where: { kind: "music", id: { notIn: QUIET_MUSIC_EXCLUDED_IDS } }, select: { id: true, title: true, duration: true, kind: true } });
       // Fisher–Yates shuffle; avoid repeating the last song at a pool boundary.
       for (let i = tracks.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [tracks[i], tracks[j]] = [tracks[j], tracks[i]]; }
       if (tracks.length > 1 && tracks[0].id === state.lastMusicId) [tracks[0], tracks[1]] = [tracks[1], tracks[0]];

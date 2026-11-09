@@ -1,4 +1,5 @@
 import { naturalRadioText, usesUpdatedBulletinAudio } from "./presentation";
+import { QUIET_MUSIC_PROMPT } from "./music-policy";
 import { assertFamilyContent } from "./family";
 import { speechText } from "./pronunciation";
 import { prisma } from "../prisma";
@@ -99,10 +100,10 @@ export async function generateMusic() {
     await withJob(key, async () => {
       if (await prisma.radioAsset.findUnique({ where: { key }, select: { id: true } })) return;
       const raw = await eleven("/v1/music?output_format=mp3_44100_128", {
-        prompt: style.prompt, music_length_ms: 180_000, model_id: process.env.ELEVENLABS_MUSIC_MODEL || "music_v2", force_instrumental: true,
+        prompt: `${style.prompt} ${QUIET_MUSIC_PROMPT}`, music_length_ms: 180_000, model_id: process.env.ELEVENLABS_MUSIC_MODEL || "music_v2", force_instrumental: true,
       }, 360_000);
       const audio = await normalizeAudio(raw, 240);
-      await prisma.radioAsset.create({ data: { key, kind: "music", title: `${style.title} ${batch + 1}`, ...audio, metadata: { prompt: style.prompt, generated: true } } });
+      await prisma.radioAsset.create({ data: { key, kind: "music", title: `${style.title} ${batch + 1}`, ...audio, metadata: { prompt: `${style.prompt} ${QUIET_MUSIC_PROMPT}`, generated: true } } });
     });
   }
 }

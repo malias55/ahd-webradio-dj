@@ -111,7 +111,7 @@ test("German main news always uses Elias, weather and traffic use Susanne", () =
       const presenter = presenterForSlot(date);
       assert.equal(presenter.gender, "male");
       assert.equal(presenter.voiceId, "1h6gHcRvQugDNZgdAo9N");
-      assert.equal(servicePresenter().voiceId, "mjTSjCqHhkhULvdsy68o");
+      assert.equal(servicePresenter(date).voiceId, "mjTSjCqHhkhULvdsy68o");
     }
   }
 });

@@ -4,11 +4,12 @@ import { join, resolve } from 'node:path';
 import { prisma } from '../src/lib/prisma';
 import { command, normalizeAudio } from '../src/lib/radio/store';
 import { elevenLabsError } from '../src/lib/radio/elevenlabs';
+import { QUIET_MUSIC_PROMPT } from '../src/lib/radio/music-policy';
 const directory=resolve('artifacts/daily-schedule-20261104/music');
 const briefs=[
  ['Showroom Velvet · Daylight','Warm Rhodes piano, rounded bass, soft electronic groove, clean acoustic guitar details, 92 BPM.'],
  ['Velvet Floorplan · Panorama','Gentle felt piano, warm upright bass, brushed drums and airy restrained pads, 82 BPM.'],
- ['Showroom Satin · Boulevard','Mellow clean jazz guitar, warm electric piano, understated drums and very sparse rounded tenor sax answers, 96 BPM.'],
+ ['Showroom Satin · Boulevard','Mellow clean guitar, warm electric piano, rounded bass and very light brushed drums, 80 BPM.'],
  ['Showroom Velvet · Sunlit','Warm Rhodes, gentle bossa-influenced rhythm, acoustic guitar, rounded bass and soft shaker, 90 BPM.'],
  ['Velvet Floorplan · Café','Soft felt piano and clean guitar in a light acoustic jazz trio with brushed drums, friendly and airy, 86 BPM.'],
  ['Showroom Satin · Easy Drive','Smooth clean guitar, warm electric piano, tasteful bass groove, soft drums and subtle jazz harmonies, 98 BPM.'],
@@ -34,7 +35,7 @@ async function main(){
     const before=await balance();
     if(before<80000+estimated||spent+estimated>20000){console.log(JSON.stringify({budgetStop:true,remaining:before,reservedForNews:80000,spent}));break;}
     if(await prisma.radioAsset.count({where:{kind:{in:['music','music-candidate']}}})>=24)break;
-    const prompt=`Original complete four-minute instrumental lounge track for a welcoming car showroom. Closely related to refined lounge jazz, ambient jazz and smooth jazz. ${style} Positive, sunny, polished, unobtrusive, comfortable and quietly confident. Small tasteful changes in harmony, voicing and instrumentation throughout four minutes, a gentle middle variation, natural musical development and a clean relaxed ending. Consistent background listening volume. No singing, no spoken words, no vocal chops, no dramatic drops, no aggressive drums, no melancholy, no loud peaks or virtuoso solos.`;
+    const prompt=`Original complete four-minute instrumental lounge track for a welcoming car showroom. ${style} ${QUIET_MUSIC_PROMPT} Positive, sunny and quietly confident. Gentle harmonic changes throughout four minutes and a clean relaxed ending. No singing, spoken words or vocal chops.`;
     const model=process.env.ELEVENLABS_MUSIC_MODEL||'music_v2';
     const r=await fetch('https://api.elevenlabs.io/v1/music?output_format=mp3_44100_128',{method:'POST',headers:{'xi-api-key':process.env.ELEVENLABS_API_KEY!,'Content-Type':'application/json'},body:JSON.stringify({prompt,music_length_ms:240000,model_id:model,force_instrumental:true}),signal:AbortSignal.timeout(360000)});
     if(!r.ok){let error:unknown;try{error=await r.json();}catch{}throw elevenLabsError(r.status,error);}
