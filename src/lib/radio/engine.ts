@@ -8,7 +8,7 @@ import { prepareNews, bulletinForSlot, isRepeatSlot, usesSlotUpdates, NEWS_REFRE
 import { stationIdAsset, IMAGING_VERSION } from "./imaging";
 import { trackPlayback } from "./audit";
 import { NEWS_PLAYBACK_CODEC } from "./playback-level";
-import { QUIET_MUSIC_EXCLUDED_IDS, musicInRotation } from "./music-policy";
+import { QUIET_MUSIC_EXCLUDED_IDS, musicInRotation, musicSeason, buildMusicQueue } from "./music-policy";
 
 const FADE_SECONDS = 3;
 const NEWS_PAUSE_SECONDS = 5;
@@ -16,7 +16,7 @@ const NEWS_LEAD_MS = (FADE_SECONDS + NEWS_PAUSE_SECONDS) * 1000 + 500;
 const HOUR_MS = 3_600_000;
 const ENCODE_MP3 = ["-ar", "44100", "-ac", "2", "-c:a", "libmp3lame", "-b:a", "128k"];
 
-type Item = { id: string; title: string; duration: number; kind: string };
+type Item = { id: string; title: string; duration: number; kind: string; season?: string };
 type RadioState = {
   started: boolean; onAir: boolean; playing: Item | null; startedAt: number;
   listeners: Set<ServerResponse>; process: ChildProcess | null; revision: number;
@@ -133,11 +133,13 @@ async function nextMusic() {
     }
     state.musicQueue = state.musicQueue.filter(musicInRotation);
     if (!state.musicQueue.length) {
-      const tracks = await prisma.radioAsset.findMany({ where: { kind: "music", id: { notIn: QUIET_MUSIC_EXCLUDED_IDS } }, select: { id: true, title: true, duration: true, kind: true } });
-      // Fisher–Yates shuffle; avoid repeating the last song at a pool boundary.
-      for (let i = tracks.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [tracks[i], tracks[j]] = [tracks[j], tracks[i]]; }
-      if (tracks.length > 1 && tracks[0].id === state.lastMusicId) [tracks[0], tracks[1]] = [tracks[1], tracks[0]];
-      state.musicQueue = tracks;
+      const [tracks, recent] = await Promise.all([
+        prisma.radioAsset.findMany({ where: { kind: "music", id: { notIn: QUIET_MUSIC_EXCLUDED_IDS } }, select: { id: true, title: true, duration: true, kind: true, metadata: true } }),
+        prisma.radioPlayback.findMany({ where: { kind: "music", assetId: { not: null }, status: { in: ["playing", "completed", "interrupted"] } }, orderBy: { startedAt: "desc" }, take: 24, select: { assetId: true } }),
+      ]);
+      const history = recent.flatMap(item => item.assetId ? [item.assetId] : []);
+      if (state.lastMusicId && history[0] !== state.lastMusicId) history.unshift(state.lastMusicId);
+      state.musicQueue = buildMusicQueue(tracks.map(({ metadata, ...track }) => ({ ...track, season: musicSeason({ metadata }) })), history);
     }
     if (revision !== state.revision || state.process) return;
     const item = state.musicQueue.shift() ?? null;

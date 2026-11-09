@@ -1,0 +1,546 @@
+{
+  "humanListeningCheck": false,
+  "scope": "Full source audio assessed in contiguous one-minute clips. Conservative rejection of flagged sections; publication decisions and exact hashes below.",
+  "tracks": [
+    {
+      "id": "62445bbd-2ac3-4c58-b8b3-b0f961468d1d",
+      "sourceAssetId": "62445bbd-2ac3-4c58-b8b3-b0f961468d1d",
+      "title": "Showroom Velvet · Linen",
+      "duration": 240.039184,
+      "season": "all",
+      "version": "gentle-variety-2026-11-09",
+      "reviewedAt": "2026-11-09T14:46:43.071Z",
+      "humanListeningCheck": false,
+      "method": "Automated single-clip audio analysis covering each minute; descriptions inspected before publication",
+      "sourceSha256": "38d980bfe2a7bfef41620307663cb57dc490c57dd7562dc80541d4c9d726b864",
+      "audioSha256": "38d980bfe2a7bfef41620307663cb57dc490c57dd7562dc80541d4c9d726b864",
+      "reviewedRange": {
+        "start": 0,
+        "end": 240
+      },
+      "inRotation": false,
+      "reason": "Excluded: saxophone-like lead reported at 60–120 seconds; also inconsistent energy assessments for the ending.",
+      "sections": [
+        {
+          "id": "62445bbd-2ac3-4c58-b8b3-b0f961468d1d",
+          "title": "Showroom Velvet · Linen",
+          "sha256": "38d980bfe2a7bfef41620307663cb57dc490c57dd7562dc80541d4c9d726b864",
+          "parts": [
+            {
+              "file": "track-0-0.mp3",
+              "start": 0,
+              "duration": 60
+            }
+          ],
+          "model": "gpt-audio-1.5",
+          "assessment": {
+            "clips": [
+              {
+                "file": "track-0-0.mp3",
+                "audio_perceived": true,
+                "heard_description": "A smooth, mellow electric piano carries the melody with soft, rounded articulation. A subtle bass line and gentle ambient chords accompany it, establishing a relaxed atmosphere. The piece remains steady in dynamics with only slight shifts in harmonic texture. No prominent changes or crescendos occur over the clip.",
+                "lead_instrument": "electric piano",
+                "wind_instruments": "absent",
+                "wind_events": [],
+                "vocals": "absent",
+                "harshness_1_to_5": 1,
+                "energy_1_to_5": 1,
+                "comfortable_under_conversation": true
+              }
+            ]
+          }
+        },
+        {
+          "id": "62445bbd-2ac3-4c58-b8b3-b0f961468d1d",
+          "title": "Showroom Velvet · Linen",
+          "sha256": "38d980bfe2a7bfef41620307663cb57dc490c57dd7562dc80541d4c9d726b864",
+          "parts": [
+            {
+              "file": "track-0-60.mp3",
+              "start": 60,
+              "duration": 60
+            }
+          ],
+          "model": "gpt-audio-1.5",
+          "assessment": {
+            "clips": [
+              {
+                "file": "track-0-60.mp3",
+                "audio_perceived": true,
+                "heard_description": "The clip features a laid-back groove driven by a mellow electric piano playing jazzy chords. A smooth saxophone-like lead plays a gentle melody with legato articulation and a warm timbre. A subtle bass line underpins the harmony, and light percussion keeps a soft, steady rhythm. The melody develops modestly but remains restrained and soothing throughout the clip.",
+                "lead_instrument": "saxophone-like lead",
+                "wind_instruments": "present",
+                "wind_events": [
+                  {
+                    "seconds_into_clip": 0,
+                    "description": "A saxophone-like lead enters with a smooth, legato phrase over electric piano chords."
+                  },
+                  {
+                    "seconds_into_clip": 15,
+                    "description": "Another gentle saxophone-like phrase with a slightly higher register, maintaining the warm timbre."
+                  }
+                ],
+                "vocals": "absent",
+                "harshness_1_to_5": 1,
+                "energy_1_to_5": 2,
+                "comfortable_under_conversation": true
+              }
+            ]
+          }
+        },
+        {
+          "id": "62445bbd-2ac3-4c58-b8b3-b0f961468d1d",
+          "title": "Showroom Velvet · Linen",
+          "sha256": "38d980bfe2a7bfef41620307663cb57dc490c57dd7562dc80541d4c9d726b864",
+          "parts": [
+            {
+              "file": "track-0-120.mp3",
+              "start": 120,
+              "duration": 60
+            }
+          ],
+          "model": "gpt-audio-1.5",
+          "assessment": {
+            "clips": [
+              {
+                "file": "track-0-120.mp3",
+                "audio_perceived": true,
+                "heard_description": "The clip features a mellow electric piano-like lead melody with a soft, rounded timbre. The articulation is smooth and legato. The accompaniment includes a gentle bass line and softly played drums providing a laid-back groove. Over the duration of the clip, the melody repeats with subtle variations while maintaining a calm atmosphere.",
+                "lead_instrument": "electric piano",
+                "wind_instruments": "absent",
+                "wind_events": [],
+                "vocals": "absent",
+                "harshness_1_to_5": 1,
+                "energy_1_to_5": 2,
+                "comfortable_under_conversation": true
+              }
+            ]
+          }
+        },
+        {
+          "id": "62445bbd-2ac3-4c58-b8b3-b0f961468d1d",
+          "title": "Showroom Velvet · Linen",
+          "sha256": "38d980bfe2a7bfef41620307663cb57dc490c57dd7562dc80541d4c9d726b864",
+          "parts": [
+            {
+              "file": "track-0-180.mp3",
+              "start": 180,
+              "duration": 60
+            }
+          ],
+          "model": "gpt-audio-1.5",
+          "assessment": {
+            "clips": [
+              {
+                "file": "track-0-180.mp3",
+                "audio_perceived": true,
+                "heard_description": "The clip features a gentle piano melody with soft articulation and a warm timbre. A smooth pad-like synth provides background accompaniment. Over time, the piano melody repeats with subtle variations, and the pad supports throughout without dominating. The overall texture remains consistent and calm.",
+                "lead_instrument": "piano",
+                "wind_instruments": "absent",
+                "wind_events": [],
+                "vocals": "absent",
+                "harshness_1_to_5": 1,
+                "energy_1_to_5": 1,
+                "comfortable_under_conversation": true
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "b04fffbc-c1a6-4ac3-b0c7-391f67709801",
+      "sourceAssetId": "b04fffbc-c1a6-4ac3-b0c7-391f67709801",
+      "title": "Velvet Floorplan · Quiet Morning",
+      "duration": 240.039184,
+      "season": "all",
+      "version": "gentle-variety-2026-11-09",
+      "reviewedAt": "2026-11-09T14:46:43.475Z",
+      "humanListeningCheck": false,
+      "method": "Automated single-clip audio analysis covering each minute; descriptions inspected before publication",
+      "sourceSha256": "fb2535d2ddf79b4479ccac40357edcb93ba496ad3c91211636c8d1660447cbdd",
+      "audioSha256": "fb2535d2ddf79b4479ccac40357edcb93ba496ad3c91211636c8d1660447cbdd",
+      "reviewedRange": {
+        "start": 0,
+        "end": 240
+      },
+      "inRotation": true,
+      "reason": "Every minute analyzed individually: no winds or vocals reported; low harshness and suitable under conversation.",
+      "sections": [
+        {
+          "id": "b04fffbc-c1a6-4ac3-b0c7-391f67709801",
+          "title": "Velvet Floorplan · Quiet Morning",
+          "sha256": "fb2535d2ddf79b4479ccac40357edcb93ba496ad3c91211636c8d1660447cbdd",
+          "parts": [
+            {
+              "file": "track-1-0.mp3",
+              "start": 0,
+              "duration": 60
+            }
+          ],
+          "model": "gpt-audio-1.5",
+          "assessment": {
+            "clips": [
+              {
+                "file": "track-1-0.mp3",
+                "audio_perceived": true,
+                "heard_description": "The clip features an acoustic guitar playing the lead melody with a fingerpicking style, producing a warm, resonant timbre. The accompaniment consists of a soft bass line and light percussion, staying subtle and steady. The melody gently develops with slight variations in picking patterns over time. The overall sound is calm and relaxing.",
+                "lead_instrument": "acoustic guitar",
+                "wind_instruments": "absent",
+                "wind_events": [],
+                "vocals": "absent",
+                "harshness_1_to_5": 1,
+                "energy_1_to_5": 2,
+                "comfortable_under_conversation": true
+              }
+            ]
+          }
+        },
+        {
+          "id": "b04fffbc-c1a6-4ac3-b0c7-391f67709801",
+          "title": "Velvet Floorplan · Quiet Morning",
+          "sha256": "fb2535d2ddf79b4479ccac40357edcb93ba496ad3c91211636c8d1660447cbdd",
+          "parts": [
+            {
+              "file": "track-1-60.mp3",
+              "start": 60,
+              "duration": 60
+            }
+          ],
+          "model": "gpt-audio-1.5",
+          "assessment": {
+            "clips": [
+              {
+                "file": "track-1-60.mp3",
+                "audio_perceived": true,
+                "heard_description": "The clip features a warm electric piano playing a soft, mellow melody with legato articulation. The timbre is smooth and rounded, creating a relaxed atmosphere. Accompaniment consists of gentle bass notes and a light drum pattern with subtle cymbal taps. Over the course of the clip, the melody develops slightly with variations in phrasing but remains calm and understated.",
+                "lead_instrument": "electric piano",
+                "wind_instruments": "absent",
+                "wind_events": [],
+                "vocals": "absent",
+                "harshness_1_to_5": 2,
+                "energy_1_to_5": 2,
+                "comfortable_under_conversation": true
+              }
+            ]
+          }
+        },
+        {
+          "id": "b04fffbc-c1a6-4ac3-b0c7-391f67709801",
+          "title": "Velvet Floorplan · Quiet Morning",
+          "sha256": "fb2535d2ddf79b4479ccac40357edcb93ba496ad3c91211636c8d1660447cbdd",
+          "parts": [
+            {
+              "file": "track-1-120.mp3",
+              "start": 120,
+              "duration": 60
+            }
+          ],
+          "model": "gpt-audio-1.5",
+          "assessment": {
+            "clips": [
+              {
+                "file": "track-1-120.mp3",
+                "audio_perceived": true,
+                "heard_description": "A fingerpicked acoustic guitar provides a gentle, flowing melody with warm, resonant timbre. The articulation is smooth and legato, with soft attack. There is minimal accompaniment - the single guitar carries both melody and harmony. The piece remains consistent without significant dynamic changes, maintaining a calm, steady pace.",
+                "lead_instrument": "acoustic guitar",
+                "wind_instruments": "absent",
+                "wind_events": [],
+                "vocals": "absent",
+                "harshness_1_to_5": 1,
+                "energy_1_to_5": 1,
+                "comfortable_under_conversation": true
+              }
+            ]
+          }
+        },
+        {
+          "id": "b04fffbc-c1a6-4ac3-b0c7-391f67709801",
+          "title": "Velvet Floorplan · Quiet Morning",
+          "sha256": "fb2535d2ddf79b4479ccac40357edcb93ba496ad3c91211636c8d1660447cbdd",
+          "parts": [
+            {
+              "file": "track-1-180.mp3",
+              "start": 180,
+              "duration": 60
+            }
+          ],
+          "model": "gpt-audio-1.5",
+          "assessment": {
+            "clips": [
+              {
+                "file": "track-1-180.mp3",
+                "audio_perceived": true,
+                "heard_description": "A mellow steel-string acoustic guitar plays the lead melody with clear, plucked articulation and a warm timbre. The accompaniment consists of soft rhythmic strumming from another acoustic guitar, creating a gentle, consistent backdrop. Over the course of the clip, the lead guitar phrases subtly vary melodically while maintaining a relaxed flow. No distinct brass or woodwind instruments are audible. The overall sound remains consistent, with no major changes in instrumentation.",
+                "lead_instrument": "acoustic guitar",
+                "wind_instruments": "absent",
+                "wind_events": [],
+                "vocals": "absent",
+                "harshness_1_to_5": 1,
+                "energy_1_to_5": 2,
+                "comfortable_under_conversation": true
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "4b6608b3-ab3d-4654-8e8e-b90bc296eeca",
+      "sourceAssetId": "d21e0fd7-ce26-4a3b-9990-cc1a1203c94a",
+      "title": "Showroom Velvet · Amber",
+      "duration": 180,
+      "season": "all",
+      "version": "gentle-variety-2026-11-09",
+      "reviewedAt": "2026-11-09T14:46:51.736Z",
+      "humanListeningCheck": false,
+      "method": "Automated single-clip audio analysis covering each minute; descriptions inspected before publication",
+      "sourceSha256": "bbe16b49005f8d53ce798a1ec2f57e98b961e093bf9276c89f0b1c062dcca22c",
+      "audioSha256": "5aacbb4185bb96c00f0a30c716712ed52ba1b1560362ab42d3a90be6cf8a7547",
+      "reviewedRange": {
+        "start": 0,
+        "end": 180
+      },
+      "inRotation": true,
+      "reason": "Use only the first three minutes with a six-second fade-out. An initial multi-clip assessment flagged the final minute as too energetic; this contradicted a later single-clip assessment, so the disputed ending is omitted conservatively.",
+      "sections": [
+        {
+          "id": "d21e0fd7-ce26-4a3b-9990-cc1a1203c94a",
+          "title": "Showroom Velvet · Amber",
+          "sha256": "bbe16b49005f8d53ce798a1ec2f57e98b961e093bf9276c89f0b1c062dcca22c",
+          "parts": [
+            {
+              "file": "track-2-0.mp3",
+              "start": 0,
+              "duration": 60
+            }
+          ],
+          "model": "gpt-audio-1.5",
+          "assessment": {
+            "clips": [
+              {
+                "file": "track-2-0.mp3",
+                "audio_perceived": true,
+                "heard_description": "The clip features a synthesized lead melody with a smooth, rounded timbre and legato articulation. Underneath, there's a steady electronic beat with soft percussion and warm pad chords filling out the harmony. The arrangement develops with subtle variations in the synth layers but remains consistent throughout the clip.",
+                "lead_instrument": "synth lead",
+                "wind_instruments": "absent",
+                "wind_events": [],
+                "vocals": "absent",
+                "harshness_1_to_5": 2,
+                "energy_1_to_5": 2,
+                "comfortable_under_conversation": true
+              }
+            ]
+          }
+        },
+        {
+          "id": "d21e0fd7-ce26-4a3b-9990-cc1a1203c94a",
+          "title": "Showroom Velvet · Amber",
+          "sha256": "bbe16b49005f8d53ce798a1ec2f57e98b961e093bf9276c89f0b1c062dcca22c",
+          "parts": [
+            {
+              "file": "track-2-60.mp3",
+              "start": 60,
+              "duration": 60
+            }
+          ],
+          "model": "gpt-audio-1.5",
+          "assessment": {
+            "clips": [
+              {
+                "file": "track-2-60.mp3",
+                "audio_perceived": true,
+                "heard_description": "A gentle acoustic guitar strumming provides the main texture, with a soft melodic line played on what sounds like a warm electric piano. The articulation of the melody is smooth and legato, giving a mellow character. The accompaniment remains understated, mainly steady guitar underpinning, with subtle bass and light percussion developing gradually but never dominating. The piece maintains a consistent calm mood throughout, without sudden bursts or solos.",
+                "lead_instrument": "electric piano",
+                "wind_instruments": "absent",
+                "wind_events": [],
+                "vocals": "absent",
+                "harshness_1_to_5": 1,
+                "energy_1_to_5": 2,
+                "comfortable_under_conversation": true
+              }
+            ]
+          }
+        },
+        {
+          "id": "d21e0fd7-ce26-4a3b-9990-cc1a1203c94a",
+          "title": "Showroom Velvet · Amber",
+          "sha256": "bbe16b49005f8d53ce798a1ec2f57e98b961e093bf9276c89f0b1c062dcca22c",
+          "parts": [
+            {
+              "file": "track-2-120.mp3",
+              "start": 120,
+              "duration": 60
+            }
+          ],
+          "model": "gpt-audio-1.5",
+          "assessment": {
+            "clips": [
+              {
+                "file": "track-2-120.mp3",
+                "audio_perceived": true,
+                "heard_description": "A steady electronic beat with a warm synth pad forms the backdrop. A soft, rounded synth lead carries the main melody with gentle articulation and a mellow timbre. The accompaniment consists of light rhythmic elements and a subtle bass line, maintaining a consistent feel throughout the clip. The development is minimal, staying true to a smooth and laid-back electronic groove.",
+                "lead_instrument": "soft synth lead",
+                "wind_instruments": "absent",
+                "wind_events": [],
+                "vocals": "absent",
+                "harshness_1_to_5": 1,
+                "energy_1_to_5": 2,
+                "comfortable_under_conversation": true
+              }
+            ]
+          }
+        }
+      ],
+      "conflictingPreliminaryAssessment": {
+        "file": "track-2-180.mp3",
+        "audio_perceived": true,
+        "heard_description": "The lead is a bright, plucked synth line that stands out with a slightly sharper attack. The accompaniment consists of a more active rhythm section with pronounced percussion, driving bass, and layered harmonic pads. Throughout, the piece becomes rhythmically busier and more energetic, while the lead occasionally adds some trills and quick flourishes.",
+        "lead_instrument": "plucked synth",
+        "wind_instruments": "absent",
+        "wind_events": [],
+        "vocals": "absent",
+        "harshness_1_to_5": 2,
+        "energy_1_to_5": 4,
+        "comfortable_under_conversation": false
+      }
+    },
+    {
+      "id": "f294927f-c5ef-4b88-bff5-c260531a6fe5",
+      "sourceAssetId": "f294927f-c5ef-4b88-bff5-c260531a6fe5",
+      "title": "Winterlicht · Leise Flocken",
+      "duration": 240.039184,
+      "season": "winter",
+      "version": "gentle-variety-2026-11-09",
+      "reviewedAt": "2026-11-09T14:46:52.138Z",
+      "humanListeningCheck": false,
+      "method": "Automated single-clip audio analysis covering each minute; descriptions inspected before publication",
+      "sourceSha256": "99ae75e46c3b1771991cfc6d9042927c7579951ee6db9b544b8cb31d5070c919",
+      "audioSha256": "99ae75e46c3b1771991cfc6d9042927c7579951ee6db9b544b8cb31d5070c919",
+      "reviewedRange": {
+        "start": 0,
+        "end": 240
+      },
+      "inRotation": true,
+      "reason": "Every minute analyzed individually: no winds or vocals reported; low harshness and suitable under conversation.",
+      "sections": [
+        {
+          "id": "f294927f-c5ef-4b88-bff5-c260531a6fe5",
+          "title": "Winterlicht · Leise Flocken",
+          "sha256": "99ae75e46c3b1771991cfc6d9042927c7579951ee6db9b544b8cb31d5070c919",
+          "parts": [
+            {
+              "file": "track-3-0.mp3",
+              "start": 0,
+              "duration": 60
+            }
+          ],
+          "model": "gpt-audio-1.5",
+          "assessment": {
+            "clips": [
+              {
+                "file": "track-3-0.mp3",
+                "audio_perceived": true,
+                "heard_description": "The clip features a gentle piano melody played with a soft touch, each note articulated clearly and with a warm, mellow timbre. The accompaniment is minimal, consisting of spaced chords that support the melody without overwhelming it. There is little development in instrumentation; the piano remains consistent throughout, creating a calm, reflective atmosphere.",
+                "lead_instrument": "piano",
+                "wind_instruments": "absent",
+                "wind_events": [],
+                "vocals": "absent",
+                "harshness_1_to_5": 1,
+                "energy_1_to_5": 1,
+                "comfortable_under_conversation": true
+              }
+            ]
+          }
+        },
+        {
+          "id": "f294927f-c5ef-4b88-bff5-c260531a6fe5",
+          "title": "Winterlicht · Leise Flocken",
+          "sha256": "99ae75e46c3b1771991cfc6d9042927c7579951ee6db9b544b8cb31d5070c919",
+          "parts": [
+            {
+              "file": "track-3-60.mp3",
+              "start": 60,
+              "duration": 60
+            }
+          ],
+          "model": "gpt-audio-1.5",
+          "assessment": {
+            "clips": [
+              {
+                "file": "track-3-60.mp3",
+                "audio_perceived": true,
+                "heard_description": "A gentle acoustic guitar carries the melody with soft fingerpicked articulation, accompanied by a subtle bass line. The timbre is warm and mellow, with the guitar notes ringing lightly. The piece remains consistent throughout, with slight dynamic swells but no major changes. There are no additional prominent instruments.",
+                "lead_instrument": "acoustic guitar",
+                "wind_instruments": "absent",
+                "wind_events": [],
+                "vocals": "absent",
+                "harshness_1_to_5": 1,
+                "energy_1_to_5": 2,
+                "comfortable_under_conversation": true
+              }
+            ]
+          }
+        },
+        {
+          "id": "f294927f-c5ef-4b88-bff5-c260531a6fe5",
+          "title": "Winterlicht · Leise Flocken",
+          "sha256": "99ae75e46c3b1771991cfc6d9042927c7579951ee6db9b544b8cb31d5070c919",
+          "parts": [
+            {
+              "file": "track-3-120.mp3",
+              "start": 120,
+              "duration": 60
+            }
+          ],
+          "model": "gpt-audio-1.5",
+          "assessment": {
+            "clips": [
+              {
+                "file": "track-3-120.mp3",
+                "audio_perceived": true,
+                "heard_description": "A soft, gentle arrangement featuring a piano carrying a flowing, legato melody. The timbre of the piano is warm and mellow, with subtle dynamics. The accompaniment consists of soft strings that swell underneath, providing a smooth harmonic backdrop without rhythmic drive. The development remains consistent throughout, with the piano leading and strings supporting, creating a calm, soothing atmosphere.",
+                "lead_instrument": "piano",
+                "wind_instruments": "absent",
+                "wind_events": [],
+                "vocals": "absent",
+                "harshness_1_to_5": 1,
+                "energy_1_to_5": 1,
+                "comfortable_under_conversation": true
+              }
+            ]
+          }
+        },
+        {
+          "id": "f294927f-c5ef-4b88-bff5-c260531a6fe5",
+          "title": "Winterlicht · Leise Flocken",
+          "sha256": "99ae75e46c3b1771991cfc6d9042927c7579951ee6db9b544b8cb31d5070c919",
+          "parts": [
+            {
+              "file": "track-3-180.mp3",
+              "start": 180,
+              "duration": 60
+            }
+          ],
+          "model": "gpt-audio-1.5",
+          "assessment": {
+            "clips": [
+              {
+                "file": "track-3-180.mp3",
+                "audio_perceived": true,
+                "heard_description": "The clip features a soft, smooth lead instrument with a mellow timbre playing a gentle melody. The articulation is legato, giving a flowing feel. The accompaniment consists of warm synth pads and gentle electronic percussion. Over the course of the clip, the melody repeats with slight variations while the accompaniment maintains a consistent, tranquil background.",
+                "lead_instrument": "synth lead",
+                "wind_instruments": "absent",
+                "wind_events": [],
+                "vocals": "absent",
+                "harshness_1_to_5": 1,
+                "energy_1_to_5": 2,
+                "comfortable_under_conversation": true
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

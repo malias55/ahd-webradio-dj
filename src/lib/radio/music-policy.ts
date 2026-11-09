@@ -13,6 +13,46 @@ export const QUIET_MUSIC_EXCLUDED_IDS = [
 
 export const QUIET_MUSIC_PROMPT = "Very gentle, soft, unobtrusive background music, comfortable under conversation. Use only warm piano or Rhodes, soft clean or nylon-string guitar, rounded bass, restrained pads and very light brushed percussion. No wind instruments of any kind: no trumpet, saxophone, trombone, horns, brass, flute, clarinet, reeds, breathy wind leads or synthetic brass sounds. No prominent solos, piercing high notes, sharp attacks, busy fills, loud drums, dramatic swells or sudden changes in volume. Keep the arrangement sparse, warm and easy on the ear throughout.";
 
-export function musicInRotation(asset: { id: string; kind: string }) {
-  return asset.kind === "music" && !QUIET_MUSIC_EXCLUDED_IDS.includes(asset.id);
+export type RotationTrack = { id: string; kind: string; season?: string; metadata?: unknown };
+
+export function musicSeason(asset: Pick<RotationTrack, "season" | "metadata">) {
+  const metadata = asset.metadata && typeof asset.metadata === "object" ? asset.metadata as { season?: unknown } : null;
+  return asset.season === "winter" || metadata?.season === "winter" ? "winter" : "all";
+}
+
+export function musicAvailableAt(asset: RotationTrack, date: Date) {
+  if (asset.kind !== "music" || QUIET_MUSIC_EXCLUDED_IDS.includes(asset.id)) return false;
+  if (musicSeason(asset) !== "winter") return true;
+  const month = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Berlin", month: "numeric" }).format(date));
+  return [11, 12, 1, 2].includes(month);
+}
+
+export function musicInRotation(asset: RotationTrack) {
+  return musicAvailableAt(asset, new Date());
+}
+
+// Each pool plays once before a new round. The last half of the pool stays out
+// of the next choices across round boundaries and restarts. History is newest
+// first and comes from actual server playbacks, not just an in-memory shuffle.
+export function buildMusicQueue<T extends RotationTrack>(tracks: T[], recentIds: string[], date = new Date(), random = Math.random): T[] {
+  const remaining = [...new Map(tracks.filter(track => musicAvailableAt(track, date)).map(track => [track.id, track])).values()];
+  const activeIds = new Set(remaining.map(track => track.id));
+  const winterIds = new Set(remaining.filter(track => musicSeason(track) === "winter").map(track => track.id));
+  const history = recentIds.filter(id => activeIds.has(id));
+  const cooldown = Math.floor(remaining.length / 2);
+  const queue: T[] = [];
+  while (remaining.length) {
+    const recent = new Set(history.slice(0, cooldown));
+    const eligible = remaining.filter(track => !recent.has(track.id));
+    let choices = eligible.length ? eligible : remaining;
+    // Seasonal pieces are occasional accents, with at least two ordinary
+    // pieces between them whenever the remaining pool permits it.
+    const spaced = choices.filter(track => !winterIds.has(track.id) || !history.slice(0, 2).some(id => winterIds.has(id)));
+    if (spaced.length) choices = spaced;
+    const track = choices[Math.min(choices.length - 1, Math.max(0, Math.floor(random() * choices.length)))];
+    queue.push(track);
+    history.unshift(track.id);
+    remaining.splice(remaining.findIndex(item => item.id === track.id), 1);
+  }
+  return queue;
 }
