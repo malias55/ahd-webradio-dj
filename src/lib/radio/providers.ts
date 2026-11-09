@@ -3,7 +3,7 @@ import { QUIET_MUSIC_PROMPT } from "./music-policy";
 import { assertFamilyContent } from "./family";
 import { speechText } from "./pronunciation";
 import { prisma } from "../prisma";
-import { normalizeAudio, withJob } from "./store";
+import { normalizeMusic, withJob } from "./store";
 import { stationTime } from "./config";
 import { elevenLabsError } from "./elevenlabs";
 
@@ -20,7 +20,8 @@ export function servicePresenter(slot = new Date()) {
 }
 
 export function composeMusic(prompt: string, seconds: number) {
-  return eleven("/v1/music?output_format=mp3_44100_128", {
+  // The provider's native default is 192 kbit/s at 48 kHz for Music v2.
+  return eleven("/v1/music?output_format=auto", {
     prompt, music_length_ms: Math.round(seconds * 1000), model_id: process.env.ELEVENLABS_MUSIC_MODEL || "music_v2", force_instrumental: true,
   }, 360_000);
 }
@@ -86,9 +87,9 @@ export async function speech(text: string, voiceId: string, language: "de" | "tr
 export { editorialJson as edenJson, newsModelConfig, editorialConfigured, type ModelCall } from "./models";
 
 export const MUSIC_STYLES = [
-  { title: "Showroom Velvet", prompt: "Refined instrumental lounge for a welcoming car showroom. Warm Rhodes piano, soft electronic groove, tasteful jazz harmonies, rounded bass, brushed percussion, 92 BPM. Elegant, optimistic and relaxed. No vocals, no dramatic drops, no aggressive drums." },
-  { title: "Velvet Floorplan", prompt: "Airy instrumental ambient jazz for a premium car showroom. Gentle felt piano, warm acoustic bass, soft brushes, subtle atmospheric pads, 82 BPM. Bright, comfortable and unobtrusive, quietly confident. No vocals, no melancholy, no dramatic tension." },
-  { title: "Showroom Satin", prompt: "Sophisticated instrumental smooth jazz for a friendly car showroom. Mellow clean guitar, warm electric piano, tasteful bass and understated drums, 98 BPM. Positive, sunny and polished. No vocals, no solo virtuosity, no loud peaks." },
+  { title: "Showroom Velvet", prompt: "Refined drumless instrumental lounge for a welcoming car showroom. Warm Rhodes piano with soft rounded attacks, spacious major ninth harmonies and quiet sustained bass. Relaxed flowing phrasing around 72 BPM, without a beat or a bass pulse. Elegant, quietly optimistic and comfortable." },
+  { title: "Velvet Floorplan", prompt: "Airy drumless acoustic lounge for a premium car showroom. Gentle felt piano, soft fingerpicked nylon guitar, occasional warm bass notes. Spacious major harmonies around 70 BPM with subtle melodic variation. Bright, welcoming and unobtrusive, with no dramatic tension or rhythmic accents." },
+  { title: "Showroom Satin", prompt: "Soft drumless instrumental lounge for a friendly car showroom. Mellow nylon guitar, warm electric piano and sparse sustained bass around 76 BPM. Restrained, sunny and polished. Sparse middle-register phrases with rounded attacks, no featured solos or recurring percussive accents." },
 ];
 
 export async function generateMusic() {
@@ -102,10 +103,8 @@ export async function generateMusic() {
     const key = `music:${batch}:${i}`;
     await withJob(key, async () => {
       if (await prisma.radioAsset.findUnique({ where: { key }, select: { id: true } })) return;
-      const raw = await eleven("/v1/music?output_format=mp3_44100_128", {
-        prompt: `${style.prompt} ${QUIET_MUSIC_PROMPT}`, music_length_ms: 180_000, model_id: process.env.ELEVENLABS_MUSIC_MODEL || "music_v2", force_instrumental: true,
-      }, 360_000);
-      const audio = await normalizeAudio(raw, 240);
+      const raw = await composeMusic(`${style.prompt} ${QUIET_MUSIC_PROMPT}`, 180);
+      const audio = await normalizeMusic(raw, 240);
       await prisma.radioAsset.create({ data: { key, kind: "music", title: `${style.title} ${batch + 1}`, ...audio, metadata: { prompt: `${style.prompt} ${QUIET_MUSIC_PROMPT}`, generated: true } } });
     });
   }

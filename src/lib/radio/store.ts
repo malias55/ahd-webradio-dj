@@ -17,13 +17,23 @@ export async function command(binary: string, args: string[], timeout = 120_000)
 }
 
 export async function normalizeAudio(input: Buffer, maxDuration = 600) {
+  return normalize(input, maxDuration, "128k");
+}
+
+// Music keeps more detail through loudness normalization than speech. This
+// avoids another 128 kbit/s encode; it cannot restore an already lossy source.
+export async function normalizeMusic(input: Buffer, maxDuration = 600) {
+  return normalize(input, maxDuration, "256k");
+}
+
+async function normalize(input: Buffer, maxDuration: number, bitrate: string) {
   const dir = await mkdtemp(join(tmpdir(), "ahd-audio-"));
   try {
     const src = join(dir, "input"), dst = join(dir, "output.mp3");
     await writeFile(src, input);
     await command(process.env.FFMPEG_PATH || "ffmpeg", ["-v", "error", "-nostdin", "-i", src,
       "-t", String(maxDuration), "-vn", "-af", "loudnorm=I=-18:TP=-2:LRA=9",
-      "-ar", "44100", "-ac", "2", "-c:a", "libmp3lame", "-b:a", "128k", "-y", dst]);
+      "-ar", "44100", "-ac", "2", "-c:a", "libmp3lame", "-b:a", bitrate, "-y", dst]);
     const duration = Number(await command(process.env.FFPROBE_PATH || "ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", dst]));
     if (!Number.isFinite(duration) || duration < 1) throw new Error("Invalid generated audio");
     return { audio: await readFile(dst), duration };

@@ -1,0 +1,791 @@
+{
+  "date": "2026-11-09",
+  "method": "Actual audio analyzed by gpt-audio-1.5 in contiguous one-minute segments, plus user judgement; not human listening. Classifications remain fallible.",
+  "userRejected": "Showroom Velvet · Daylight: hard beat. Already disabled before this review.",
+  "decisions": [
+    {
+      "id": "fec08a42-c91b-4850-b84c-328a45d1235a",
+      "title": "Showroom Velvet 1",
+      "enabled": false,
+      "sha256": "25f8a8a46866dc21ed4f2b5519c63c7ddb833ac988cd53a9361cdb60ad72891a"
+    },
+    {
+      "id": "413569f1-dbeb-4451-8bae-e7ea7df3ff26",
+      "title": "Showroom Velvet · Daylight",
+      "enabled": false,
+      "sha256": "c581d7ed517311da2f2f5f4ba27ca224be4a0a44ef7291f09cf13a8c4e582016"
+    },
+    {
+      "id": "8267380a-c242-4563-a7c7-0cb215332bec",
+      "title": "Velvet Floorplan · Panorama",
+      "enabled": false,
+      "sha256": "70edc26dc9995b335ce77bb7dd8c16c03f2c8d7b5a593d5551781dd4deaf7336"
+    },
+    {
+      "id": "f312e92e-f858-436e-b441-e82923a945db",
+      "title": "Velvet Floorplan · Café",
+      "enabled": false,
+      "sha256": "8eb93c1453a9c874520d09bf91d372f872c95c35608a74872fe549ce59b34bc2"
+    },
+    {
+      "id": "4fbcaf43-9c3e-4746-a18e-9beeedea467c",
+      "title": "Showroom Velvet · Soft Light",
+      "enabled": true,
+      "sha256": "87628ae148c77e6d84d7234b1bc0441fb30c6cd7fe70a7ae834ff14811831f9e"
+    },
+    {
+      "id": "ac1bb869-b174-42c8-b6f9-d1ae7b03d350",
+      "title": "Velvet Floorplan · Still Air",
+      "enabled": true,
+      "sha256": "bf5c0b1d0d99c1b4ef0237bc99068e6671fce41f95d5a92d6b0ff7bf0ee7411f"
+    }
+  ],
+  "active": [
+    {
+      "id": "4fbcaf43-9c3e-4746-a18e-9beeedea467c",
+      "title": "Showroom Velvet · Soft Light",
+      "duration": 240.024014
+    },
+    {
+      "id": "ac1bb869-b174-42c8-b6f9-d1ae7b03d350",
+      "title": "Velvet Floorplan · Still Air",
+      "duration": 240.024014
+    },
+    {
+      "id": "b04fffbc-c1a6-4ac3-b0c7-391f67709801",
+      "title": "Velvet Floorplan · Quiet Morning",
+      "duration": 240.039184
+    },
+    {
+      "id": "4b6608b3-ab3d-4654-8e8e-b90bc296eeca",
+      "title": "Showroom Velvet · Amber",
+      "duration": 180
+    },
+    {
+      "id": "f294927f-c5ef-4b88-bff5-c260531a6fe5",
+      "title": "Winterlicht · Leise Flocken",
+      "duration": 240.039184
+    }
+  ],
+  "coverage": [
+    {
+      "id": "fec08a42-c91b-4850-b84c-328a45d1235a",
+      "title": "Showroom Velvet 1",
+      "sha256": "25f8a8a46866dc21ed4f2b5519c63c7ddb833ac988cd53a9361cdb60ad72891a",
+      "start": 0,
+      "assessment": {
+        "file": "clip-0-0.mp3",
+        "audio_perceived": true,
+        "heard_description": "A soft lounge piece featuring a gentle electric piano with subtle chords, a faint consistent kick pulse, a laid-back snare or clap, and light hi-hat ticks. The arrangement remains calm and steady throughout, without major changes.",
+        "instruments": "electric piano, subtle kick, soft snare/clap, light hi-hat",
+        "rhythm_description": "a steady, subdued beat with soft kick pulses, gentle snare/claps on the backbeat, and light ticking hi-hats, maintaining a relaxed groove",
+        "beat_prominence_1_to_5": 2,
+        "attack_harshness_1_to_5": 2,
+        "wind_instruments": "absent",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "The beat and instrumentation are subdued and unobtrusive, with no harsh attacks or prominent elements, making it suitable for light background use."
+      }
+    },
+    {
+      "id": "fec08a42-c91b-4850-b84c-328a45d1235a",
+      "title": "Showroom Velvet 1",
+      "sha256": "25f8a8a46866dc21ed4f2b5519c63c7ddb833ac988cd53a9361cdb60ad72891a",
+      "start": 60,
+      "assessment": {
+        "file": "clip-0-60.mp3",
+        "audio_perceived": true,
+        "heard_description": "A gentle instrumental piece with soft piano chords and subtle electronic elements throughout. There is a faint rhythmic pattern with light hi-hat-like ticks and a subdued bass pulse. No sharp or brittle elements are prominent.",
+        "instruments": "soft piano, subtle electronic textures, faint hi-hat ticks, subdued bass",
+        "rhythm_description": "A mild repetitive beat with faint hi-hat ticks and a soft bass pulse. No strong kick or snare/clap is present.",
+        "beat_prominence_1_to_5": 1,
+        "attack_harshness_1_to_5": 1,
+        "wind_instruments": "absent",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "The overall sound is unobtrusive, with a gentle arrangement and no prominent beat or wind instruments, making it suitable for soft background music."
+      }
+    },
+    {
+      "id": "fec08a42-c91b-4850-b84c-328a45d1235a",
+      "title": "Showroom Velvet 1",
+      "sha256": "25f8a8a46866dc21ed4f2b5519c63c7ddb833ac988cd53a9361cdb60ad72891a",
+      "start": 120,
+      "assessment": {
+        "file": "clip-0-120.mp3",
+        "audio_perceived": true,
+        "heard_description": "A soft, mellow arrangement with gentle keyboard tones, subtle bass presence, and a discreet, light percussion pattern. The overall sound remains smooth and unobtrusive throughout with no abrupt changes.",
+        "instruments": "soft electric piano or synth pad, subtle bass, light percussion",
+        "rhythm_description": "A very subtle and repetitive percussion pattern with a quiet kick pulse and faint hi-hat-like ticks, barely noticeable yet present.",
+        "beat_prominence_1_to_5": 1,
+        "attack_harshness_1_to_5": 1,
+        "wind_instruments": "absent",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "The instruments and percussion are very gentle and unobtrusive, providing a consistent soft ambiance suitable for background use without drawing attention."
+      }
+    },
+    {
+      "id": "413569f1-dbeb-4451-8bae-e7ea7df3ff26",
+      "title": "Showroom Velvet · Daylight",
+      "sha256": "c581d7ed517311da2f2f5f4ba27ca224be4a0a44ef7291f09cf13a8c4e582016",
+      "start": 0,
+      "assessment": {
+        "file": "clip-1-0.mp3",
+        "audio_perceived": true,
+        "heard_description": "A smooth lounge-style arrangement with electric piano chords, subtle bass line, light percussion and gentle melodic elements. The track remains consistent throughout with no sudden changes.",
+        "instruments": "electric piano, bass, light percussion (hi-hat/shaker), soft synth pad",
+        "rhythm_description": "A gentle, repetitive groove with a soft hi-hat pattern and subtle bass pulse. No prominent kick or snare; the beat feels laid-back.",
+        "beat_prominence_1_to_5": 1,
+        "attack_harshness_1_to_5": 1,
+        "wind_instruments": "absent",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "The beat and instrumentation are soft and unobtrusive, making it well-suited for background use."
+      }
+    },
+    {
+      "id": "413569f1-dbeb-4451-8bae-e7ea7df3ff26",
+      "title": "Showroom Velvet · Daylight",
+      "sha256": "c581d7ed517311da2f2f5f4ba27ca224be4a0a44ef7291f09cf13a8c4e582016",
+      "start": 60,
+      "assessment": {
+        "file": "clip-1-60.mp3",
+        "audio_perceived": true,
+        "heard_description": "A gentle arrangement with soft electric piano chords and light percussion elements recurring throughout. The percussion includes subtle hi-hat ticks and a faint, mellow kick. The instrumentation remains consistent without major changes.",
+        "instruments": "electric piano, light percussion",
+        "rhythm_description": "There is a subtle repetitive pattern featuring faint kick thumps and gentle hi-hat ticks. No snare or clap is prominent; the beat feels subdued and consistent.",
+        "beat_prominence_1_to_5": 2,
+        "attack_harshness_1_to_5": 2,
+        "wind_instruments": "absent",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "The track is mellow with minimal percussion presence and no prominent beats or wind instruments, making it unobtrusive for background use."
+      }
+    },
+    {
+      "id": "413569f1-dbeb-4451-8bae-e7ea7df3ff26",
+      "title": "Showroom Velvet · Daylight",
+      "sha256": "c581d7ed517311da2f2f5f4ba27ca224be4a0a44ef7291f09cf13a8c4e582016",
+      "start": 120,
+      "assessment": {
+        "file": "clip-1-120.mp3",
+        "audio_perceived": true,
+        "heard_description": "A soft piano-driven melody plays throughout, accompanied by gentle electric bass and light hi-hat ticks. There is a subtle kick thump on every measure and a faint snare or clap on alternating beats. The arrangement remains consistent without dramatic changes.",
+        "instruments": "piano, electric bass, kick drum, snare/clap, hi-hat",
+        "rhythm_description": "A steady, subdued beat with a soft kick on each bar and occasional snare/clap; hi-hat ticks add a subtle rhythmic texture.",
+        "beat_prominence_1_to_5": 2,
+        "attack_harshness_1_to_5": 2,
+        "wind_instruments": "absent",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "The beat is subtle and unobtrusive, instrumentation is gentle with no harsh attacks or wind instruments, making it suitable for quiet background use."
+      }
+    },
+    {
+      "id": "413569f1-dbeb-4451-8bae-e7ea7df3ff26",
+      "title": "Showroom Velvet · Daylight",
+      "sha256": "c581d7ed517311da2f2f5f4ba27ca224be4a0a44ef7291f09cf13a8c4e582016",
+      "start": 180,
+      "assessment": {
+        "file": "clip-1-180.mp3",
+        "audio_perceived": true,
+        "heard_description": "A gentle arrangement featuring a soft electric piano tone with subtle background chords. There is a faint rhythmic pulse from a light kick and occasional snare-like sound, along with a quiet hi-hat tick. No prominent melodic leads, and no distortion or artifacts are noticeable.",
+        "instruments": "soft electric piano, very subtle kick drum, faint snare/clap, quiet hi-hat",
+        "rhythm_description": "Light, repetitive beat with a gentle kick pulse and subdued snare/hi-hat pattern.",
+        "beat_prominence_1_to_5": 2,
+        "attack_harshness_1_to_5": 1,
+        "wind_instruments": "absent",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "The arrangement is gentle and unobtrusive with a low prominence beat and no harsh attacks."
+      }
+    },
+    {
+      "id": "8267380a-c242-4563-a7c7-0cb215332bec",
+      "title": "Velvet Floorplan · Panorama",
+      "sha256": "70edc26dc9995b335ce77bb7dd8c16c03f2c8d7b5a593d5551781dd4deaf7336",
+      "start": 0,
+      "assessment": {
+        "file": "clip-2-0.mp3",
+        "audio_perceived": true,
+        "heard_description": "A gentle blend of soft electric piano tones and smooth bass, with subtle percussion including a muted kick and light hi-hat. The arrangement remains consistent without abrupt changes.",
+        "instruments": "electric piano, bass, light percussion (kick, hi-hat)",
+        "rhythm_description": "Slow, steady pattern with a muted kick pulse and soft hi-hat ticking quietly throughout.",
+        "beat_prominence_1_to_5": 2,
+        "attack_harshness_1_to_5": 2,
+        "wind_instruments": "absent",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "The beat is unobtrusive and the instrumentation is mellow, making it suitable for quiet background listening."
+      }
+    },
+    {
+      "id": "8267380a-c242-4563-a7c7-0cb215332bec",
+      "title": "Velvet Floorplan · Panorama",
+      "sha256": "70edc26dc9995b335ce77bb7dd8c16c03f2c8d7b5a593d5551781dd4deaf7336",
+      "start": 60,
+      "assessment": {
+        "file": "clip-2-60.mp3",
+        "audio_perceived": true,
+        "heard_description": "A gentle track featuring a soft electric piano-like instrument carrying the melody. There is a subtle, muted kick thump and a faint bass pulse, along with a light hi-hat tick. The overall sound remains mellow and consistent with minimal dynamic changes.",
+        "instruments": "soft electric piano-like lead, muted kick, faint bass, light hi-hat tick",
+        "rhythm_description": "The rhythm is steady and understated, with a low-volume kick providing a gentle pulse and the hi-hat ticking lightly in the background. The bass supports the harmonic structure, but all elements remain subdued.",
+        "beat_prominence_1_to_5": 2,
+        "attack_harshness_1_to_5": 2,
+        "wind_instruments": "absent",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "The instrumentation and rhythm are subtle and unobtrusive, making it appropriate for quiet background settings with no prominent beats or harsh attacks."
+      }
+    },
+    {
+      "id": "8267380a-c242-4563-a7c7-0cb215332bec",
+      "title": "Velvet Floorplan · Panorama",
+      "sha256": "70edc26dc9995b335ce77bb7dd8c16c03f2c8d7b5a593d5551781dd4deaf7336",
+      "start": 120,
+      "assessment": {
+        "file": "clip-2-120.mp3",
+        "audio_perceived": true,
+        "heard_description": "A soft arrangement featuring gentle keyboard tones and a subdued rhythmic pattern. The background includes light hi-hat ticks and a faint bass pulse, with occasional soft snare/clap sounds. There is a consistent repetition of the beat throughout, but it remains mellow. The lead elements are smooth and not brittle, and no wind instruments are audible.",
+        "instruments": "keyboard/piano-like tones, light hi-hat ticks, faint bass, subtle snare/clap",
+        "rhythm_description": "A repetitive, gentle beat with quiet hi-hat ticks, low bass pulse, and soft snare/clap hits maintaining a steady rhythmic pattern.",
+        "beat_prominence_1_to_5": 2,
+        "attack_harshness_1_to_5": 2,
+        "wind_instruments": "absent",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "The instrumentation and rhythm are subdued and unobtrusive, with no prominent beat or harsh attacks that would interfere with quiet conversation."
+      }
+    },
+    {
+      "id": "8267380a-c242-4563-a7c7-0cb215332bec",
+      "title": "Velvet Floorplan · Panorama",
+      "sha256": "70edc26dc9995b335ce77bb7dd8c16c03f2c8d7b5a593d5551781dd4deaf7336",
+      "start": 180,
+      "assessment": {
+        "file": "clip-2-180.mp3",
+        "audio_perceived": true,
+        "heard_description": "The audio features a gentle arrangement with a soft, steady rhythm. There's a light keyboard or piano-like instrument providing melodic content, and subtle percussive elements like a restrained hi-hat tick and faint snare or clap. The overall texture is smooth and cohesive, with no noticeable distortion or warbling.",
+        "instruments": "soft piano/keyboard leads, subtle percussion including hi-hat ticks and faint snare/clap, mild bass presence",
+        "rhythm_description": "A repetitive, subdued beat with quiet hi-hat ticks and a faint snare/clap pattern. The rhythm is consistent but very low in prominence.",
+        "beat_prominence_1_to_5": 2,
+        "attack_harshness_1_to_5": 2,
+        "wind_instruments": "absent",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "The overall sound is unobtrusive with a gentle beat and no prominent instruments that would interfere with quiet conversation."
+      }
+    },
+    {
+      "id": "f312e92e-f858-436e-b441-e82923a945db",
+      "title": "Velvet Floorplan · Café",
+      "sha256": "8eb93c1453a9c874520d09bf91d372f872c95c35608a74872fe549ce59b34bc2",
+      "start": 0,
+      "assessment": {
+        "file": "clip-3-0.mp3",
+        "audio_perceived": true,
+        "heard_description": "A smooth, lounge-style arrangement featuring softly played electric piano chords, gentle brushed percussion, and a subtle melodic line from what sounds like a guitar or keyboard. The rhythm maintains a consistent soft brush pattern with occasional light cymbal sounds, and a bass that is understated. The overall sound stays consistent and relaxing throughout.",
+        "instruments": "electric piano, brushed drums, bass, subtle melodic guitar or keyboard",
+        "rhythm_description": "Gentle brushed drum pattern with a consistent soft groove, lightly accented by a subtle bass line.",
+        "beat_prominence_1_to_5": 2,
+        "attack_harshness_1_to_5": 1,
+        "wind_instruments": "absent",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "The track is mellow and unobtrusive, with minimal rhythmic force and no wind instruments or vocals, making it suitable for background use."
+      }
+    },
+    {
+      "id": "f312e92e-f858-436e-b441-e82923a945db",
+      "title": "Velvet Floorplan · Café",
+      "sha256": "8eb93c1453a9c874520d09bf91d372f872c95c35608a74872fe549ce59b34bc2",
+      "start": 60,
+      "assessment": {
+        "file": "clip-3-60.mp3",
+        "audio_perceived": true,
+        "heard_description": "A soft jazz ensemble with gentle piano, double bass, brushed drums, and subtle guitar textures. The track maintains a smooth, continuous sound without any abrupt changes.",
+        "instruments": "piano, double bass, brushed drums, subtle guitar",
+        "rhythm_description": "The rhythm is very light and subtle, with brushed drum strokes providing a faint timekeeping pulse and the double bass offering a gentle, consistent low-end foundation. No prominent kick or snare, just occasional soft drum accents.",
+        "beat_prominence_1_to_5": 1,
+        "attack_harshness_1_to_5": 1,
+        "wind_instruments": "absent",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "The instrumentation is unobtrusive and smooth, with a very subtle rhythm and no prominent wind instruments or vocals, making it suitable as quiet background music."
+      }
+    },
+    {
+      "id": "f312e92e-f858-436e-b441-e82923a945db",
+      "title": "Velvet Floorplan · Café",
+      "sha256": "8eb93c1453a9c874520d09bf91d372f872c95c35608a74872fe549ce59b34bc2",
+      "start": 120,
+      "assessment": {
+        "file": "clip-3-120.mp3",
+        "audio_perceived": true,
+        "heard_description": "Smooth jazz arrangement with a gentle upright bass line, subtle brushed snare, light hi-hat, and a warm, mellow lead instrument that sounds like a saxophone. Piano chords stab softly throughout. Dynamics remain steady, with no obvious distortion or artifacts. The arrangement is soft and consistent, with no abrupt changes.",
+        "instruments": "upright bass, brushed snare drum, hi-hat, piano, saxophone",
+        "rhythm_description": "The rhythm is steady and laid-back with a subtle pulse from the upright bass and gentle brushed snare. The hi-hat ticks lightly, providing a soft swing feel. No heavy kick or clap is audible.",
+        "beat_prominence_1_to_5": 2,
+        "attack_harshness_1_to_5": 2,
+        "wind_instruments": "present",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "The instrumentation is mellow and unobtrusive, with a low prominence beat and no harsh attacks, making it suitable for quiet background use."
+      }
+    },
+    {
+      "id": "f312e92e-f858-436e-b441-e82923a945db",
+      "title": "Velvet Floorplan · Café",
+      "sha256": "8eb93c1453a9c874520d09bf91d372f872c95c35608a74872fe549ce59b34bc2",
+      "start": 180,
+      "assessment": {
+        "file": "clip-3-180.mp3",
+        "audio_perceived": true,
+        "heard_description": "The audio features a smooth jazz-style arrangement with piano, upright bass, and softly brushed drums. The piano provides melodic lines with clear, sharp attacks. The bass offers a gentle, steady pulse. The drums are lightly brushed, creating subtle rhythmic textures. No harsh or plastic leads are audible. The sound remains consistent throughout the clip, with no noticeable distortion or clipping.",
+        "instruments": "piano, upright bass, brushed drums",
+        "rhythm_description": "A soft and subtle rhythmic foundation anchored by gentle bass pulses and brushed drum patterns, with occasional piano rhythms.",
+        "beat_prominence_1_to_5": 1,
+        "attack_harshness_1_to_5": 1,
+        "wind_instruments": "absent",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "The arrangement is mellow and unobtrusive, with a very subtle rhythmic presence and no wind instruments or prominent beat, making it suitable for quiet background listening."
+      }
+    },
+    {
+      "id": "b04fffbc-c1a6-4ac3-b0c7-391f67709801",
+      "title": "Velvet Floorplan · Quiet Morning",
+      "sha256": "fb2535d2ddf79b4479ccac40357edcb93ba496ad3c91211636c8d1660447cbdd",
+      "start": 0,
+      "assessment": {
+        "file": "clip-4-0.mp3",
+        "audio_perceived": true,
+        "heard_description": "A gentle instrumental track featuring light piano chords and soft bass presence, accompanied by subtle percussive elements like faint hi-hat ticks. The arrangement maintains a mellow ambiance throughout with no abrupt changes.",
+        "instruments": "soft piano chords, subtle bass, faint hi-hat ticks",
+        "rhythm_description": "A sparse and repetitive pattern with gentle piano chords and occasional percussive ticks. No strong snare or kick is present, and the beat remains unobtrusive.",
+        "beat_prominence_1_to_5": 1,
+        "attack_harshness_1_to_5": 1,
+        "wind_instruments": "absent",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "The track has a subtle arrangement with no dominant beats or wind instruments, making it suitable as unobtrusive background music."
+      }
+    },
+    {
+      "id": "b04fffbc-c1a6-4ac3-b0c7-391f67709801",
+      "title": "Velvet Floorplan · Quiet Morning",
+      "sha256": "fb2535d2ddf79b4479ccac40357edcb93ba496ad3c91211636c8d1660447cbdd",
+      "start": 60,
+      "assessment": {
+        "file": "clip-4-60.mp3",
+        "audio_perceived": true,
+        "heard_description": "A gentle arrangement featuring soft piano chords and a light, subtle percussive texture. The piano is clear with softer attacks, and a very faint hi-hat-like tick appears occasionally. No strong bass pulse or kick is audible. The overall sound remains calm and unobtrusive.",
+        "instruments": "soft piano, subtle percussive ticks",
+        "rhythm_description": "Minimal, with faint percussive ticks creating a loose rhythmic feel; no prominent bass or snare presence.",
+        "beat_prominence_1_to_5": 1,
+        "attack_harshness_1_to_5": 1,
+        "wind_instruments": "absent",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "The piano and percussive elements remain very subtle and do not distract, making it suitable for quiet conversation."
+      }
+    },
+    {
+      "id": "b04fffbc-c1a6-4ac3-b0c7-391f67709801",
+      "title": "Velvet Floorplan · Quiet Morning",
+      "sha256": "fb2535d2ddf79b4479ccac40357edcb93ba496ad3c91211636c8d1660447cbdd",
+      "start": 120,
+      "assessment": {
+        "file": "clip-4-120.mp3",
+        "audio_perceived": true,
+        "heard_description": "The audio consists of a soft, steady arrangement with gentle piano-like chords and subtle percussive elements. There are consistent rhythmic patterns with a light kick thump and soft hi-hat ticks. The sound remains calm throughout without sudden changes.",
+        "instruments": "soft piano-like chords, subtle kick, faint hi-hat or shaker",
+        "rhythm_description": "steady, repetitive beat with gentle percussive elements that remain unobtrusive",
+        "beat_prominence_1_to_5": 2,
+        "attack_harshness_1_to_5": 2,
+        "wind_instruments": "absent",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "The arrangement is gentle and unobtrusive, with a soft beat and no prominent elements, suitable for quiet background listening."
+      }
+    },
+    {
+      "id": "b04fffbc-c1a6-4ac3-b0c7-391f67709801",
+      "title": "Velvet Floorplan · Quiet Morning",
+      "sha256": "fb2535d2ddf79b4479ccac40357edcb93ba496ad3c91211636c8d1660447cbdd",
+      "start": 180,
+      "assessment": {
+        "file": "clip-4-180.mp3",
+        "audio_perceived": true,
+        "heard_description": "A gentle, laid-back track with a soft beat and warm instrumentation. There is a low-level thump resembling a kick, a subtle bass line, and delicate percussion like hi-hats or shakers. A mellow electric piano or synth provides melodic lines, and everything remains restrained without any harsh attacks.",
+        "instruments": "soft kick, subtle bass, delicate hi-hat/shaker, mellow electric piano/synth",
+        "rhythm_description": "a steady, repetitive beat that stays light and unobtrusive",
+        "beat_prominence_1_to_5": 2,
+        "attack_harshness_1_to_5": 1,
+        "wind_instruments": "absent",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "The beat is subdued, instrumentation is mellow, and no harsh attacks or wind instruments distract, making it suitable for unobtrusive background listening."
+      }
+    },
+    {
+      "id": "f294927f-c5ef-4b88-bff5-c260531a6fe5",
+      "title": "Winterlicht · Leise Flocken",
+      "sha256": "99ae75e46c3b1771991cfc6d9042927c7579951ee6db9b544b8cb31d5070c919",
+      "start": 0,
+      "assessment": {
+        "file": "clip-5-0.mp3",
+        "audio_perceived": true,
+        "heard_description": "A soft, mellow arrangement primarily featuring piano-like tones with gentle attacks. The sound remains consistent with a subtle repeating chord progression. No strong rhythmic elements like a kick, snare or hi-hat are present. The overall texture is smooth and clear.",
+        "instruments": "Piano-like tones, possibly electric piano or synthesizer pad",
+        "rhythm_description": "Very subtle repetitive progression; no explicit percussive beat",
+        "beat_prominence_1_to_5": 1,
+        "attack_harshness_1_to_5": 1,
+        "wind_instruments": "absent",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "The track is unobtrusive with no prominent beat or wind instruments, making it suitable for very soft background use."
+      }
+    },
+    {
+      "id": "f294927f-c5ef-4b88-bff5-c260531a6fe5",
+      "title": "Winterlicht · Leise Flocken",
+      "sha256": "99ae75e46c3b1771991cfc6d9042927c7579951ee6db9b544b8cb31d5070c919",
+      "start": 60,
+      "assessment": {
+        "file": "clip-5-60.mp3",
+        "audio_perceived": true,
+        "heard_description": "A gentle piano melody with a consistent soft rhythm throughout. The sound is warm and clear, with no noticeable distortion or artifacts. There is no prominent beat or percussion elements.",
+        "instruments": "piano",
+        "rhythm_description": "The rhythm is defined by the piano's consistent pattern, but there is no separate kick, snare, or hi-hat. The piano provides a steady but subtle pulse.",
+        "beat_prominence_1_to_5": 1,
+        "attack_harshness_1_to_5": 1,
+        "wind_instruments": "absent",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "The piano-only arrangement lacks prominent beats or wind instruments, making it unobtrusive and suitable for soft background use."
+      }
+    },
+    {
+      "id": "f294927f-c5ef-4b88-bff5-c260531a6fe5",
+      "title": "Winterlicht · Leise Flocken",
+      "sha256": "99ae75e46c3b1771991cfc6d9042927c7579951ee6db9b544b8cb31d5070c919",
+      "start": 120,
+      "assessment": {
+        "file": "clip-5-120.mp3",
+        "audio_perceived": true,
+        "heard_description": "A soft piano melody with gentle sharp attacks, accompanied by a subtle brushed drum texture and some light shaker ticks. The piano remains consistent while the percussion is understated and repetitive. There's a faint bass presence but no heavy kick thump.",
+        "instruments": "piano, brushed drums, shaker, subtle bass",
+        "rhythm_description": "Repetitive gentle brush-style rhythm with light shaker ticks; no strong snare or kick thump.",
+        "beat_prominence_1_to_5": 2,
+        "attack_harshness_1_to_5": 2,
+        "wind_instruments": "absent",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "The arrangement is soft, with minimal percussion and no dominant beat or wind instruments, making it unobtrusive for quiet conversation."
+      }
+    },
+    {
+      "id": "f294927f-c5ef-4b88-bff5-c260531a6fe5",
+      "title": "Winterlicht · Leise Flocken",
+      "sha256": "99ae75e46c3b1771991cfc6d9042927c7579951ee6db9b544b8cb31d5070c919",
+      "start": 180,
+      "assessment": {
+        "file": "clip-5-180.mp3",
+        "audio_perceived": true,
+        "heard_description": "A gentle piano piece with soft, smooth chord progressions. No distinct percussive or rhythmic elements. Volume is consistent and stable.",
+        "instruments": "piano, subtle background ambiance",
+        "rhythm_description": "No audible kick, snare, hi-hat, or repetitive beat. The piano chords flow with a natural, unmetered pacing rather than a strong rhythm.",
+        "beat_prominence_1_to_5": 1,
+        "attack_harshness_1_to_5": 1,
+        "wind_instruments": "absent",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "The audio is a smooth, unobtrusive piano track with no prominent beats or wind instruments, making it suitable for quiet background use."
+      }
+    },
+    {
+      "id": "4b6608b3-ab3d-4654-8e8e-b90bc296eeca",
+      "title": "Showroom Velvet · Amber",
+      "sha256": "5aacbb4185bb96c00f0a30c716712ed52ba1b1560362ab42d3a90be6cf8a7547",
+      "start": 0,
+      "assessment": {
+        "file": "clip-6-0.mp3",
+        "audio_perceived": true,
+        "heard_description": "A soft piano melody with gentle, sustained notes throughout. There is no distinct percussion, just the piano. The piece is smooth and fluid, maintaining a consistent calm mood without sudden changes.",
+        "instruments": "piano",
+        "rhythm_description": "No audible kick or snare, no hi-hats or shakers, just a flowing piano line without a repetitive beat.",
+        "beat_prominence_1_to_5": 1,
+        "attack_harshness_1_to_5": 1,
+        "wind_instruments": "absent",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "The piano is gentle, with no prominent beat or wind sounds, making it unobtrusive for background use."
+      }
+    },
+    {
+      "id": "4b6608b3-ab3d-4654-8e8e-b90bc296eeca",
+      "title": "Showroom Velvet · Amber",
+      "sha256": "5aacbb4185bb96c00f0a30c716712ed52ba1b1560362ab42d3a90be6cf8a7547",
+      "start": 60,
+      "assessment": {
+        "file": "clip-6-60.mp3",
+        "audio_perceived": true,
+        "heard_description": "The track features a gentle electric piano-like chord progression and subtle background atmospherics throughout. There is a soft, steady percussion element that gives a mild pulse, and occasional faint tick sounds augment the rhythm. No noticeable changes in instrumentation occur, remaining consistent and mellow from start to finish.",
+        "instruments": "electric piano-like chords, subtle atmospheric pads, soft percussive tick",
+        "rhythm_description": "A soft, steady pulse with faint ticks providing a mild rhythmic structure, no strong kick or snare presence.",
+        "beat_prominence_1_to_5": 1,
+        "attack_harshness_1_to_5": 1,
+        "wind_instruments": "absent",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "The track’s percussion is very subtle with no strong beat elements and the instrumentation is gentle and unobtrusive, making it suitable for soft background use."
+      }
+    },
+    {
+      "id": "4b6608b3-ab3d-4654-8e8e-b90bc296eeca",
+      "title": "Showroom Velvet · Amber",
+      "sha256": "5aacbb4185bb96c00f0a30c716712ed52ba1b1560362ab42d3a90be6cf8a7547",
+      "start": 120,
+      "assessment": {
+        "file": "clip-6-120.mp3",
+        "audio_perceived": true,
+        "heard_description": "A smooth, mellow arrangement with a soft, repetitive beat. There's a gentle kick thump and subtle hi-hat ticks, accompanied by a mellow bass pulse and a soft, warm pad. The overall texture is clean and consistent without noticeable distortion or artifacts.",
+        "instruments": "soft kick, subtle hi-hat, mellow bass, warm pad/synth layers",
+        "rhythm_description": "A consistent, subdued rhythm with a gently pulsing kick and quietly ticking hi-hats. The bass underpins the groove in a smooth, unobtrusive way.",
+        "beat_prominence_1_to_5": 2,
+        "attack_harshness_1_to_5": 1,
+        "wind_instruments": "absent",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "The beat and instruments are unobtrusive, with soft attacks and no prominent wind instruments, making it suitable as quiet background music."
+      }
+    },
+    {
+      "id": "4fbcaf43-9c3e-4746-a18e-9beeedea467c",
+      "title": "Showroom Velvet · Soft Light",
+      "sha256": "87628ae148c77e6d84d7234b1bc0441fb30c6cd7fe70a7ae834ff14811831f9e",
+      "start": 0,
+      "assessment": {
+        "file": "track-0-0.mp3",
+        "audio_perceived": true,
+        "heard_description": "A gentle piano melody plays throughout, with smooth sustained chords and a soft background texture. No percussion or rhythmic elements stand out.",
+        "instruments": "piano with possible subtle pad or ambient background",
+        "rhythm_description": "The piece lacks distinct percussive elements, focusing on a slow, flowing piano line without any noticeable beat.",
+        "beat_prominence_1_to_5": 1,
+        "attack_harshness_1_to_5": 1,
+        "wind_instruments": "absent",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "The music is soft and unobtrusive, with no prominent beat or distracting elements, making it suitable for background use."
+      }
+    },
+    {
+      "id": "4fbcaf43-9c3e-4746-a18e-9beeedea467c",
+      "title": "Showroom Velvet · Soft Light",
+      "sha256": "87628ae148c77e6d84d7234b1bc0441fb30c6cd7fe70a7ae834ff14811831f9e",
+      "start": 60,
+      "assessment": {
+        "file": "track-0-60.mp3",
+        "audio_perceived": true,
+        "heard_description": "A gentle arrangement with a soft piano playing a repetitive, calm melody and some subtle pad-like background tones. The harmonic progression is consistent and does not change abruptly.",
+        "instruments": "soft piano, subtle pad tones",
+        "rhythm_description": "No distinct kick, bass pulse, snare, or hi-hats. The piano maintains a gentle cadence but there's no percussive pattern driving it.",
+        "beat_prominence_1_to_5": 1,
+        "attack_harshness_1_to_5": 1,
+        "wind_instruments": "absent",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "The music is unobtrusive, slow, lacks any prominent beat or wind instruments, making it suitable for quiet background use."
+      }
+    },
+    {
+      "id": "4fbcaf43-9c3e-4746-a18e-9beeedea467c",
+      "title": "Showroom Velvet · Soft Light",
+      "sha256": "87628ae148c77e6d84d7234b1bc0441fb30c6cd7fe70a7ae834ff14811831f9e",
+      "start": 120,
+      "assessment": {
+        "file": "track-0-120.mp3",
+        "audio_perceived": true,
+        "heard_description": "A gentle piano with soft sustained notes plays throughout. The sound remains consistent with no noticeable changes in instrumentation or dynamic shifts.",
+        "instruments": "piano",
+        "rhythm_description": "No pronounced rhythmic elements; the piano notes are spaced in a free flowing manner without a repetitive beat.",
+        "beat_prominence_1_to_5": 1,
+        "attack_harshness_1_to_5": 1,
+        "wind_instruments": "absent",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "The piano is soft and unobtrusive, with no prominent beat or distracting elements, making it suitable for quiet conversation."
+      }
+    },
+    {
+      "id": "4fbcaf43-9c3e-4746-a18e-9beeedea467c",
+      "title": "Showroom Velvet · Soft Light",
+      "sha256": "87628ae148c77e6d84d7234b1bc0441fb30c6cd7fe70a7ae834ff14811831f9e",
+      "start": 180,
+      "assessment": {
+        "file": "track-0-180.mp3",
+        "audio_perceived": true,
+        "heard_description": "A solo piano performance with clear, gentle chords and melodic lines throughout. The dynamics are soft and consistent.",
+        "instruments": "solo piano",
+        "rhythm_description": "No distinct percussive elements, just the natural rhythm of the piano chords and melody with a flowing, gentle tempo.",
+        "beat_prominence_1_to_5": 1,
+        "attack_harshness_1_to_5": 1,
+        "wind_instruments": "absent",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "The audio consists of soft, unobtrusive solo piano without any prominent beats or wind instruments, making it suitable for light background use."
+      }
+    },
+    {
+      "id": "ac1bb869-b174-42c8-b6f9-d1ae7b03d350",
+      "title": "Velvet Floorplan · Still Air",
+      "sha256": "bf5c0b1d0d99c1b4ef0237bc99068e6671fce41f95d5a92d6b0ff7bf0ee7411f",
+      "start": 0,
+      "assessment": {
+        "file": "track-1-0.mp3",
+        "audio_perceived": true,
+        "heard_description": "A gentle, repetitive melody with a soft piano-like instrument playing simple chords. There's a subtle sustained pad underneath. No distinct percussive elements are audible.",
+        "instruments": "soft piano-like key instrument, subtle pad",
+        "rhythm_description": "No clear percussive rhythm; the melody repeats with a slow, steady pacing",
+        "beat_prominence_1_to_5": 1,
+        "attack_harshness_1_to_5": 1,
+        "wind_instruments": "absent",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "The track has a gentle, unobtrusive melodic line with no prominent beat or wind instruments, making it suitable for soft background use."
+      }
+    },
+    {
+      "id": "ac1bb869-b174-42c8-b6f9-d1ae7b03d350",
+      "title": "Velvet Floorplan · Still Air",
+      "sha256": "bf5c0b1d0d99c1b4ef0237bc99068e6671fce41f95d5a92d6b0ff7bf0ee7411f",
+      "start": 60,
+      "assessment": {
+        "file": "track-1-60.mp3",
+        "audio_perceived": true,
+        "heard_description": "A soft melodic arrangement with gentle piano-like tones and subtle atmospheric textures. The melody is consistent with no abrupt changes, maintaining a calm mood throughout.",
+        "instruments": "soft piano-like lead, subtle atmospheric pads",
+        "rhythm_description": "No explicit kick, snare, or hi-hat pattern is present. The track flows without a distinct repetitive beat or percussion, focusing on melodic elements.",
+        "beat_prominence_1_to_5": 1,
+        "attack_harshness_1_to_5": 1,
+        "wind_instruments": "absent",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "No prominent beat or wind instruments and overall gentle sound make it suitable for unobtrusive background use."
+      }
+    },
+    {
+      "id": "ac1bb869-b174-42c8-b6f9-d1ae7b03d350",
+      "title": "Velvet Floorplan · Still Air",
+      "sha256": "bf5c0b1d0d99c1b4ef0237bc99068e6671fce41f95d5a92d6b0ff7bf0ee7411f",
+      "start": 120,
+      "assessment": {
+        "file": "track-1-120.mp3",
+        "audio_perceived": true,
+        "heard_description": "A gentle arrangement with a soft, sustained synth pad and a mild melodic motif. The sound remains consistent with no abrupt changes.",
+        "instruments": "soft synth pads, mild melodic lead",
+        "rhythm_description": "Very subtle background pulse, no distinct kick, snare, or hi-hat presence.",
+        "beat_prominence_1_to_5": 1,
+        "attack_harshness_1_to_5": 1,
+        "wind_instruments": "absent",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "The track features gentle synth pads with no prominent beat or harsh attacks, making it unobtrusive."
+      }
+    },
+    {
+      "id": "ac1bb869-b174-42c8-b6f9-d1ae7b03d350",
+      "title": "Velvet Floorplan · Still Air",
+      "sha256": "bf5c0b1d0d99c1b4ef0237bc99068e6671fce41f95d5a92d6b0ff7bf0ee7411f",
+      "start": 180,
+      "assessment": {
+        "file": "track-1-180.mp3",
+        "audio_perceived": true,
+        "heard_description": "A soft, mellow piano line with sustained chords and a gentle, minimalist arrangement. The sound is clear and consistent throughout the clip.",
+        "instruments": "piano",
+        "rhythm_description": "No distinct kick, snare, or hi-hat; the piano chords provide a gentle pulse with no obvious percussive elements.",
+        "beat_prominence_1_to_5": 1,
+        "attack_harshness_1_to_5": 1,
+        "wind_instruments": "absent",
+        "vocals": "absent",
+        "audible_defects": [],
+        "rendering_quality": "clean",
+        "suitable_for_very_soft_background": true,
+        "reason": "The track is quiet and unobtrusive, with no prominent rhythmic elements or wind instruments, making it suitable to play behind quiet conversation."
+      }
+    }
+  ],
+  "encoding": {
+    "source": "ElevenLabs Music v2 auto: MP3 48 kHz / 192 kbit/s",
+    "normalized": "MP3 44.1 kHz stereo / 256 kbit/s, same -18 LUFS / -2 dBTP target",
+    "limitation": "Higher output bitrate avoids further 128 kbit/s encoding; does not restore lost source detail."
+  }
+}

@@ -12,6 +12,10 @@ export type MusicLibraryStatus = {
 };
 
 const notes: Record<string, string> = {
+  "413569f1-dbeb-4451-8bae-e7ea7df3ff26": "Wegen des zu harten Beats aus der Automatik genommen.",
+  "fec08a42-c91b-4850-b84c-328a45d1235a": "Für die ruhigere Musikauswahl wegen des Beats deaktiviert.",
+  "8267380a-c242-4563-a7c7-0cb215332bec": "Für die ruhigere Musikauswahl wegen des Beats deaktiviert.",
+  "f312e92e-f858-436e-b441-e82923a945db": "Für die ruhigere Musikauswahl wegen der rhythmischen Jazz-Begleitung deaktiviert.",
   "44fb331f-f2e1-4d7d-9e20-e78d660a5633": "Wegen Saxofon aus der Automatik genommen.",
   "7a045efb-77cc-4a3f-8af0-0bd0c88bf99b": "Wegen trompetenähnlicher Synthesizer aus der Automatik genommen.",
   "20ddc6ec-725d-42cd-8d19-28bfa51cda5f": "Wegen saxofonähnlicher Klänge aus der Automatik genommen.",

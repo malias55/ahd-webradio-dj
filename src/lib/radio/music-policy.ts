@@ -1,4 +1,6 @@
-// User preference, 2026-11-09: very gentle background music without winds.
+// User preference, 2026-11-09: very gentle background music without winds or
+// prominent beats. See music-quality-review-2026-11-09.json for the stricter
+// rhythm review and the two drumless replacements.
 // Full recordings plus contiguous one-minute sections were sent for audio
 // analysis; see music-review-2026-11-09.json. Reject synthetic wind-like leads
 // too, even if a model's categorical label contradicts its sound description.
@@ -6,13 +8,17 @@
 // These are rotation defaults; an explicit choice in the music library takes
 // precedence. Purchased audio and its history stay intact.
 export const QUIET_MUSIC_EXCLUDED_IDS = [
+  "413569f1-dbeb-4451-8bae-e7ea7df3ff26", // Daylight: user rejected the hard beat
+  "fec08a42-c91b-4850-b84c-328a45d1235a", // Showroom Velvet 1: recurring kick/snare groove
+  "8267380a-c242-4563-a7c7-0cb215332bec", // Panorama: repeating kick/hi-hat groove
+  "f312e92e-f858-436e-b441-e82923a945db", // Café: rhythmic jazz arrangement, possible wind lead
   "44fb331f-f2e1-4d7d-9e20-e78d660a5633", // Showroom Satin · Boulevard
   "7a045efb-77cc-4a3f-8af0-0bd0c88bf99b", // Showroom Satin 1: synthetic brass lead
   "20ddc6ec-725d-42cd-8d19-28bfa51cda5f", // Velvet Floorplan 1: sax-like lead
   "549cefd0-9204-4a19-b648-a2e1f3d52ec6", // Showroom Velvet · Sunlit: flute-like synth
 ];
 
-export const QUIET_MUSIC_PROMPT = "Very gentle, soft, unobtrusive background music, comfortable under conversation. Use only warm piano or Rhodes, soft clean or nylon-string guitar, rounded bass, restrained pads and very light brushed percussion. No wind instruments of any kind: no trumpet, saxophone, trombone, horns, brass, flute, clarinet, reeds, breathy wind leads or synthetic brass sounds. No prominent solos, piercing high notes, sharp attacks, busy fills, loud drums, dramatic swells or sudden changes in volume. Keep the arrangement sparse, warm and easy on the ear throughout.";
+export const QUIET_MUSIC_PROMPT = "Very gentle, drumless instrumental background lounge music, comfortable beneath quiet conversation. Use only warm felt piano or mellow Rhodes, soft nylon-string guitar, restrained pads and occasional rounded sustained bass notes. NO percussion or programmed beat: no kick, snare, clap, hi-hat, shaker, brushes, rimshots, clicks, finger snaps or percussive bass pulse. No wind instruments: no trumpet, saxophone, trombone, horns, brass, flute, clarinet, reeds, breathy wind leads or synthetic brass sounds. Soft rounded attacks, restrained bass and spacious middle-register phrases. No brittle metallic or plastic timbres, piercing highs, solos, runs, dramatic swells or sudden changes. Clean natural studio sound, no intentional lo-fi noise, vinyl crackle, distortion, pumping, wobble or heavy chorus. Maintain a sparse, warm, quietly positive lounge arrangement throughout, with gentle harmonic variety and no buildup.";
 
 export type RotationTrack = { id: string; kind: string; season?: string; rotationEnabled?: boolean; metadata?: unknown };
 

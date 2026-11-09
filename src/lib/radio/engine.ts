@@ -15,7 +15,7 @@ const FADE_SECONDS = 3;
 const NEWS_PAUSE_SECONDS = 5;
 const NEWS_LEAD_MS = (FADE_SECONDS + NEWS_PAUSE_SECONDS) * 1000 + 500;
 const HOUR_MS = 3_600_000;
-const ENCODE_MP3 = ["-ar", "44100", "-ac", "2", "-c:a", "libmp3lame", "-b:a", "128k"];
+const ENCODE_MP3 = ["-ar", "44100", "-ac", "2", "-c:a", "libmp3lame", "-b:a", "256k"];
 
 type Item = { id: string; title: string; duration: number; kind: string; season?: string; rotationEnabled?: boolean };
 type RadioState = {
