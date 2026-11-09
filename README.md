@@ -42,7 +42,7 @@ Audio liegt dauerhaft in der bestehenden PostgreSQL-Datenbank. Der lokale MP3-Ca
 | `ELEVENLABS_SERVICE_VOICE_NAME` | `Susanne` |
 | `ELEVENLABS_TURKISH_VOICE_ID` | `Q2IX97JeHBY3vNGzgM5s` (Cavit), Türkçe 07 und 20 Uhr |
 | `NEWS_TR_FEED_URLS` | Optional: türkische RSS-Quellen, kommagetrennt |
-| `ELEVENLABS_MUSIC_MODEL` | Standard `music_v2` |
+| `ELEVENLABS_MUSIC_MODEL` | Standard `music_v2_5`; Musik wird direkt mit 320 kbit/s angefordert |
 | `ELEVENLABS_TTS_MODEL` | Standard `eleven_multilingual_v2` |
 | `OPENAI_API_KEY` | Terra für Redaktion und Quellenprüfung |
 | `EDENAI_API_KEY` | Haiku als technischer Ersatzpfad |

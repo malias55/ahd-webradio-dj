@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { prisma } from "../prisma";
 
-export async function command(binary: string, args: string[], timeout = 120_000): Promise<string> {
+export async function command(binary: string, args: string[], timeout = 120_000, output: "stdout" | "stderr" = "stdout"): Promise<string> {
   return new Promise((resolve, reject) => {
     const p = spawn(/* turbopackIgnore: true */ binary, args, { stdio: ["ignore", "pipe", "pipe"] });
     let out = "", err = "";
@@ -12,7 +12,7 @@ export async function command(binary: string, args: string[], timeout = 120_000)
     p.stderr.on("data", b => { err = (err + b).slice(-2000); });
     const timer = setTimeout(() => { p.kill("SIGKILL"); reject(new Error(`${binary} timed out`)); }, timeout);
     p.on("error", e => { clearTimeout(timer); reject(e); });
-    p.on("close", code => { clearTimeout(timer); code === 0 ? resolve(out) : reject(new Error(`${binary} exited ${code}: ${err}`)); });
+    p.on("close", code => { clearTimeout(timer); code === 0 ? resolve(output === "stderr" ? err : out) : reject(new Error(`${binary} exited ${code}: ${err}`)); });
   });
 }
 
@@ -20,19 +20,32 @@ export async function normalizeAudio(input: Buffer, maxDuration = 600) {
   return normalize(input, maxDuration, "128k");
 }
 
-// Music keeps more detail through loudness normalization than speech. This
-// avoids another 128 kbit/s encode; it cannot restore an already lossy source.
+// Measure first, then apply one constant gain. Dynamic loudnorm was lifting
+// quiet passages by different amounts and reducing the music's dynamics.
+// Higher bitrate avoids additional loss; it cannot restore a lossy source.
 export async function normalizeMusic(input: Buffer, maxDuration = 600) {
-  return normalize(input, maxDuration, "256k");
+  return normalize(input, maxDuration, "320k", true);
 }
 
-async function normalize(input: Buffer, maxDuration: number, bitrate: string) {
+async function normalize(input: Buffer, maxDuration: number, bitrate: string, music = false) {
   const dir = await mkdtemp(join(tmpdir(), "ahd-audio-"));
   try {
     const src = join(dir, "input"), dst = join(dir, "output.mp3");
     await writeFile(src, input);
+    let filter = "loudnorm=I=-18:TP=-2:LRA=9";
+    if (music) {
+      const report = await command(process.env.FFMPEG_PATH || "ffmpeg", ["-hide_banner", "-nostats", "-nostdin", "-i", src,
+        "-t", String(maxDuration), "-vn", "-af", `${filter}:print_format=json`, "-f", "null", "-"], 120_000, "stderr");
+      const measured = JSON.parse(report.slice(report.lastIndexOf("{"), report.lastIndexOf("}") + 1)) as { input_i: string; input_tp: string };
+      const integrated = Number(measured.input_i), peak = Number(measured.input_tp);
+      if (!Number.isFinite(integrated) || !Number.isFinite(peak)) throw new Error("Musik enthält kein messbares Audiosignal");
+      // Leave 0.5 dB extra headroom for MP3 encoding. A dynamic recording may
+      // remain slightly below -18 LUFS rather than flattening its peaks.
+      const gain = Math.min(-18 - integrated, -2.5 - peak);
+      filter = `volume=${gain.toFixed(4)}dB`;
+    }
     await command(process.env.FFMPEG_PATH || "ffmpeg", ["-v", "error", "-nostdin", "-i", src,
-      "-t", String(maxDuration), "-vn", "-af", "loudnorm=I=-18:TP=-2:LRA=9",
+      "-t", String(maxDuration), "-vn", "-af", filter,
       "-ar", "44100", "-ac", "2", "-c:a", "libmp3lame", "-b:a", bitrate, "-y", dst]);
     const duration = Number(await command(process.env.FFPROBE_PATH || "ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", dst]));
     if (!Number.isFinite(duration) || duration < 1) throw new Error("Invalid generated audio");

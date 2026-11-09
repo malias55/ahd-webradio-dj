@@ -20,9 +20,8 @@ export function servicePresenter(slot = new Date()) {
 }
 
 export function composeMusic(prompt: string, seconds: number) {
-  // The provider's native default is 192 kbit/s at 48 kHz for Music v2.
-  return eleven("/v1/music?output_format=auto", {
-    prompt, music_length_ms: Math.round(seconds * 1000), model_id: process.env.ELEVENLABS_MUSIC_MODEL || "music_v2", force_instrumental: true,
+  return eleven("/v1/music?output_format=mp3_48000_320", {
+    prompt, music_length_ms: Math.round(seconds * 1000), model_id: process.env.ELEVENLABS_MUSIC_MODEL || "music_v2_5", force_instrumental: true,
   }, 360_000);
 }
 
@@ -88,7 +87,7 @@ export { editorialJson as edenJson, newsModelConfig, editorialConfigured, type M
 
 export const MUSIC_STYLES = [
   { title: "Showroom Velvet", prompt: "Refined drumless instrumental lounge for a welcoming car showroom. Warm Rhodes piano with soft rounded attacks, spacious major ninth harmonies and quiet sustained bass. Relaxed flowing phrasing around 72 BPM, without a beat or a bass pulse. Elegant, quietly optimistic and comfortable." },
-  { title: "Velvet Floorplan", prompt: "Airy drumless acoustic lounge for a premium car showroom. Gentle felt piano, soft fingerpicked nylon guitar, occasional warm bass notes. Spacious major harmonies around 70 BPM with subtle melodic variation. Bright, welcoming and unobtrusive, with no dramatic tension or rhythmic accents." },
+  { title: "Velvet Floorplan", prompt: "Airy drumless acoustic lounge for a premium car showroom. Gently played natural grand piano, soft fingerpicked nylon guitar, occasional warm bass notes. Spacious major harmonies around 70 BPM with subtle melodic variation. Clear, welcoming and unobtrusive, with no dramatic tension or rhythmic accents." },
   { title: "Showroom Satin", prompt: "Soft drumless instrumental lounge for a friendly car showroom. Mellow nylon guitar, warm electric piano and sparse sustained bass around 76 BPM. Restrained, sunny and polished. Sparse middle-register phrases with rounded attacks, no featured solos or recurring percussive accents." },
 ];
 
