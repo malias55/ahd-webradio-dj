@@ -27,6 +27,7 @@ import {
 } from "./src/lib/broadcast";
 
 import { userForCookie } from "./src/lib/session";
+import { handleSpeakerVolumeEvents } from "./src/lib/speaker-volume-events";
 import { nativeSource, isOnAir, RADIO_STREAM_PATH, publicOrigin } from "./src/lib/radio/config";
 import { attachRadio, startRadio, stopRadio } from "./src/lib/radio/engine";
 import { pushConfigForZone } from "./src/lib/serverActions";
@@ -61,6 +62,7 @@ async function isAuthenticated(req: IncomingMessage): Promise<boolean> {
 
 const LIVE_RE = /^\/api\/zones\/([^/]+)\/live\/?$/;
 const CURRENT_SOURCE_RE = /^\/api\/zones\/([^/]+)\/current-source\/?$/;
+const SPEAKER_VOLUME_RE = /^\/api\/zones\/([^/]+)\/volume-events\/?$/;
 const ZONE_NEWS_RE = /^\/api\/zones\/([^/]+)\/news-stream\/([\da-f-]{36})$/;
 
 // ── /api/zones/:id/live — raw Node.js handler for real-time MP3 streaming ──
@@ -175,6 +177,11 @@ async function pushConfig(socket: Socket, serial: string) {
 app.prepare().then(() => {
   const httpServer = createServer((req, res) => {
     const pathname = req.url?.split("?")[0] || "/";
+    const speakerVolume = pathname.match(SPEAKER_VOLUME_RE);
+    if (speakerVolume) {
+      void handleSpeakerVolumeEvents(req, res, speakerVolume[1]);
+      return;
+    }
     const zoneNews = pathname.match(ZONE_NEWS_RE);
     if (zoneNews) {
       if (req.method !== "GET") { res.writeHead(405).end(); return; }

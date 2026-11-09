@@ -96,6 +96,19 @@ einem Server-Neustart mit vorübergehendem HTTP 503; ohne Datenbankzugriff oder
 echtem Seiten-Reload mit erlaubtem und gesperrtem Autoplay sowie einen expliziten
 Stop mit anschließendem Reload.
 
+Browser-Lautsprecher erhalten gespeicherte Zonenlautstärken zusätzlich über den
+angemeldeten EventStream `/api/zones/:id/volume-events`. Der Server prüft den
+gespeicherten Wert sekündlich; Änderungen aus Steuerung und Zoneneinstellungen
+erreichen so auch andere laufende Browser-Sitzungen. Die normale Statusabfrage
+bleibt als Rückfallebene erhalten. Verspätete Statusantworten überschreiben keine
+neueren Live-Werte. Ein Web-Audio-GainNode regelt den Pegel auch auf Browsern,
+die `HTMLMediaElement.volume` nicht unterstützen. Die Audiodatei und Verbindung
+bleiben beim Regeln unverändert; 0 Prozent schaltet die Ausgabe stumm.
+`node scripts/speaker-volume-e2e.cjs` prüft nach dem Build mit zwei getrennten
+Browsersitzungen den tatsächlichen Audiopegel, Stummschaltung, einen ignorierten
+Media-Volume-Setter, alte/fehlgeschlagene Statusantworten und das Beenden des
+EventStreams. Der Test verwendet ausschließlich lokale Testdaten.
+
 Webapp und Radioengine laufen derzeit im selben Railway-Service. Ein Deployment
 beendet daher bestehende Stream-Verbindungen. Die Webapp behält verfügbaren
 Audiopuffer und verbindet abgerissene Streams automatisch neu; lückenlose

@@ -19,6 +19,11 @@ type State = {
 const audioElements = new Map<string, HTMLAudioElement>();
 const retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const audioCleanup = new Map<string, () => void>();
+const mediaSources = new Map<string, MediaElementAudioSourceNode>();
+let gainContext: AudioContext | null = null;
+let speakerGain: GainNode | null = null;
+let volumeEvents: EventSource | null = null;
+let pushedVolume = false, volumeRevision = 0;
 const playback = new Map<string, {
   time: number; progressedAt: number; attempt: number; status: SpeakerPlaybackStatus; reconnect: () => void;
 }>();
@@ -34,6 +39,47 @@ function notify() { for (const fn of listeners) fn(); }
 // towards it discards the browser's jitter buffer and can repeatedly underrun.
 // Let the media element play continuously, including across short network gaps.
 function keyFor(src: Source): string { return JSON.stringify([src.relayId, src.url]); }
+
+function setAudioVolume(volume: number) {
+  const level = Math.max(0, Math.min(1, volume / 100));
+  if (speakerGain) speakerGain.gain.value = level;
+  for (const [key, el] of audioElements) el.volume = mediaSources.has(key) ? 1 : level;
+}
+
+function prepareVolumeControl() {
+  const Context = globalThis.AudioContext || (globalThis as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!Context) return;
+  try {
+    gainContext = new Context();
+    speakerGain = gainContext.createGain();
+    speakerGain.gain.value = (state?.volume ?? 80) / 100;
+    speakerGain.connect(gainContext.destination);
+    gainContext.onstatechange = notify;
+    // Start inside the click gesture, before fetching a source. iOS does not
+    // support programmatic media-element volume; GainNode controls it instead.
+    void gainContext.resume().catch(notify);
+  } catch { speakerGain = null; if (gainContext) void gainContext.close().catch(() => {}); gainContext = null; }
+}
+
+function watchVolume(session: State) {
+  if (typeof EventSource === "undefined") return;
+  try {
+    const events = new EventSource(`/api/zones/${encodeURIComponent(session.zoneId)}/volume-events`);
+    volumeEvents = events;
+    events.onmessage = event => {
+      if (state !== session || volumeEvents !== events) return;
+      try {
+        const value = JSON.parse(event.data) as { zoneId?: unknown; volume?: unknown };
+        if (value.zoneId !== session.zoneId || typeof value.volume !== "number" || !Number.isFinite(value.volume)) return;
+        session.volume = Math.max(0, Math.min(100, value.volume));
+        pushedVolume = true; volumeRevision++;
+        setAudioVolume(session.volume);
+        notify();
+      } catch { /* A malformed message must not change the playing volume. */ }
+    };
+    events.onerror = () => { if (state === session && volumeEvents === events) pushedVolume = false; };
+  } catch { /* Source polling remains available when EventSource is unavailable. */ }
+}
 
 async function resolveSource(
   zoneId: string,
@@ -68,6 +114,8 @@ function removeAudio(key: string) {
   retryTimers.delete(key);
   audioCleanup.get(key)?.();
   audioCleanup.delete(key);
+  mediaSources.get(key)?.disconnect();
+  mediaSources.delete(key);
   playback.delete(key);
   const el = audioElements.get(key);
   audioElements.delete(key);
@@ -102,6 +150,14 @@ function applyState(
       el.crossOrigin = "anonymous";
       el.volume = Math.max(0, Math.min(1, nextVol / 100));
       el.src = src.url;
+      if (gainContext && speakerGain) {
+        try {
+          const source = gainContext.createMediaElementSource(el);
+          source.connect(speakerGain);
+          mediaSources.set(key, source);
+          el.volume = 1;
+        } catch { /* Retain media-element volume on unsupported browsers. */ }
+      }
       const retry = () => {
         if (state !== session || audioElements.get(key) !== el || retryTimers.has(key)) return;
         const progress = playback.get(key);
@@ -154,9 +210,7 @@ function applyState(
     }
   }
 
-  for (const el of audioElements.values()) {
-    el.volume = Math.max(0, Math.min(1, nextVol / 100));
-  }
+  setAudioVolume(nextVol);
   notify();
 }
 
@@ -198,8 +252,11 @@ function watchPlayback(session: State) {
 }
 
 async function poll(session: State) {
+  const revision = volumeRevision;
   const next = await resolveSource(session.zoneId);
   if (state !== session) return;
+  // An older HTTP response cannot overwrite a volume just received live.
+  if (next && (pushedVolume || volumeRevision !== revision)) next.volume = session.volume;
   applyState(session, next);
   // Schedule after completion so a slow request cannot overtake a newer one.
   pollTimer = setTimeout(() => { pollTimer = null; void poll(session); }, POLL_MS);
@@ -211,6 +268,8 @@ export async function startSpeakerMode(zoneId: string) {
   try { sessionStorage.setItem(SELECTION_KEY, zoneId); } catch { /* Storage can be disabled. */ }
   const session: State = { zoneId, sources: [], live: false, volume: 80 };
   state = session;
+  prepareVolumeControl();
+  watchVolume(session);
   notify();
   watchPlayback(session);
   await poll(session);
@@ -223,11 +282,16 @@ export function stopSpeakerMode() {
 
 export function suspendSpeakerMode() {
   state = null;
+  volumeEvents?.close(); volumeEvents = null;
+  pushedVolume = false; volumeRevision++;
   statusRequest?.abort();
   statusRequest = null;
   if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
   if (watchdogTimer) { clearTimeout(watchdogTimer); watchdogTimer = null; }
   for (const key of new Set([...audioElements.keys(), ...retryTimers.keys()])) removeAudio(key);
+  const context = gainContext;
+  gainContext = null; speakerGain = null;
+  if (context) { context.onstatechange = null; void context.close().catch(() => {}); }
   notify();
 }
 
@@ -255,10 +319,12 @@ export function attachSpeakerLifecycle(target: Pick<Window, "addEventListener" |
 
 export function activeSpeakerZone() { return state?.zoneId ?? null; }
 export function activeSpeakerIsLive() { return state?.live ?? false; }
+export function activeSpeakerVolume() { return state?.volume ?? null; }
 export function activeSpeakerHasSource() { return (state?.sources.length ?? 0) > 0; }
 export function activeSpeakerPlaybackStatus(): SpeakerPlaybackStatus {
   if (!state) return "idle";
   if (!state.sources.length) return "waiting";
+  if (gainContext?.state === "suspended") return "blocked";
   const statuses = [...playback.values()].map(p => p.status);
   if (statuses.includes("blocked")) return "blocked";
   if (retryTimers.size) return "reconnecting";
@@ -268,6 +334,7 @@ export function activeSpeakerPlaybackStatus(): SpeakerPlaybackStatus {
 }
 
 export function resumeSpeakerPlayback() {
+  if (gainContext) void gainContext.resume().catch(notify);
   for (const [key, el] of audioElements) {
     const progress = playback.get(key);
     if (!progress || progress.status !== "blocked") continue;

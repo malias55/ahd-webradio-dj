@@ -18,6 +18,8 @@ let statusCalls = 0, audioConnections = 0, browser, page, hungConnection = 0;
 let deploymentUntil = 0;
 const audioResponses = new Set();
 const server = http.createServer((req, res) => {
+  // This fixture exercises the HTTP fallback. Dedicated volume tests cover SSE.
+  if (req.url?.endsWith("/volume-events")) { res.writeHead(204).end(); return; }
   if (req.url === "/player.js") {
     res.writeHead(200, { "Content-Type": "text/javascript" }).end(player); return;
   }

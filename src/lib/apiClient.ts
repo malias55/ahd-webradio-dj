@@ -6,11 +6,15 @@ export type ZoneCommand =
   | { type: "volume"; value: number };
 
 export async function sendZoneCommand(zoneId: string, cmd: ZoneCommand) {
-  await fetch(`/api/zones/${zoneId}/command`, {
+  const response = await fetch(`/api/zones/${zoneId}/command`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(cmd),
   });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(typeof body.error === "string" ? body.error : "Die Zonenänderung konnte nicht gespeichert werden.");
+  }
 }
 
 export async function patchZone(zoneId: string, patch: Record<string, unknown>) {

@@ -19,6 +19,7 @@ import {
   activeSpeakerPlaybackStatus,
   activeSpeakerIsLive,
   activeSpeakerZone,
+  activeSpeakerVolume,
   startSpeakerMode,
   stopSpeakerMode,
   subscribeSpeaker,
@@ -79,14 +80,17 @@ export default function ControlPage() {
       setSpeakerZoneId(activeSpeakerZone());
       setSpeakerLive(activeSpeakerIsLive());
       setSpeakerStatus(activeSpeakerPlaybackStatus());
+      const zoneId = activeSpeakerZone(), volume = activeSpeakerVolume();
+      if (zoneId && volume !== null) setZones(previous => previous.map(zone => zone.id === zoneId && zone.volume !== volume ? { ...zone, volume } : zone));
     };
     sync();
     return subscribeSpeaker(sync);
   }, []);
 
   const updateVolume = async (zoneId: string, v: number) => {
-    await sendZoneCommand(zoneId, { type: "volume", value: v });
-    reload();
+    try { await sendZoneCommand(zoneId, { type: "volume", value: v }); }
+    catch (error) { alert(error instanceof Error ? error.message : "Die Lautstärke konnte nicht gespeichert werden."); }
+    await reload();
   };
 
   const doBroadcast = async (zoneId: string, source: CaptureSource, mode: BroadcastMode) => {
@@ -311,6 +315,7 @@ function ZoneCard(props: {
           onChange={(e) => setVolume(Number(e.target.value))}
           onMouseUp={(e) => props.onVolume(Number((e.target as HTMLInputElement).value))}
           onTouchEnd={(e) => props.onVolume(Number((e.target as HTMLInputElement).value))}
+          onKeyUp={(e) => { if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"].includes(e.key)) props.onVolume(Number(e.currentTarget.value)); }}
           className="w-full accent-brand-600"
           disabled={globalAnnounce}
         />
