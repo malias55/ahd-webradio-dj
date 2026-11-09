@@ -1,5 +1,5 @@
 export const RADIO_TIMEZONE = "Europe/Berlin";
-export const NEWS_SCHEDULE = { mode: "daily-editions", hours: [7, 10, 11, 12, 13, 14, 15, 16, 17, 20], generationHours: { tr: 6, de: 9 }, timezone: RADIO_TIMEZONE } as const;
+export const NEWS_SCHEDULE = { mode: "daily-editions", weekdays: [1, 2, 3, 4, 5, 6], hours: [7, 10, 11, 12, 13, 14, 15, 16, 17, 20], generationHours: { tr: 6, de: 9 }, timezone: RADIO_TIMEZONE } as const;
 export const RADIO_STREAM_PATH = "/api/radio/stream";
 
 export function stationTime(date = new Date()) {
@@ -12,13 +12,19 @@ export function stationTime(date = new Date()) {
 }
 
 export function radioEnabled() { return process.env.RADIO_ENABLED !== "false"; }
+export function newsAllowedOn(date = new Date()) {
+  // Derive the weekday from the station's calendar date, independent of the
+  // server's timezone and of daylight-saving changes on Sundays.
+  const weekday = new Date(`${stationTime(date).date}T12:00:00Z`).getUTCDay();
+  return NEWS_SCHEDULE.weekdays.some(day => day === weekday);
+}
 export function isMusicHours(date = new Date()) {
   const { hour } = stationTime(date);
   return radioEnabled() && hour >= 8 && hour < 18;
 }
 export function isTurkishNewsWindow(date = new Date()) {
   const { hour, minute } = stationTime(date);
-  return radioEnabled() && (hour === 7 || hour === 20) && minute < 5;
+  return radioEnabled() && newsAllowedOn(date) && (hour === 7 || hour === 20) && minute < 5;
 }
 export function isOnAir(date = new Date()) { return isMusicHours(date) || isTurkishNewsWindow(date); }
 export function newsLanguage(slot: Date): "de" | "tr" { return [7, 20].includes(stationTime(slot).hour) ? "tr" : "de"; }
@@ -33,6 +39,7 @@ export function stationHour(day: string, hour: number) {
 type DailyPlan = { language: "tr" | "de"; generateAt: Date; firstBroadcast: Date; lastBroadcast: Date };
 let planCache: { day: string; entries: DailyPlan[] } | undefined;
 export function dailyNewsPlan(date = new Date()): DailyPlan[] {
+  if (!newsAllowedOn(date)) return [];
   const day = stationTime(date).date;
   if (planCache?.day !== day) planCache = { day, entries: [
     { language: "tr", generateAt: stationHour(day, 6), firstBroadcast: stationHour(day, 7), lastBroadcast: stationHour(day, 20) },
@@ -62,13 +69,13 @@ export function stationDayBounds(day: string) {
 
 export function isNewsSlot(date: Date) {
   const t = stationTime(date);
-  return NEWS_SCHEDULE.hours.some(hour => hour === t.hour) && t.minute === 0 && t.second === 0 && date.getMilliseconds() === 0;
+  return newsAllowedOn(date) && NEWS_SCHEDULE.hours.some(hour => hour === t.hour) && t.minute === 0 && t.second === 0 && date.getMilliseconds() === 0;
 }
 
 export function upcomingNewsSlot(date = new Date()): Date | null {
   // Advance absolute instants, then inspect Berlin time: handles DST without host TZ assumptions.
   const start = Math.floor(date.getTime() / 3_600_000) * 3_600_000;
-  for (let i = 0; i < 26; i++) {
+  for (let i = 0; i < 8 * 24; i++) {
     const candidate = new Date(start + i * 3_600_000);
     if (candidate.getTime() >= date.getTime() && isNewsSlot(candidate)) return candidate;
   }

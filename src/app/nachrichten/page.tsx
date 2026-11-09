@@ -1,15 +1,17 @@
 import { servicePresenter } from "@/lib/radio/providers";
 import { familyAssetAllowed } from "@/lib/radio/family";
 import { redirect } from "next/navigation";
-import { isAuthorized } from "@/lib/admin";
+import { getAppUser } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
 import { AudioDetails, type Asset } from "@/components/RadioAudioDetails";
 import { time } from "@/lib/radio/format";
+import { RetryGermanNews } from "@/components/RetryGermanNews";
 
 export const dynamic = "force-dynamic";
 
 export default async function NewsArchive() {
-  if (!(await isAuthorized())) redirect("/");
+  const user = await getAppUser();
+  if (!user) redirect("/");
   const rows = await prisma.radioAsset.findMany({
     where: { kind: "news", createdAt: { gte: new Date(Date.now() - 14 * 86400_000) } },
     orderBy: { createdAt: "desc" },
@@ -27,9 +29,10 @@ export default async function NewsArchive() {
   const failedSlot = failure?.key.match(/\d{4}-\d{2}-\d{2}T[\d:.]+Z$/)?.[0];
   const unresolved = failure && !rows.some(row => row.slot?.toISOString() === failedSlot && row.createdAt >= failure.updatedAt);
   return <div className="space-y-6">
-    <div><h1 className="text-2xl font-bold">Nachrichten</h1><p className="mt-2 text-sm text-neutral-500">Täglich um 07:00 und 20:00 Uhr Türkisch mit Cavit. Von 10:00 bis 17:00 Uhr stündlich Deutsch mit Elias sowie Wetter und Verkehr mit {servicePresenter().name}. Deutsche Ortszeit.</p></div>
+    <div><h1 className="text-2xl font-bold">Nachrichten</h1><p className="mt-2 text-sm text-neutral-500">Montag bis Samstag um 07:00 und 20:00 Uhr Türkisch mit Cavit. Von 10:00 bis 17:00 Uhr stündlich Deutsch mit Elias sowie Wetter und Verkehr mit {servicePresenter().name}. Sonntags keine Nachrichten. Deutsche Ortszeit.</p></div>
     <p className="text-sm text-neutral-500">Hier können alle angemeldeten Nutzer die tatsächlich erstellten Ausgaben der letzten 14 Tage nachhören, mit Transkript und Quellen. Die Hauptmeldungen entstehen einmal täglich. Ab dem 6. November werden der türkische Marktteil und der deutsche Wetter- und Verkehrsblock vor jedem Sendetermin aktualisiert. Alle Stimmen und Ausgaben sind KI-generiert.</p>
     {unresolved && <div role="status" className="card space-y-1 border-amber-400 text-sm"><p className="font-medium">Die Erstellung {failedSlot ? `für ${time(failedSlot)} Uhr` : `vom ${time(failure.updatedAt.toISOString())}`} ist fehlgeschlagen.</p><p>{failure.error || "Die Ausgabe konnte nicht fertiggestellt werden."}</p><p>Vorhandene Ausgaben bleiben abspielbar. Fehlende Sendungen werden nicht als neue Nachrichten ausgegeben.</p></div>}
+    {user.role === "admin" && <RetryGermanNews />}
     {!assets.length && <div className="card">Noch keine Nachrichtenausgabe gespeichert. Die nächsten Ausgaben werden automatisch vor ihrem Sendetermin erstellt.</div>}
     {assets.map(row => <section key={row.id} className="card space-y-3">
       <h2 className="font-semibold">{row.title}</h2>

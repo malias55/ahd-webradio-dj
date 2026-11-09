@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { isAuthorized } from "@/lib/admin";
 import { currentMode } from "@/lib/broadcast";
 import { pushConfigForZone } from "@/lib/serverActions";
-import { stationDayBounds, stationTime } from "@/lib/radio/config";
+import { stationDayBounds, stationTime, newsAllowedOn } from "@/lib/radio/config";
 import { familyAssetAllowed } from "@/lib/radio/family";
 import { assetFile } from "@/lib/radio/store";
 import { startZoneNews, stopZoneNews } from "@/lib/radio/zone-news";
@@ -13,6 +13,7 @@ const failure = (error: string, status: number) => NextResponse.json({ error }, 
 
 export async function POST(request: Request, { params }: Context) {
   if (!(await isAuthorized())) return failure("Bitte erneut anmelden.", 401);
+  if (!newsAllowedOn()) return failure("Sonntags werden keine Nachrichten gesendet.", 409);
   const { id } = await params;
   const data = await request.json().catch(() => null);
   if (data?.language !== "tr" && data?.language !== "de") return failure("Ungültige Sprache.", 400);

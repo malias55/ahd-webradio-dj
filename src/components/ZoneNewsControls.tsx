@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { Newspaper, Square } from "lucide-react";
 import type { Zone } from "@/types";
+import { newsAllowedOn } from "@/lib/radio/config";
 import { activeSpeakerZone, startSpeakerMode, stopSpeakerMode } from "@/lib/speakerMode";
 
 const labels = { tr: "Türkische Nachrichten", de: "Deutsche Nachrichten" };
@@ -16,6 +17,7 @@ export function ZoneNewsControls({ zone, busy, onChange }: { zone: Zone; busy: b
   const [active, setActive] = useState(zone.manualNews);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const newsDay = newsAllowedOn();
   useEffect(() => { setActive(zone.manualNews); }, [zone.manualNews]);
 
   async function change(stop: boolean) {
@@ -64,7 +66,7 @@ export function ZoneNewsControls({ zone, busy, onChange }: { zone: Zone; busy: b
             setChoice(open ? language : null);
           }}>
             <Popover.Trigger asChild>
-              <button type="button" className="btn-outline" disabled={busy || pending}>
+              <button type="button" className="btn-outline" disabled={busy || pending || !newsDay}>
                 <Newspaper className="h-4 w-4 shrink-0" aria-hidden /> {labels[language]} starten
               </button>
             </Popover.Trigger>
@@ -90,5 +92,6 @@ export function ZoneNewsControls({ zone, busy, onChange }: { zone: Zone; busy: b
       </div>
     )}
     {error && !choice && <p className="text-sm text-red-700 dark:text-red-300" role="alert">{error}</p>}
+    {!newsDay && !active && <p className="text-xs text-neutral-500">Sonntags werden keine Nachrichten gesendet.</p>}
   </div>;
 }

@@ -14,11 +14,13 @@ export async function editorialJson(system: string, input: unknown, review = fal
   const config = newsModelConfig();
   const requestedStories = typeof (input as { desiredStoryCount?: unknown })?.desiredStoryCount === "number" ? Math.max(1, Math.min(6, (input as { desiredStoryCount: number }).desiredStoryCount)) : 1;
   const minimumStories = (input as { minimumStoryCount?: unknown })?.minimumStoryCount === 1 ? 1 : requestedStories;
+  const sources = (input as { sources?: { id?: unknown }[] })?.sources;
+  const sourceIds = Array.isArray(sources) ? [...new Set(sources.map(source => source.id).filter((id): id is number => typeof id === "number" && Number.isSafeInteger(id)))] : [];
   const schema = review ? {
     type: "object", properties: { approved: { type: "boolean" }, reason: { type: "string" } }, required: ["approved", "reason"], additionalProperties: false,
   } : {
     type: "object", properties: { stories: { type: "array", minItems: minimumStories, maxItems: 6, items: { type: "object", properties: {
-      text: { type: "string" }, sourceIds: { type: "array", items: { type: "integer" } },
+      text: { type: "string" }, sourceIds: { type: "array", minItems: 1, items: { type: "integer", ...(sourceIds.length ? { enum: sourceIds } : {}) } },
     }, required: ["text", "sourceIds"], additionalProperties: false } } }, required: ["stories"], additionalProperties: false,
   };
   for (const provider of ["openai", "edenai"] as const) {

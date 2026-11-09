@@ -10,7 +10,7 @@ import { edenJson, presenterForHour, presenterForSlot, servicePresenter, speech,
 import { withJob } from "./store";
 import { mixDryBulletin, joinNewsParts, frameTurkishProgramme, appendNewsOutro, type Cue } from "./mix";
 import { bulletinOpenerAsset, turkishSignatureAsset, TURKISH_SIGNATURE_KEY, germanOutroAsset, GERMAN_OUTRO_KEY } from "./imaging";
-import { isNewsSlot, stationTime, stationHour, dailyNewsPlan, NEWS_SCHEDULE, newsLanguage } from "./config";
+import { isNewsSlot, stationTime, stationHour, dailyNewsPlan, NEWS_SCHEDULE, newsLanguage, newsAllowedOn } from "./config";
 import { collectDailyService, collectHourlyService, serviceFreshForSlot, serviceValidForDailyEdition } from "./service";
 import { collectMarketReport } from "./market";
 import type { Prisma, RadioAsset } from "@prisma/client";
@@ -293,6 +293,7 @@ export function turkishSourceOrder(sources: NewsSource[], previouslyUsed: string
 }
 
 export async function editorialContent(slot: Date): Promise<EditorialContent> {
+  if (!newsAllowedOn(slot)) throw new Error("Sonntags werden keine Nachrichten erstellt.");
   const editionSlot = newsEditionSlot(slot), language = newsLanguage(slot);
   const redaktionszeit = new Date();
   const firstActualBroadcast = NEWS_SCHEDULE.hours.map(h => stationHour(stationTime(slot).date,h)).find(t => newsLanguage(t) === language && t >= redaktionszeit) || slot;
@@ -316,7 +317,7 @@ export async function editorialContent(slot: Date): Promise<EditorialContent> {
   const sources = sourcesForProgramme(await Promise.all(ordered.slice(0, expanded ? 24 : 18).map(enrichSource)), language).slice(0, expanded ? 18 : 12);
   if (!sources.length) throw new Error("Keine aktuellen Quellen passend zur redaktionellen Themenauswahl verfügbar.");
   const editorialPolicy = language === "tr" ? TURKISH_NEWS_POLICY + (expanded ? "\nWenn genügend Substanz vorliegt, fünf bis sechs Meldungen und insgesamt etwa 250 bis 310 Wörter. Erkläre Zusammenhänge und Folgen mit belegten Fakten, statt Meldungen zu strecken. Beziehe relevante Wirtschafts- und Sportnachrichten ein, wenn sie bis zur Abendwiederholung sinnvoll bleiben. Keine Wetten und keine Anlageempfehlungen. Wechselkurse, Gold, Brent und Börsenstände werden vor jeder Sendung getrennt aktualisiert und gehören nicht in deinen Text." : "") : `${NEWS_POLICY}\n${GERMAN_TOPIC_POLICY}\nABWEICHENDE LÄNGE für den deutschen Hauptteil: Ziel 220–270 Wörter für die Meldungen, höchstens 290. Das ist keine Mindestlänge: Eine kürzere, belegte Auswahl ist zulässig und darf nicht allein wegen der Wortzahl abgelehnt oder künstlich aufgefüllt werden. Wetter und Verkehr werden separat ergänzt, hier nicht schreiben. Vier kurze unterschiedliche Meldungen bevorzugen. Der Hauptteil wird bis 17 Uhr wiederholt. Keine Live-Behauptungen. Mindestens ein belegtes geeignetes Thema aus localSourceIds muss enthalten sein; der lokale Bezug steht vor neuen überregionalen Themen.`;
-  const context = { language, desiredStoryCount: Math.min(expanded ? 6 : 4, sources.length), minimumStoryCount: expanded ? 1 : undefined, region: language === "tr" ? "Türkiye, Almanya ve dünyadan" : process.env.NEWS_REGION || "Mainz und Rheinhessen", sendetermin: firstActualBroadcast.toISOString(), tagesausgabe: editionSlot.toISOString(), redaktionszeit: redaktionszeit.toISOString(), wiederholungen: language === "tr" ? "Dieselben Hauptmeldungen um 07 und 20 Uhr" : "Dieselben Hauptmeldungen von 10 bis 17 Uhr; keine Live-Behauptungen oder kurzfristigen Ankündigungen, die beim Wiederholen bereits vorbei sind", sources, previouslyUsed,
+  const context = { language, desiredStoryCount: Math.min(expanded ? 6 : 4, sources.length), minimumStoryCount: 1, region: language === "tr" ? "Türkiye, Almanya ve dünyadan" : process.env.NEWS_REGION || "Mainz und Rheinhessen", sendetermin: firstActualBroadcast.toISOString(), tagesausgabe: editionSlot.toISOString(), redaktionszeit: redaktionszeit.toISOString(), wiederholungen: language === "tr" ? "Dieselben Hauptmeldungen um 07 und 20 Uhr" : "Dieselben Hauptmeldungen von 10 bis 17 Uhr; keine Live-Behauptungen oder kurzfristigen Ankündigungen, die beim Wiederholen bereits vorbei sind", sources, previouslyUsed,
     localSourceIds: language === "de" ? sources.filter(s => s.local).map(s => s.id) : [],
     previousStories: language === "tr" ? previousEditions.map(({ slot, stories }) => ({ slot, stories })) : undefined,
     instruction: language === "tr" ? "Prüfe die Quellen zuerst auf die wichtigsten Entwicklungen, auch nationale Wahlergebnisse mit internationaler Bedeutung. Vergleiche die Sachstände mit previousStories und lasse bloße Wiederholungen aus."
@@ -326,7 +327,13 @@ export async function editorialContent(slot: Date): Promise<EditorialContent> {
   let stories: Story[] = [], feedback = "", approved = false;
   for (let attempt = 0; attempt < 2; attempt++) {
     const draft = await edenJson(`${editorialPolicy}\nAntworte ausschließlich als JSON: {"stories":[{"text":"...", "sourceIds":[1]}]}. Schreibe bis zu ${context.desiredStoryCount} unterschiedliche Meldungen aus jeweils anderen Quellen. Jede Quellen-ID darf nur in einer Meldung verwendet werden. Nur Meldungen, keine Einleitung oder Schluss. Keine verallgemeinernden Ergänzungen wie „jedes Jahr“, keine Wohnorte, Personenbeziehungen oder sonstigen Details ergänzen, die nicht ausdrücklich im Quelltext stehen.${language === "de" && context.localSourceIds.length ? ` DIE ERSTE MELDUNG MUSS aus mindestens einer dieser lokalen Quellen stammen: ${context.localSourceIds.join(", ")}.` : ""}`, { ...context, correction: feedback }, false, modelCalls);
-    stories = validateStories(draft, sources);
+    try { stories = validateStories(draft, sources); }
+    catch (error) {
+      // A malformed citation is repair feedback, not an immediate loss of the
+      // whole daily job. The next draft still passes all checks and the reviewer.
+      feedback = `Formfehler: ${error instanceof Error ? error.message : "Ungültiger Entwurf"}. Jede Meldung braucht mindestens eine sourceIds-Referenz als ganze Zahl aus dieser Liste: ${sources.map(source => source.id).join(", ")}. Keine Quellen erfinden oder Quellen-IDs umnummerieren. Wenn weniger geeignete Quellen vorliegen, weniger Meldungen schreiben.`;
+      continue;
+    }
     const citedIds = stories.flatMap(s=>s.sourceIds);
     if(new Set(citedIds).size!==citedIds.length){feedback="Vier eigenständige Themen aus vier verschiedenen Quellen wählen. Eine Quellen-ID darf nicht für mehrere Meldungen verwendet werden.";continue;}
     if (stories.some(s => !familyContentAllowed(s.text))) {
@@ -496,7 +503,11 @@ async function approvedDraft(edition: Date, key: string): Promise<EditorialConte
 
 async function recoverQuotaJob(key: string) {
   const job = await prisma.radioJob.findUnique({ where: { key } });
-  if (job?.status === "failed" && job.attempts >= 3 && /Guthaben nicht ausreichend:/.test(job.error || "")) {
+  // Old source-format failures escaped the correction loop and exhausted the
+  // daily job. Give those jobs one recovery after this fix. New failures carry
+  // the editorial-review prefix, so this cannot become an endless retry loop.
+  const oldSourceFailure = key.startsWith("news-main:") && /^(News has missing\/unknown sources|Invalid news stories)$/.test(job?.error || "");
+  if (job?.status === "failed" && job.attempts >= 3 && (/Guthaben nicht ausreichend:/.test(job.error || "") || oldSourceFailure)) {
     await assertNewsCredits();
     await prisma.radioJob.updateMany({ where: { key, status: "failed", attempts: job.attempts }, data: { status: "pending", attempts: 0, leaseUntil: null } });
   }
@@ -504,7 +515,8 @@ async function recoverQuotaJob(key: string) {
 
 export async function prepareNews(slot: Date, simulatedNow?: Date) {
   const now = simulatedNow ?? new Date();
-  if (!isNewsSlot(slot)) throw new Error("Ungültiger Nachrichtentermin: Türkisch 07/20 Uhr, Deutsch 10–17 Uhr");
+  if (!newsAllowedOn(slot)) throw new Error("Sonntags werden keine Nachrichten erstellt oder gesendet.");
+  if (!isNewsSlot(slot)) throw new Error("Ungültiger Nachrichtentermin: Montag bis Samstag, Türkisch 07/20 Uhr, Deutsch 10–17 Uhr");
   const edition = newsEditionSlot(slot), language = newsLanguage(slot), plan = dailyNewsPlan(edition).find(p => p.language === language)!;
   if (now < plan.generateAt) return false;
   if (now >= plan.lastBroadcast) throw new Error("Letzter Sendetermin der Tagesausgabe verstrichen");

@@ -47,8 +47,8 @@ test("Berlin opening hours and morning-only news in winter", () => {
 test("summer time and both DST transition days", () => {
   assert.equal(isOnAir(new Date("2026-07-15T06:00:00Z")), true);
   assert.equal(isOnAir(new Date("2026-07-15T16:00:00Z")), false);
-  assert.equal(upcomingNewsSlot(new Date("2026-03-28T20:01:00Z"))?.toISOString(), "2026-03-29T05:00:00.000Z");
-  assert.equal(upcomingNewsSlot(new Date("2026-10-24T20:01:00Z"))?.toISOString(), "2026-10-25T06:00:00.000Z");
+  assert.equal(upcomingNewsSlot(new Date("2026-03-28T20:01:00Z"))?.toISOString(), "2026-03-30T05:00:00.000Z");
+  assert.equal(upcomingNewsSlot(new Date("2026-10-24T20:01:00Z"))?.toISOString(), "2026-10-26T06:00:00.000Z");
   assert.equal(stationTime(new Date("2026-10-25T07:00:00Z")).hour, 8);
 });
 test("legacy zones never contact the retired stream; silent zones stay silent", () => {
@@ -132,7 +132,7 @@ test("a single German daily recording serves every hourly slot, Turkish repeats 
   assert.equal(isNewsSlot(new Date("2026-11-04T17:00:00Z")), false);
 });
 test("daily generation starts at 06/09 Berlin and remains catch-up capable before the last broadcast", () => {
-  for (const day of ["2026-03-29", "2026-10-25", "2026-11-04"]) {
+  for (const day of ["2026-03-30", "2026-10-26", "2026-11-04"]) {
     const plans = dailyNewsPlan(stationHour(day,12));
     assert.equal(stationTime(plans[0].generateAt).hour,6); assert.equal(stationTime(plans[0].firstBroadcast).hour,7); assert.equal(stationTime(plans[0].lastBroadcast).hour,20);
     assert.equal(stationTime(plans[1].generateAt).hour,9); assert.equal(stationTime(plans[1].firstBroadcast).hour,10);

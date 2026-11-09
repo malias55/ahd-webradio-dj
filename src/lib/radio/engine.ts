@@ -38,7 +38,7 @@ const state = globalRadio.__ahdRadio ??= {
 export function radioStatus() {
   return { programmeVersion: GERMAN_NEWS_VERSION, imagingVersion: IMAGING_VERSION, presenter: presenterForSlot(new Date()).name, newsSchedule: NEWS_SCHEDULE, newsRefreshHours: 24, serviceRefreshHours: usesSlotUpdates(new Date()) ? 1 : 24, started: state.started, onAir: isOnAir(), playing: state.playing, startedAt: state.startedAt || null,
     listeners: state.listeners.size, preparing: state.preparing, error: state.error,
-    nextNewsAt: upcomingNewsSlot()?.toISOString() ?? null, timezone: "Europe/Berlin", hours: "07/20 Uhr Türkçe · 08:00–18:00 Musik", newsHours: "07/20 Uhr Türkçe · 10–17 Uhr stündlich Deutsch" };
+    nextNewsAt: upcomingNewsSlot()?.toISOString() ?? null, timezone: "Europe/Berlin", hours: "Mo–Sa 07/20 Uhr Türkçe · täglich 08:00–18:00 Musik", newsHours: "Mo–Sa: 07/20 Uhr Türkçe · 10–17 Uhr stündlich Deutsch" };
 }
 
 export function attachRadio(res: ServerResponse) {
