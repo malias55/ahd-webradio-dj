@@ -1,0 +1,522 @@
+{
+  "version": "gentle-no-winds-2026-11-09",
+  "reviewedAt": "2026-11-09T14:21:00.113912+00:00",
+  "model": "gpt-audio-1.5",
+  "scope": "Complete original MP3 plus contiguous 60-second sections covering all substantive audio; encoder padding below 0.1 seconds omitted in section pass",
+  "humanListeningCheck": false,
+  "tracks": [
+    {
+      "id": "fec08a42-c91b-4850-b84c-328a45d1235a",
+      "key": "music:0:0",
+      "title": "Showroom Velvet 1",
+      "sha256": "25f8a8a46866dc21ed4f2b5519c63c7ddb833ac988cd53a9361cdb60ad72891a",
+      "duration": 180.035918,
+      "inRotation": true,
+      "reason": "Alle drei Abschnitte beschreiben sanftes Piano bzw. E-Piano ohne Bläserklänge.",
+      "sections": [
+        {
+          "startSeconds": 0,
+          "durationSeconds": 60,
+          "audio_perceived": true,
+          "heard_description": "A gentle piano performance with a clear, melodic lead on the higher keys and a softly played chordal accompaniment in the mid-range. The melody is smooth and lyrical, with a warm, resonant timbre. The accompaniment provides a steady harmonic background, and the overall development remains calm and consistent.",
+          "lead_instrument": "piano",
+          "wind_instruments": "absent",
+          "wind_events": [],
+          "harshness_1_to_5": 1,
+          "energy_1_to_5": 2
+        },
+        {
+          "startSeconds": 60,
+          "durationSeconds": 60,
+          "audio_perceived": true,
+          "heard_description": "Continued piano piece, with the melody played clearly in the upper register. The articulation remains smooth but slightly more dynamic, and the timbre stays warm. The accompaniment is still chordal, adding subtle shifts, but no additional instruments enter. The music maintains a consistent, gentle flow.",
+          "lead_instrument": "piano",
+          "wind_instruments": "absent",
+          "wind_events": [],
+          "harshness_1_to_5": 1,
+          "energy_1_to_5": 2
+        },
+        {
+          "startSeconds": 120,
+          "durationSeconds": 60,
+          "audio_perceived": true,
+          "heard_description": "A smooth, laid-back track featuring a warm electric piano or synth as the lead playing mellow chords and a gentle melody. The timbre is soft and rounded with subtle use of sustain. The accompaniment consists of a soft drum pattern and a light bassline that stays consistent and unobtrusive. There is a slight development with occasional gentle fills from the synth.",
+          "lead_instrument": "electric piano/synth",
+          "wind_instruments": "absent",
+          "wind_events": [],
+          "harshness_1_to_5": 1,
+          "energy_1_to_5": 2
+        }
+      ],
+      "wholeTrackAssessment": {
+        "audio_perceived": true,
+        "full_track_assessed": true,
+        "heard_description": "The track features a gentle piano melody accompanied by soft acoustic guitar and subtle string pads throughout. The dynamics remain consistently low and soothing, without sudden peaks or harsh elements.",
+        "wind_instruments": "absent",
+        "wind_events": [],
+        "harshness_1_to_5": 1,
+        "energy_1_to_5": 1,
+        "keep": true,
+        "reason": "No wind or brass-like instruments were heard at any point, and the music stayed soft and unobtrusive throughout."
+      }
+    },
+    {
+      "id": "20ddc6ec-725d-42cd-8d19-28bfa51cda5f",
+      "key": "music:0:1",
+      "title": "Velvet Floorplan 1",
+      "sha256": "6860e244f4273f4ca3540a16161d1fb730a9c984e5f76c569e6391909a8f45ec",
+      "duration": 180.035918,
+      "inRotation": false,
+      "reason": "Saxofonähnlicher synthetischer Lead in den ersten beiden Minuten.",
+      "sections": [
+        {
+          "startSeconds": 0,
+          "durationSeconds": 60,
+          "audio_perceived": true,
+          "heard_description": "The clip features a clear lead instrument playing a lyrical melody line. The timbre is smooth and warm, possibly a clarinet or sax-like synthetic sound, with sustained notes and gentle articulations. The accompaniment is minimal, with soft chordal support in the background, possibly keyboard or strings. Development over the clip stays calm with no major changes.",
+          "lead_instrument": "saxophone-like synthetic lead",
+          "wind_instruments": "present",
+          "wind_events": [
+            {
+              "seconds_into_clip": 0,
+              "description": "Lead enters immediately with a smooth sax-like sound holding a sustained melodic phrase."
+            },
+            {
+              "seconds_into_clip": 15,
+              "description": "Lead plays another melodic phrase with similar articulation."
+            }
+          ],
+          "harshness_1_to_5": 2,
+          "energy_1_to_5": 2
+        },
+        {
+          "startSeconds": 60,
+          "durationSeconds": 60,
+          "audio_perceived": true,
+          "heard_description": "This clip continues with a similar smooth lead instrument, maintaining a warm and rounded tone. It sounds like the same sax-like synthetic lead playing a melodic motif. The accompaniment remains subtle, with gentle harmony in the background. There is little variation in dynamics or intensity.",
+          "lead_instrument": "saxophone-like synthetic lead",
+          "wind_instruments": "present",
+          "wind_events": [
+            {
+              "seconds_into_clip": 0,
+              "description": "Lead re-enters with a mellow, sustained melodic line."
+            },
+            {
+              "seconds_into_clip": 20,
+              "description": "Another short phrase from the lead, consistent timbre and articulation."
+            }
+          ],
+          "harshness_1_to_5": 2,
+          "energy_1_to_5": 2
+        },
+        {
+          "startSeconds": 120,
+          "durationSeconds": 60,
+          "audio_perceived": true,
+          "heard_description": "A smooth, mellow lead sound plays a gentle melody, likely a synthesizer with a rounded and warm timbre. The articulation is legato with soft attacks. Underneath, there is a gentle pad-like accompaniment and subtle bass support, creating a calm and flowing texture. The arrangement remains consistent throughout, with minimal development or changes in intensity.",
+          "lead_instrument": "synthesizer",
+          "wind_instruments": "absent",
+          "wind_events": [],
+          "harshness_1_to_5": 1,
+          "energy_1_to_5": 2
+        }
+      ],
+      "wholeTrackAssessment": {
+        "audio_perceived": false,
+        "full_track_assessed": false,
+        "heard_description": "",
+        "wind_instruments": "uncertain",
+        "wind_events": [],
+        "harshness_1_to_5": 5,
+        "energy_1_to_5": 5,
+        "keep": false,
+        "reason": "I am unable to hear or analyze the attached audio file."
+      }
+    },
+    {
+      "id": "7a045efb-77cc-4a3f-8af0-0bd0c88bf99b",
+      "key": "music:0:2",
+      "title": "Showroom Satin 1",
+      "sha256": "88cc2eca44ce9044426bf1fcf9991ee25f76a19f804c3d958d2a82bbc5536057",
+      "duration": 180.035918,
+      "inRotation": false,
+      "reason": "Synthetischer Blechbläser-/Trompetenklang im Abschnitt 60–120 Sekunden; Beschreibung widerspricht dem pauschalen absent-Label. Klangbeschreibung hat Vorrang.",
+      "sections": [
+        {
+          "startSeconds": 0,
+          "durationSeconds": 60,
+          "audio_perceived": true,
+          "heard_description": "The clip features a gently plucked acoustic guitar playing arpeggiated chords as the main accompaniment, with a clear piano taking the melody line. The piano has a bright but warm timbre, articulated smoothly with a legato style. The arrangement is calm, with the guitar softly shimmering underneath. There are no identifiable wind instruments present.",
+          "lead_instrument": "piano",
+          "wind_instruments": "absent",
+          "wind_events": [],
+          "harshness_1_to_5": 2,
+          "energy_1_to_5": 2
+        },
+        {
+          "startSeconds": 60,
+          "durationSeconds": 60,
+          "audio_perceived": true,
+          "heard_description": "This segment includes a steady drum groove and an electric bass laying down a consistent rhythm. Over this, a synthetic lead instrument resembling a soft brass or synth trumpet carries a simple melody with a slightly breathy attack. The layered pads accompany in the background, swelling behind the lead. The atmosphere is moderate in energy.",
+          "lead_instrument": "synthetic brass-like lead",
+          "wind_instruments": "absent",
+          "wind_events": [],
+          "harshness_1_to_5": 3,
+          "energy_1_to_5": 3
+        },
+        {
+          "startSeconds": 120,
+          "durationSeconds": 60,
+          "audio_perceived": true,
+          "heard_description": "A bright piano carries the melody with clear, percussive articulation. The accompaniment consists of light bass and subtle drums, maintaining a steady rhythm throughout. The piece develops with gentle dynamic shifts but remains largely consistent.",
+          "lead_instrument": "piano",
+          "wind_instruments": "absent",
+          "wind_events": [],
+          "harshness_1_to_5": 2,
+          "energy_1_to_5": 3
+        }
+      ],
+      "wholeTrackAssessment": {
+        "audio_perceived": false,
+        "full_track_assessed": false,
+        "heard_description": "I was not able to hear the track, so I cannot describe any instruments or development.",
+        "wind_instruments": "uncertain",
+        "wind_events": [],
+        "harshness_1_to_5": 5,
+        "energy_1_to_5": 5,
+        "keep": false,
+        "reason": "I cannot hear or confidently classify the track."
+      }
+    },
+    {
+      "id": "413569f1-dbeb-4451-8bae-e7ea7df3ff26",
+      "key": "music:showroom-expansion-20261104:0",
+      "title": "Showroom Velvet · Daylight",
+      "sha256": "c581d7ed517311da2f2f5f4ba27ca224be4a0a44ef7291f09cf13a8c4e582016",
+      "duration": 240.039184,
+      "inRotation": true,
+      "reason": "Alle Abschnitte beschreiben weiches E-Piano/Synth mit zurückhaltender Begleitung, keine Bläserklänge erkannt.",
+      "sections": [
+        {
+          "startSeconds": 0,
+          "durationSeconds": 60,
+          "audio_perceived": true,
+          "heard_description": "A warm, smooth electric piano or synth lead carries a gentle melody with soft attack and round timbre. The accompaniment is a laid-back bass line and subtle percussion, developing steadily but minimally. No clear wind instruments are discernible.",
+          "lead_instrument": "electric piano or mellow synth",
+          "wind_instruments": "absent",
+          "wind_events": [],
+          "harshness_1_to_5": 1,
+          "energy_1_to_5": 2
+        },
+        {
+          "startSeconds": 60,
+          "durationSeconds": 60,
+          "audio_perceived": true,
+          "heard_description": "Continuation of the mellow piece, the lead remains a soft electric piano or synth voice, maintaining a smooth, legato melody. The background accompaniment includes restrained bass and light rhythmic elements. Still no evidence of wind or brass instruments.",
+          "lead_instrument": "electric piano or mellow synth",
+          "wind_instruments": "absent",
+          "wind_events": [],
+          "harshness_1_to_5": 1,
+          "energy_1_to_5": 2
+        },
+        {
+          "startSeconds": 120,
+          "durationSeconds": 60,
+          "audio_perceived": true,
+          "heard_description": "A warm electric piano-like lead plays a smooth melodic line with gentle articulation. Underneath, a soft bass supports the harmony with subtle electronic percussion filling the space. The arrangement remains mellow and consistent with light chordal accompaniment, developing slightly toward the end with additional harmonic layers.",
+          "lead_instrument": "electric piano",
+          "wind_instruments": "absent",
+          "wind_events": [],
+          "harshness_1_to_5": 2,
+          "energy_1_to_5": 2
+        },
+        {
+          "startSeconds": 180,
+          "durationSeconds": 60,
+          "audio_perceived": true,
+          "heard_description": "A brighter synthetic lead voice carries the melody with a sustained, slightly airy tone. The backing features a more pronounced rhythmic section, including electronic drums and a deeper bass line, building energy. The piece develops with layered pads and a steady groove, maintaining a smooth and electronic character throughout.",
+          "lead_instrument": "synth lead",
+          "wind_instruments": "absent",
+          "wind_events": [],
+          "harshness_1_to_5": 2,
+          "energy_1_to_5": 3
+        }
+      ],
+      "wholeTrackAssessment": {
+        "audio_perceived": true,
+        "full_track_assessed": true,
+        "heard_description": "A consistently gentle arrangement featuring soft piano, light acoustic guitar, and subtle string pads. The music remains minimal and unobtrusive throughout, with no sudden changes in instrumentation or dynamics.",
+        "wind_instruments": "absent",
+        "wind_events": [],
+        "harshness_1_to_5": 1,
+        "energy_1_to_5": 1,
+        "keep": true,
+        "reason": "The track is consistently soft and easy on the ear, with no wind, brass, or reed instruments detected. It provides a gentle background atmosphere suitable for unobtrusive listening."
+      }
+    },
+    {
+      "id": "8267380a-c242-4563-a7c7-0cb215332bec",
+      "key": "music:showroom-expansion-20261104:1",
+      "title": "Velvet Floorplan · Panorama",
+      "sha256": "70edc26dc9995b335ce77bb7dd8c16c03f2c8d7b5a593d5551781dd4deaf7336",
+      "duration": 240.039184,
+      "inRotation": true,
+      "reason": "Alle Abschnitte beschreiben Piano bzw. weiche Synthklänge, keine Bläserklänge erkannt.",
+      "sections": [
+        {
+          "startSeconds": 0,
+          "durationSeconds": 60,
+          "audio_perceived": true,
+          "heard_description": "The clip features a gentle melodic line played on an acoustic piano with a clear and mellow tone. The articulation is smooth, with legato phrasing. Underneath the melody, there is a subdued harmonic accompaniment on the same instrument, providing chordal support. The dynamics remain relatively even with slight expressive swells.",
+          "lead_instrument": "piano",
+          "wind_instruments": "absent",
+          "wind_events": [],
+          "harshness_1_to_5": 1,
+          "energy_1_to_5": 2
+        },
+        {
+          "startSeconds": 60,
+          "durationSeconds": 60,
+          "audio_perceived": true,
+          "heard_description": "The performance continues with the same piano sound carrying the melody. The tone remains warm and rounded, and the articulation stays smooth. The accompaniment is also piano-based, with simple harmonic movement. There are no additional instruments entering and no distinct shifts in texture or intensity over the clip.",
+          "lead_instrument": "piano",
+          "wind_instruments": "absent",
+          "wind_events": [],
+          "harshness_1_to_5": 1,
+          "energy_1_to_5": 2
+        },
+        {
+          "startSeconds": 120,
+          "durationSeconds": 60,
+          "audio_perceived": true,
+          "heard_description": "The track opens with a bright, plucked synth lead carrying a simple melody, moderately articulated staccato style. The timbre is crisp with a digital sheen. Underneath, there is a steady electronic beat and layered pads that create a lush harmonic bed. Over time, more rhythmic elements are added, and the lead melody repeats with slight variations.",
+          "lead_instrument": "plucked synth lead",
+          "wind_instruments": "absent",
+          "wind_events": [],
+          "harshness_1_to_5": 2,
+          "energy_1_to_5": 3
+        },
+        {
+          "startSeconds": 180,
+          "durationSeconds": 60,
+          "audio_perceived": true,
+          "heard_description": "This clip features a warm, sustained synth lead playing a flowing melody with legato articulation. The timbre is smooth and somewhat analog-like. The accompaniment includes a soft electronic drum pattern and ambient pads that swell in and out. The arrangement builds gradually with subtle harmonic layers and a more pronounced bass line as the clip progresses.",
+          "lead_instrument": "sustained synth lead",
+          "wind_instruments": "absent",
+          "wind_events": [],
+          "harshness_1_to_5": 1,
+          "energy_1_to_5": 2
+        }
+      ],
+      "wholeTrackAssessment": {
+        "audio_perceived": false,
+        "full_track_assessed": false,
+        "heard_description": "I am unable to hear the provided audio track",
+        "wind_instruments": "uncertain",
+        "wind_events": [],
+        "harshness_1_to_5": 0,
+        "energy_1_to_5": 0,
+        "keep": false,
+        "reason": "I cannot hear or assess the track, so I cannot confirm the absence of wind instruments or its gentleness"
+      }
+    },
+    {
+      "id": "44fb331f-f2e1-4d7d-9e20-e78d660a5633",
+      "key": "music:showroom-expansion-20261104:2",
+      "title": "Showroom Satin · Boulevard",
+      "sha256": "83b7cc22772271de22d34f961ea95c6a15bcaf963ef2c468ee010918fb4c38d6",
+      "duration": 240.039184,
+      "inRotation": false,
+      "reason": "Vorsorglich ausgeschlossen: ursprünglicher Musikauftrag verlangte Tenorsaxofon, obwohl die Audioanalyse Gitarrenklänge beschreibt.",
+      "sections": [
+        {
+          "startSeconds": 0,
+          "durationSeconds": 60,
+          "audio_perceived": true,
+          "heard_description": "A smooth jazz piece with an electric guitar playing the lead melody. The guitar has a warm, slightly mellow timbre with soft articulation. The accompaniment consists of gentle drums, a subtle bass line, and light chordal backing, possibly from a keyboard or guitar. The piece remains steady without major development, maintaining a relaxed atmosphere.",
+          "lead_instrument": "electric guitar",
+          "wind_instruments": "absent",
+          "wind_events": [],
+          "harshness_1_to_5": 2,
+          "energy_1_to_5": 2
+        },
+        {
+          "startSeconds": 60,
+          "durationSeconds": 60,
+          "audio_perceived": true,
+          "heard_description": "Another laid-back jazz groove continuing the same mood. The electric guitar remains the lead instrument, playing melodic lines with a warm, rounded tone and smooth articulation. The backing features steady drums, bass, and subtle chords. No noticeable wind instruments are present. The energy stays moderate and the piece maintains a consistent feel throughout this segment.",
+          "lead_instrument": "electric guitar",
+          "wind_instruments": "absent",
+          "wind_events": [],
+          "harshness_1_to_5": 2,
+          "energy_1_to_5": 2
+        },
+        {
+          "startSeconds": 120,
+          "durationSeconds": 60,
+          "audio_perceived": true,
+          "heard_description": "A smooth lead guitar carries the melody with a warm, slightly reverberant tone. The articulation is legato with gentle bending and vibrato. The accompaniment consists of a relaxed rhythm section featuring bass, drums, and a quiet keyboard providing harmonic support. The piece develops steadily but remains laid back throughout.",
+          "lead_instrument": "electric guitar",
+          "wind_instruments": "absent",
+          "wind_events": [],
+          "harshness_1_to_5": 2,
+          "energy_1_to_5": 2
+        },
+        {
+          "startSeconds": 180,
+          "durationSeconds": 60,
+          "audio_perceived": true,
+          "heard_description": "A distinct lead guitar again leads the melody, this time with a slightly brighter tone, smooth phrasing, and subtle vibrato for expression. The accompaniment features bass and drums with a steady groove, as well as gentle keyboard chords. The arrangement is consistent with a relaxed, mid-tempo feel.",
+          "lead_instrument": "electric guitar",
+          "wind_instruments": "absent",
+          "wind_events": [],
+          "harshness_1_to_5": 2,
+          "energy_1_to_5": 2
+        }
+      ],
+      "wholeTrackAssessment": {
+        "audio_perceived": true,
+        "full_track_assessed": true,
+        "heard_description": "The track features a gentle piano throughout, subtle acoustic guitar strumming, soft bass and light percussion. There are no wind or brass instruments audible. The music remains consistently soft and unobtrusive from start to finish.",
+        "wind_instruments": "absent",
+        "wind_events": [],
+        "harshness_1_to_5": 1,
+        "energy_1_to_5": 1,
+        "keep": true,
+        "reason": "The entire track is a gentle instrumental with piano, guitar, bass, and light percussion only. No wind or brass-like sounds appear at any point, making it suitable as unobtrusive background music."
+      }
+    },
+    {
+      "id": "549cefd0-9204-4a19-b648-a2e1f3d52ec6",
+      "key": "music:showroom-expansion-20261104:3",
+      "title": "Showroom Velvet · Sunlit",
+      "sha256": "50225b29aceb6be0269862edb3ec928fa84965b55b192f589495554a4849230c",
+      "duration": 240.039184,
+      "inRotation": false,
+      "reason": "Der erste Abschnitt wird als flötenähnlicher Synthesizer beschrieben. Synthetische Bläserklänge sind ebenfalls unerwünscht.",
+      "sections": [
+        {
+          "startSeconds": 0,
+          "durationSeconds": 60,
+          "audio_perceived": true,
+          "heard_description": "A bright synthesized lead carries the melody with clear, slightly plucked articulation. The timbre is reminiscent of a chiptune or synth flute but more digital in nature. The accompaniment includes a steady electronic drum pattern, a bass synth providing a consistent foundation, and some background harmonies from layered synth pads. Over the clip, the arrangement remains steady with minor variations in the drum fills.",
+          "lead_instrument": "synth lead",
+          "wind_instruments": "absent",
+          "wind_events": [],
+          "harshness_1_to_5": 2,
+          "energy_1_to_5": 3
+        },
+        {
+          "startSeconds": 60,
+          "durationSeconds": 60,
+          "audio_perceived": true,
+          "heard_description": "A mellow synthetic pad or lead plays the main melodic line with smooth, legato articulation. The timbre is soft and warm, not piercing. The accompaniment is minimal, a gentle synth pad sustaining chords and a simple, subdued electronic beat underneath. There aren't any prominent brass or woodwind timbres. The development is subtle with slight changes in melodic phrasing and hints of layered textures towards the end.",
+          "lead_instrument": "soft synth lead",
+          "wind_instruments": "absent",
+          "wind_events": [],
+          "harshness_1_to_5": 1,
+          "energy_1_to_5": 2
+        },
+        {
+          "startSeconds": 120,
+          "durationSeconds": 60,
+          "audio_perceived": true,
+          "heard_description": "A smooth, warm electric piano-like lead playing a gentle melody with soft, rounded articulation. The accompaniment is subtle, with light harmonic pads and a steady, relaxed rhythm that remains consistent throughout the clip. There's a general mellow vibe with minimal dynamic changes.",
+          "lead_instrument": "electric piano-like synth",
+          "wind_instruments": "absent",
+          "wind_events": [],
+          "harshness_1_to_5": 1,
+          "energy_1_to_5": 2
+        },
+        {
+          "startSeconds": 180,
+          "durationSeconds": 60,
+          "audio_perceived": true,
+          "heard_description": "A similar smooth electric piano-like lead carrying a laid-back melody. The articulation is slightly rounded, maintaining a soft timbre. The background features gentle chordal support and minimal rhythmic elements. The piece feels calm and steady without noticeable wind-like elements.",
+          "lead_instrument": "electric piano-like synth",
+          "wind_instruments": "absent",
+          "wind_events": [],
+          "harshness_1_to_5": 1,
+          "energy_1_to_5": 2
+        }
+      ],
+      "wholeTrackAssessment": {
+        "audio_perceived": true,
+        "full_track_assessed": true,
+        "heard_description": "Throughout the entire track, I heard a gentle piano playing a soft, repeating melody accompanied by subtle string-like pads. The strings provided a smooth, sustained background, and there were occasional light guitar-like plucked sounds. The overall texture remained delicate and unobtrusive, perfect for background music.",
+        "wind_instruments": "absent",
+        "wind_events": [],
+        "harshness_1_to_5": 1,
+        "energy_1_to_5": 1,
+        "keep": true,
+        "reason": "No wind or brass instruments audible at any point in the track, and the music remained consistently soft and easy on the ear, making it suitable as gentle background music."
+      }
+    },
+    {
+      "id": "f312e92e-f858-436e-b441-e82923a945db",
+      "key": "music:showroom-expansion-20261104:4",
+      "title": "Velvet Floorplan · Café",
+      "sha256": "8eb93c1453a9c874520d09bf91d372f872c95c35608a74872fe549ce59b34bc2",
+      "duration": 240.039184,
+      "inRotation": true,
+      "reason": "Alle Abschnitte beschreiben sanfte Gitarre/E-Piano und leichte Begleitung, keine Bläserklänge erkannt.",
+      "sections": [
+        {
+          "startSeconds": 0,
+          "durationSeconds": 60,
+          "audio_perceived": true,
+          "heard_description": "A mellow electric guitar plays the lead melody with smooth, legato phrasing. The timbre is warm and slightly rounded. The accompaniment consists of gentle percussion with a laid-back rhythm and a subtle bass foundation. The piece develops calmly without major intensity changes.",
+          "lead_instrument": "electric guitar",
+          "wind_instruments": "absent",
+          "wind_events": [],
+          "harshness_1_to_5": 2,
+          "energy_1_to_5": 3
+        },
+        {
+          "startSeconds": 60,
+          "durationSeconds": 60,
+          "audio_perceived": true,
+          "heard_description": "The lead remains an electric guitar with a clean, warm tone, playing melodic lines fluidly. The backing accompaniment includes soft percussion and a steady bass line, maintaining a relaxed groove. There's a slight introduction of ambient keys to add texture. The development stays smooth and laid-back.",
+          "lead_instrument": "electric guitar",
+          "wind_instruments": "absent",
+          "wind_events": [],
+          "harshness_1_to_5": 2,
+          "energy_1_to_5": 3
+        },
+        {
+          "startSeconds": 120,
+          "durationSeconds": 60,
+          "audio_perceived": true,
+          "heard_description": "A smooth jazz-style track with electric piano playing the lead melody, which is mellow and fluid in articulation. The accompaniment consists of a soft bass line and subtle drums, with periodic chordal comping. The piece remains relaxed and consistent, with minimal dynamic changes over the duration.",
+          "lead_instrument": "electric piano",
+          "wind_instruments": "absent",
+          "wind_events": [],
+          "harshness_1_to_5": 1,
+          "energy_1_to_5": 2
+        },
+        {
+          "startSeconds": 180,
+          "durationSeconds": 60,
+          "audio_perceived": true,
+          "heard_description": "Another relaxed jazz track featuring electric piano as the melodic lead, with similar smooth and sustained articulation. The backing includes gentle bass and drums. The development is steady and calm, with no noticeable addition of wind instruments or major changes in texture.",
+          "lead_instrument": "electric piano",
+          "wind_instruments": "absent",
+          "wind_events": [],
+          "harshness_1_to_5": 1,
+          "energy_1_to_5": 2
+        }
+      ],
+      "wholeTrackAssessment": {
+        "audio_perceived": true,
+        "full_track_assessed": true,
+        "heard_description": "The track features a soft piano motif throughout, with gentle acoustic guitar accompaniment and light percussion. There are also very subtle string pads in the background. No prominent wind or brass instruments are heard at any point.",
+        "wind_instruments": "absent",
+        "wind_events": [],
+        "harshness_1_to_5": 1,
+        "energy_1_to_5": 1,
+        "keep": true,
+        "reason": "The track remains consistently gentle and unobtrusive, with no audible wind or brass instruments, suitable for background listening."
+      }
+    }
+  ]
+}
