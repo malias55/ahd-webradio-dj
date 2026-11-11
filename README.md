@@ -52,6 +52,7 @@ Audio liegt dauerhaft in der bestehenden PostgreSQL-Datenbank. Der lokale MP3-Ca
 | `NEWS_FEED_URLS` | Optional: HTTPS-RSS/Atom-URLs, kommagetrennt; erster Feed lokal |
 | `RADIO_PUBLIC_URL` | `https://radio.doerrschuck.de` |
 | `AUTH_URL` | `https://auth.doerrschuck.de` |
+| `DMS_URL` | `https://dms.doerrschuck.de`; prüft aktive DMS-Benutzer über `/api/session/status` |
 | `RADIO_ENABLED` | `false` deaktiviert das automatische Programm |
 | `FFMPEG_PATH` / `FFPROBE_PATH` | Optional: alternative Binärpfade |
 
@@ -59,7 +60,9 @@ Alte AzuraCast-Zonen werden beim Seed auf `radio` umgestellt; benutzerdefinierte
 
 ## Anmeldung
 
-Dieselbe zentrale Better-Auth-Sitzung wie AHD-DMS unter `auth.doerrschuck.de`, mit Cookie für `.doerrschuck.de`. Der Radioserver validiert die Sitzung zentral und gleicht die verifizierte E-Mail mit der lokalen `users`-Tabelle ab. `mali@autohaus-doerrschuck.de` und `info@autohaus-doerrschuck.de` sind Administratoren. `radio.doerrschuck.de` muss in den zentralen Listen für vertrauenswürdige Anwendungen und Login-Rückleitungen stehen.
+Dieselbe zentrale Better-Auth-Sitzung wie AHD-DMS unter `auth.doerrschuck.de`, mit Cookie für `.doerrschuck.de`. Der Radioserver validiert die verifizierte Identität und die noch gültige Sitzung zentral; anschließend bestätigt das DMS über `/api/session/status`, dass die Sitzung einem aktiven DMS-Benutzer gehört. Alle aktiven DMS-Benutzer erhalten dadurch automatisch Radio-Zugang, ohne zusätzliche Benutzeranlage oder Synchronisation. Ein zentraler Account ohne DMS-Zugang reicht nicht. Deaktivierte Benutzer, widerrufene/abgelaufene Sitzungen und fehlgeschlagene Prüfungen erhalten keinen Zugang. Die DMS-spezifische Ein-Gerät-Sperre (`superseded`, hostgebundenes `ahd_sid`) wird nicht auf Radio-Lautsprecher übertragen; eine explizite Sperre (`revoked`) wird berücksichtigt. Das Radio übernimmt keine DMS-Sitzung und ändert keine DMS-Benutzer.
+
+Die lokale `users`-Tabelle dient nur noch den bestehenden Radio-Rollen und Anzeigenamen. Neue DMS-Benutzer erhalten `user`; bestehende Radio-Administratoren behalten `admin`. `mali@autohaus-doerrschuck.de` und `info@autohaus-doerrschuck.de` sind Administratoren. Diese Rollen umgehen die DMS-Prüfung nicht. `radio.doerrschuck.de` muss in den zentralen Listen für vertrauenswürdige Anwendungen und Login-Rückleitungen stehen. `SKIP_AUTH` wird in Produktion auch im Request-Proxy ignoriert.
 
 ## Entwicklung und Prüfung
 

@@ -16,7 +16,7 @@ function isPublic(pathname: string, method: string) {
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (process.env.SKIP_AUTH === "true") return NextResponse.next();
+  if (process.env.SKIP_AUTH === "true" && process.env.NODE_ENV !== "production") return NextResponse.next();
   if (isPublic(pathname, request.method)) return NextResponse.next();
 
   const origin = request.headers.get("origin");

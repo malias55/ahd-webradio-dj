@@ -9,13 +9,14 @@ const origin = 'http://127.0.0.1:3197', cookie = '__Secure-better-auth.session_t
 let server, logs = '';
 const auth = http.createServer((req, res) => {
  res.setHeader('content-type', 'application/json');
+ if (req.url === '/api/session/status') return res.end(JSON.stringify({ authenticated: req.headers.cookie === cookie, state: 'active' }));
  res.end(req.headers.cookie === cookie ? JSON.stringify({ user: { email: 'mali@autohaus-doerrschuck.de', emailVerified: true }, session: { expiresAt: new Date(Date.now()+60000).toISOString() } }) : 'null');
 });
 async function main() {
  assert.ok(await db.user.findFirst({ where: { email: { equals: 'mali@autohaus-doerrschuck.de', mode: 'insensitive' } } }), 'existing authorized test identity required');
  assert.ok(await db.radioJob.findFirst({ where: { key: { startsWith: 'news' }, status: 'failed', updatedAt: { gte: new Date(Date.now()-48*3600_000) } } }), 'real failure fixture required to exercise the previously crashing branch');
  await new Promise(resolve => auth.listen(3198, '127.0.0.1', resolve));
- server = spawn(process.execPath, ['node_modules/next/dist/bin/next', 'start', '-p', '3197', '-H', '127.0.0.1'], { env: { ...process.env, NODE_ENV: 'production', SKIP_AUTH: 'false', AUTH_URL: 'http://127.0.0.1:3198', RADIO_PUBLIC_URL: origin, ELEVENLABS_API_KEY: '', EDENAI_API_KEY: '', OPENAI_API_KEY: '' }, stdio: ['ignore','pipe','pipe'] });
+ server = spawn(process.execPath, ['node_modules/next/dist/bin/next', 'start', '-p', '3197', '-H', '127.0.0.1'], { env: { ...process.env, NODE_ENV: 'production', SKIP_AUTH: 'false', AUTH_URL: 'http://127.0.0.1:3198', DMS_URL: 'http://127.0.0.1:3198', RADIO_PUBLIC_URL: origin, ELEVENLABS_API_KEY: '', EDENAI_API_KEY: '', OPENAI_API_KEY: '' }, stdio: ['ignore','pipe','pipe'] });
  server.stdout.on('data', b => { logs += b; }); server.stderr.on('data', b => { logs += b; });
  let ready = false;
  for (let i=0; i<80; i++) { try { if ((await fetch(origin+'/api/health')).ok) { ready=true; break; } } catch {} await new Promise(r=>setTimeout(r,250)); }

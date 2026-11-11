@@ -14,6 +14,7 @@ let zone,server,broadcaster,device;
 const dir=mkdtempSync(join(tmpdir(),'ahd-e2e-'));
 const auth=http.createServer((req,res)=>{
  res.setHeader('Content-Type','application/json');
+ if (req.url === '/api/session/status') return res.end(JSON.stringify({ authenticated: req.headers.cookie === cookie, state: 'active' }));
  res.end(req.headers.cookie===cookie?JSON.stringify({user:{email:'mali@autohaus-doerrschuck.de',emailVerified:true},session:{expiresAt:new Date(Date.now()+60000).toISOString()}}):'null');
 });
 async function receive(url,milliseconds=2000){
@@ -30,7 +31,7 @@ async function connect(namespace,opts={}){
 async function main(){
  await new Promise(r=>auth.listen(authPort,'127.0.0.1',r));
  zone=await db.zone.create({data:{name:`Radio E2E ${Date.now()}`,defaultSource:'radio',volume:35}});
- server=spawn(process.execPath,['dist/server.js'],{env:{...process.env,NODE_ENV:'production',PORT:String(port),RADIO_PUBLIC_URL:origin,AUTH_URL:`http://127.0.0.1:${authPort}`,ELEVENLABS_API_KEY:'',EDENAI_API_KEY:''},stdio:['ignore','pipe','pipe']});
+ server=spawn(process.execPath,['dist/server.js'],{env:{...process.env,NODE_ENV:'production',PORT:String(port),RADIO_PUBLIC_URL:origin,AUTH_URL:`http://127.0.0.1:${authPort}`,DMS_URL:`http://127.0.0.1:${authPort}`,ELEVENLABS_API_KEY:'',EDENAI_API_KEY:''},stdio:['ignore','pipe','pipe']});
  let logs='';server.stdout.on('data',b=>{logs+=b});server.stderr.on('data',b=>{logs+=b});
  for(let i=0;i<60;i++){try{if((await fetch(`${origin}/api/health`)).ok)break;}catch{}await sleep(300);if(i===59)throw new Error('server failed: '+logs.slice(-2000));}
  assert.equal((await fetch(`${origin}/api/zones`)).status,401,'anonymous zones must be protected');
