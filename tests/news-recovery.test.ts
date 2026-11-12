@@ -14,8 +14,8 @@ test("Sundays have no generation, news slots or Turkish-only stream windows", as
       assert.equal(isNewsSlot(date), false);
       assert.deepEqual(dailyNewsPlan(date), []);
       assert.deepEqual(dueNewsEditions(date), []);
-      assert.equal(isOnAir(date), hour >= 8 && hour < 18, "normal Sunday music hours remain intact");
-      assert.equal(isMusicHours(date), hour >= 8 && hour < 18);
+      assert.equal(isOnAir(date), (hour >= 7 && hour < 21) || hour >= 22 || hour < 4, "music and Hatim still run on Sundays");
+      assert.equal(isMusicHours(date), hour >= 7 && hour < 21);
     }
     await assert.rejects(prepareNews(stationHour(day, 10)), /Sonntags/);
     await assert.rejects(editorialContent(stationHour(day, 10)), /Sonntags/);
@@ -27,8 +27,8 @@ test("Sundays have no generation, news slots or Turkish-only stream windows", as
 test("next news crosses Sunday and DST using Berlin calendar dates", () => {
   assert.equal(upcomingNewsSlot(new Date("2026-03-28T20:01:00Z"))?.toISOString(), "2026-03-30T05:00:00.000Z");
   assert.equal(upcomingNewsSlot(new Date("2026-10-24T20:01:00Z"))?.toISOString(), "2026-10-26T06:00:00.000Z");
-  assert.equal(upcomingNewsSlot(new Date("2026-11-14T19:00:00Z"))?.toISOString(), "2026-11-14T19:00:00.000Z");
-  assert.equal(upcomingNewsSlot(new Date("2026-11-14T19:00:01Z"))?.toISOString(), "2026-11-16T06:00:00.000Z");
+  assert.equal(upcomingNewsSlot(new Date("2026-11-14T20:00:00Z"))?.toISOString(), "2026-11-14T20:00:00.000Z");
+  assert.equal(upcomingNewsSlot(new Date("2026-11-14T20:00:01Z"))?.toISOString(), "2026-11-16T06:00:00.000Z");
   assert.equal(newsAllowedOn(new Date("2026-11-14T22:59:59Z")), true);
   assert.equal(newsAllowedOn(new Date("2026-11-14T23:00:00Z")), false);
 });
@@ -79,12 +79,12 @@ test("ready editions are not regenerated and expired retry leases stay bounded",
   const originalAssets = prisma.radioAsset.findMany, originalJobs = prisma.radioJob.findMany;
   const now = new Date("2026-11-09T12:00:00Z");
   try {
-    (prisma.radioAsset as any).findMany = async () => [{ id: "ready", kind: "news", script: "Nachrichten aus Mainz.", metadata: { language: "de" } }];
+    (prisma.radioAsset as any).findMany = async () => [{ id: "ready", kind: "news", script: "Nachrichten aus Mainz.", metadata: { language: "de", weatherTrafficPaused: true } }];
     assert.equal((await retryGermanNews(now)).state, "ready", "returns before jobs or paid generation are accessed");
     (prisma.radioAsset as any).findMany = async () => [];
     (prisma.radioJob as any).findMany = async () => [{ key: "news-recovery:daily-repeat-v10:de:2026-11-09", status: "failed", attempts: 3, leaseUntil: new Date(now.getTime() - 1) }];
     assert.equal((await germanNewsRetryStatus(now)).canRetry, false);
-    (prisma.radioJob as any).findMany = async () => [{ key: "news-main:daily-repeat-v10:2026-11-09T09:00:00.000Z", status: "running", attempts: 1, leaseUntil: new Date(now.getTime() + 60000) }];
+    (prisma.radioJob as any).findMany = async () => [{ key: "news-main:daily-repeat-v10:2026-11-09T07:00:00.000Z:no-service", status: "running", attempts: 1, leaseUntil: new Date(now.getTime() + 60000) }];
     assert.equal((await germanNewsRetryStatus(now)).state, "running");
     (prisma.radioJob as any).findMany = async () => [];
     assert.equal((await germanNewsRetryStatus(now)).canRetry, true);

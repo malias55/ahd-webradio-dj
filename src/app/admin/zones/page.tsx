@@ -115,7 +115,7 @@ function ZoneCard({
           )}
         </div>
         {["radio", "azuracast"].includes(zone.defaultSource) && (
-          <p className="mt-1 text-xs text-neutral-400">Das Autohaus Radio sendet automatisch von 08 bis 18 Uhr; Nachrichten um 07 Uhr auf Türkisch und um 08 Uhr auf Deutsch.</p>
+          <p className="mt-1 text-xs text-neutral-400">Musik täglich 07:00–21:00 Uhr, Hatim 22:00–04:00 Uhr. Nachrichten Mo–Sa: Türkisch 07/21 Uhr, Deutsch stündlich 08–20 Uhr.</p>
         )}
       </label>
 

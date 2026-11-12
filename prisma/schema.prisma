@@ -97,3 +97,14 @@ model RadioJob {
 
   @@map("radio_jobs")
 }
+
+// Independent of the disposable audio cache; survives deploys and nightly breaks.
+model HatimProgress {
+  id             String   @id
+  surah          Int      @default(1)
+  offsetSeconds  Float    @default(0) @map("offset_seconds")
+  completedLoops Int      @default(0) @map("completed_loops")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@map("hatim_progress")
+}

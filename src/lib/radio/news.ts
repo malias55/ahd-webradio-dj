@@ -10,7 +10,7 @@ import { edenJson, presenterForHour, presenterForSlot, servicePresenter, speech,
 import { withJob } from "./store";
 import { mixDryBulletin, joinNewsParts, frameTurkishProgramme, appendNewsOutro, type Cue } from "./mix";
 import { bulletinOpenerAsset, turkishSignatureAsset, TURKISH_SIGNATURE_KEY, germanOutroAsset, GERMAN_OUTRO_KEY } from "./imaging";
-import { isNewsSlot, stationTime, stationHour, dailyNewsPlan, NEWS_SCHEDULE, newsLanguage, newsAllowedOn } from "./config";
+import { isNewsSlot, stationTime, stationHour, dailyNewsPlan, NEWS_SCHEDULE, newsLanguage, newsAllowedOn, weatherTrafficEnabled } from "./config";
 import { collectDailyService, collectHourlyService, serviceFreshForSlot, serviceValidForDailyEdition } from "./service";
 import { collectMarketReport } from "./market";
 import type { Prisma, RadioAsset } from "@prisma/client";
@@ -242,21 +242,26 @@ export function validateStories(value: unknown, sources: NewsSource[]): Story[] 
 }
 
 export function newsEditionSlot(slot: Date) {
-  return stationHour(stationTime(slot).date, newsLanguage(slot) === "tr" ? 7 : 10);
+  return stationHour(stationTime(slot).date, newsLanguage(slot) === "tr" ? 7 : 8);
 }
 export const NEWS_REFRESH_LEAD_MS = 6 * 60_000;
 export function usesSlotUpdates(slot: Date) { return stationTime(slot).date >= "2026-11-06"; }
-export function mainNewsKey(slot: Date) { return `news-main:${GERMAN_NEWS_VERSION}:${newsEditionSlot(slot).toISOString()}`; }
+export function mainNewsKey(slot: Date) { return `news-main:${GERMAN_NEWS_VERSION}:${newsEditionSlot(slot).toISOString()}${weatherTrafficEnabled() ? "" : ":no-service"}`; }
 export function bulletinKey(slot: Date) {
   const tr = newsLanguage(slot) === "tr", version = tr ? TURKISH_NEWS_VERSION : GERMAN_NEWS_VERSION;
+  if (!tr && !weatherTrafficEnabled()) return `news-daily:${version}:${newsEditionSlot(slot).toISOString()}:no-service`;
   return usesSlotUpdates(slot) ? `news-slot:${version}:${slot.toISOString()}` : `${tr ? "news" : "news-daily"}:${version}:${newsEditionSlot(slot).toISOString()}`;
+}
+export function isBulletinRepeat(slot: Date) {
+  return isRepeatSlot(slot) && (!usesSlotUpdates(slot) || (newsLanguage(slot) === "de" && !weatherTrafficEnabled()));
 }
 export function isRepeatSlot(slot: Date) { return newsEditionSlot(slot).getTime() !== slot.getTime(); }
 export async function bulletinForSlot(slot: Date) {
   const asset = await prisma.radioAsset.findUnique({ where: { key: bulletinKey(slot) }, select: { id: true, title: true, duration: true, kind: true, metadata: true } });
   const tr = newsLanguage(slot) === "tr";
   const market = (asset?.metadata as { market?: MarketReport } | null)?.market;
-  const fresh = usesSlotUpdates(slot) ? serviceFreshForSlot(tr ? { service: market } : asset?.metadata, slot) : tr || serviceValidForDailyEdition(asset?.metadata, newsEditionSlot(slot));
+  const fresh = !tr && !weatherTrafficEnabled() ? (asset?.metadata as { weatherTrafficPaused?: boolean } | null)?.weatherTrafficPaused === true
+    : usesSlotUpdates(slot) ? serviceFreshForSlot(tr ? { service: market } : asset?.metadata, slot) : tr || serviceValidForDailyEdition(asset?.metadata, newsEditionSlot(slot));
   return asset && fresh && familyContentAllowed(String((asset.metadata as { stories?: Story[] })?.stories?.map(s => s.text).join(" ") || "")) ? asset : null;
 }
 
@@ -318,8 +323,8 @@ export async function editorialContent(slot: Date): Promise<EditorialContent> {
   const expanded = language === "tr" && usesSlotUpdates(editionSlot);
   const sources = sourcesForProgramme(await Promise.all(ordered.slice(0, expanded ? 24 : 18).map(enrichSource)), language).slice(0, expanded ? 18 : 12);
   if (!sources.length) throw new Error("Keine aktuellen Quellen passend zur redaktionellen Themenauswahl verfügbar.");
-  const editorialPolicy = language === "tr" ? TURKISH_NEWS_POLICY + (expanded ? "\nWenn genügend Substanz vorliegt, fünf bis sechs Meldungen und insgesamt etwa 250 bis 310 Wörter. Erkläre Zusammenhänge und Folgen mit belegten Fakten, statt Meldungen zu strecken. Beziehe relevante Wirtschafts- und Sportnachrichten ein, wenn sie bis zur Abendwiederholung sinnvoll bleiben. Keine Wetten und keine Anlageempfehlungen. Wechselkurse, Gold, Brent und Börsenstände werden vor jeder Sendung getrennt aktualisiert und gehören nicht in deinen Text." : "") : `${NEWS_POLICY}\n${GERMAN_TOPIC_POLICY}\nABWEICHENDE LÄNGE für den deutschen Hauptteil: Ziel 220–270 Wörter für die Meldungen, höchstens 290. Das ist keine Mindestlänge: Eine kürzere, belegte Auswahl ist zulässig und darf nicht allein wegen der Wortzahl abgelehnt oder künstlich aufgefüllt werden. Wetter und Verkehr werden separat ergänzt, hier nicht schreiben. Vier kurze unterschiedliche Meldungen bevorzugen. Der Hauptteil wird bis 17 Uhr wiederholt. Keine Live-Behauptungen. Mindestens ein belegtes geeignetes Thema aus localSourceIds muss enthalten sein; der lokale Bezug steht vor neuen überregionalen Themen.`;
-  const context = { language, desiredStoryCount: Math.min(expanded ? 6 : 4, sources.length), minimumStoryCount: 1, region: language === "tr" ? "Türkiye, Almanya ve dünyadan" : process.env.NEWS_REGION || "Mainz und Rheinhessen", sendetermin: firstActualBroadcast.toISOString(), tagesausgabe: editionSlot.toISOString(), redaktionszeit: redaktionszeit.toISOString(), wiederholungen: language === "tr" ? "Dieselben Hauptmeldungen um 07 und 20 Uhr" : "Dieselben Hauptmeldungen von 10 bis 17 Uhr; keine Live-Behauptungen oder kurzfristigen Ankündigungen, die beim Wiederholen bereits vorbei sind", sources, previouslyUsed,
+  const editorialPolicy = language === "tr" ? TURKISH_NEWS_POLICY + (expanded ? "\nWenn genügend Substanz vorliegt, fünf bis sechs Meldungen und insgesamt etwa 250 bis 310 Wörter. Erkläre Zusammenhänge und Folgen mit belegten Fakten, statt Meldungen zu strecken. Beziehe relevante Wirtschafts- und Sportnachrichten ein, wenn sie bis zur Abendwiederholung sinnvoll bleiben. Keine Wetten und keine Anlageempfehlungen. Wechselkurse, Gold, Brent und Börsenstände werden vor jeder Sendung getrennt aktualisiert und gehören nicht in deinen Text." : "") : `${NEWS_POLICY}\n${GERMAN_TOPIC_POLICY}\nABWEICHENDE LÄNGE für den deutschen Hauptteil: Ziel 220–270 Wörter für die Meldungen, höchstens 290. Das ist keine Mindestlänge: Eine kürzere, belegte Auswahl ist zulässig und darf nicht allein wegen der Wortzahl abgelehnt oder künstlich aufgefüllt werden. ${weatherTrafficEnabled() ? "Wetter und Verkehr werden separat ergänzt, hier nicht schreiben." : "Wetter und Verkehr pausieren: weder Meldungen dazu noch eine Ankündigung dieses Serviceblocks schreiben."} Vier kurze unterschiedliche Meldungen bevorzugen. Der Hauptteil wird bis 20 Uhr wiederholt. Keine Live-Behauptungen. Mindestens ein belegtes geeignetes Thema aus localSourceIds muss enthalten sein; der lokale Bezug steht vor neuen überregionalen Themen.`;
+  const context = { language, desiredStoryCount: Math.min(expanded ? 6 : 4, sources.length), minimumStoryCount: 1, region: language === "tr" ? "Türkiye, Almanya ve dünyadan" : process.env.NEWS_REGION || "Mainz und Rheinhessen", sendetermin: firstActualBroadcast.toISOString(), tagesausgabe: editionSlot.toISOString(), redaktionszeit: redaktionszeit.toISOString(), wiederholungen: language === "tr" ? "Dieselben Hauptmeldungen um 07 und 21 Uhr" : "Dieselben Hauptmeldungen von 08 bis 20 Uhr; keine Live-Behauptungen oder kurzfristigen Ankündigungen, die beim Wiederholen bereits vorbei sind", sources, previouslyUsed,
     localSourceIds: language === "de" ? sources.filter(s => s.local).map(s => s.id) : [],
     previousStories: language === "tr" ? previousEditions.map(({ slot, stories }) => ({ slot, stories })) : undefined,
     instruction: language === "tr" ? "Prüfe die Quellen zuerst auf die wichtigsten Entwicklungen, auch nationale Wahlergebnisse mit internationaler Bedeutung. Vergleiche die Sachstände mit previousStories und lasse bloße Wiederholungen aus."
@@ -382,7 +387,7 @@ export async function renderBulletin(slot: Date, content: EditorialContent, exam
     : GERMAN_NEWS_INTRO.replace("Elias", presenter.name);
   const outro = language === "tr"
     ? TURKISH_OUTRO
-    : mainPart ? GERMAN_HANDOVER
+    : mainPart && weatherTrafficEnabled() ? GERMAN_HANDOVER
     : GERMAN_SERVICE_OUTRO;
   const paragraphs = [intro, ...content.stories.map(s => s.text), ...(market ? [market.text] : []), outro];
   const segments = [];
@@ -424,6 +429,25 @@ type MainAudio = Pick<RadioAsset, "id" | "audio" | "script" | "metadata" | "dura
 export async function renderGermanHourly(slot: Date, main: MainAudio | null, example = false, now = new Date(), suppliedService?: Awaited<ReturnType<typeof collectDailyService>> | Awaited<ReturnType<typeof collectHourlyService>>) {
   if (main?.script) assertFamilyContent(main.script);
   if (main?.script && !germanBrandingAllowed(main.script)) throw new Error("Deutsche Nachrichten müssen senderneutral bleiben");
+  if (!weatherTrafficEnabled()) {
+    if (!main) throw new Error("Ohne Wetter und Verkehr wird ein fertiger Hauptnachrichtenteil benötigt.");
+    if (main.script?.includes(GERMAN_HANDOVER)) throw new Error("Der Hauptteil enthält noch eine Übergabe zu Wetter und Verkehr.");
+    const metadata = (main.metadata || {}) as { timeline?: Cue[]; [key: string]: unknown };
+    let audio = { audio: Buffer.from(main.audio), duration: main.duration }, timeline = metadata.timeline || [];
+    const opener = await bulletinOpenerAsset(slot);
+    if (opener) {
+      audio = await joinNewsParts(opener.audio, audio.audio);
+      const shift = opener.duration + 0.45;
+      timeline = [{ kind: "opener", start: 0, end: opener.duration }, ...timeline.map(cue => ({ ...cue, start: cue.start + shift, end: cue.end + shift }))];
+    }
+    const closing = await germanOutroAsset();
+    const finished = await appendNewsOutro({ ...audio, timeline }, closing);
+    return { audio: finished.audio, duration: finished.duration, script: main.script || "", metadata: {
+      ...metadata, language: "de", example, presenter: "Elias", mainAssetId: main.id, mainReused: isRepeatSlot(slot),
+      weatherTrafficPaused: true, service: null, serviceRefreshHours: null, timeline: finished.timeline,
+      openerAssetId: opener?.id ?? null, outroAssetId: closing.id, imagingVersion: GERMAN_OUTRO_KEY,
+    } };
+  }
   const presenter = servicePresenter(slot), service = suppliedService ?? await collectDailyService(slot, now);
   const intro = `Hallo Mainz! Hier ist ${presenter.name} mit Wetter und Verkehr. ${!main ? "Die Hauptnachrichten stehen gerade nicht bereit. " : ""}`;
   const paragraphs = [intro + service.weather.text, service.traffic.text,
@@ -474,6 +498,15 @@ async function prepareSlotNews(slot: Date, edition: Date, now: Date, simulatedNo
     });
     main = await prisma.radioAsset.findUnique({ where: { key: mainKey }, select: { id: true } });
   }
+  if (language === "de" && !weatherTrafficEnabled() && main) {
+    const key = bulletinKey(slot), mainId = main.id;
+    await recoverQuotaJob(key);
+    return withJob(key, async () => {
+      if (await bulletinForSlot(slot)) return;
+      const rendered = await renderGermanHourly(edition, await prisma.radioAsset.findUniqueOrThrow({ where: { id: mainId } }));
+      await prisma.radioAsset.create({ data: { key, kind: "news", title: "Nachrichten · Elias · ohne Wetter und Verkehr", slot: edition, ...rendered } });
+    });
+  }
   if (!main || now >= slot || slot.getTime() - now.getTime() > NEWS_REFRESH_LEAD_MS) return !!main;
   const key = bulletinKey(slot), mainId = main.id;
   await recoverQuotaJob(key);
@@ -519,11 +552,11 @@ async function recoverQuotaJob(key: string) {
 export async function prepareNews(slot: Date, simulatedNow?: Date) {
   const now = simulatedNow ?? new Date();
   if (!newsAllowedOn(slot)) throw new Error("Sonntags werden keine Nachrichten erstellt oder gesendet.");
-  if (!isNewsSlot(slot)) throw new Error("Ungültiger Nachrichtentermin: Montag bis Samstag, Türkisch 07/20 Uhr, Deutsch 10–17 Uhr");
+  if (!isNewsSlot(slot)) throw new Error("Ungültiger Nachrichtentermin: Montag bis Samstag, Türkisch 07/21 Uhr, Deutsch 08–20 Uhr");
   const edition = newsEditionSlot(slot), language = newsLanguage(slot), plan = dailyNewsPlan(edition).find(p => p.language === language)!;
   if (now < plan.generateAt) return false;
   if (now >= plan.lastBroadcast) throw new Error("Letzter Sendetermin der Tagesausgabe verstrichen");
-  if (usesSlotUpdates(slot)) return await bulletinForSlot(slot) ? true : prepareSlotNews(slot, edition, now, simulatedNow);
+  if (usesSlotUpdates(slot) || (language === "de" && !weatherTrafficEnabled())) return await bulletinForSlot(slot) ? true : prepareSlotNews(slot, edition, now, simulatedNow);
   const key = bulletinKey(edition);
   if (await bulletinForSlot(edition)) return true;
   // A top-up can revive a quota-blocked day. Approved texts and finished speech
@@ -544,7 +577,7 @@ export async function prepareNews(slot: Date, simulatedNow?: Date) {
     if (language === "tr") {
       const content = (draft!.metadata as unknown as { content: EditorialContent }).content;
       const rendered = await renderBulletin(edition, content);
-      await prisma.radioAsset.create({ data: { key, kind: "news", title: "Türkçe Günlük Haberler · Cavit · 07/20 Uhr", slot: edition, ...rendered } });
+      await prisma.radioAsset.create({ data: { key, kind: "news", title: "Türkçe Günlük Haberler · Cavit · 07/21 Uhr", slot: edition, ...rendered } });
       return;
     }
     if (!main) {
@@ -561,15 +594,15 @@ export async function prepareNews(slot: Date, simulatedNow?: Date) {
     }
     const service = (savedService.metadata as unknown as { service: Awaited<ReturnType<typeof collectDailyService>> }).service;
     const rendered = await renderGermanHourly(edition, main, false, simulatedNow ?? new Date(), service);
-    await prisma.radioAsset.create({ data: { key, kind: "news", title: "KI-Tagesmagazin · Elias & Susanne · 10–17 Uhr", slot: edition, ...rendered } });
+    await prisma.radioAsset.create({ data: { key, kind: "news", title: "KI-Tagesmagazin · Elias & Susanne · 08–20 Uhr", slot: edition, ...rendered } });
   });
 }
 
 export async function generateNewsExample(language: "de" | "tr") {
-  const now = new Date(), hour = stationTime(now).hour;
-  const slot = language === "tr" ? new Date(Math.floor(now.getTime() / 3_600_000) * 3_600_000 + (7 - hour) * 3_600_000) : new Date(Math.ceil(now.getTime() / 3_600_000) * 3_600_000);
+  const now = new Date();
+  const slot = stationHour(stationTime(now).date, language === "tr" ? 7 : 8);
   const baseKey = `news-example:${language === "tr" ? TURKISH_NEWS_VERSION : GERMAN_NEWS_VERSION}:${language}:${stationTime(now).date}`;
-  const key = language === "tr" ? baseKey : `${baseKey}:service-v2`;
+  const key = language === "tr" ? baseKey : `${baseKey}:${weatherTrafficEnabled() ? "service-v2" : "no-service"}`;
   await withJob(key, async () => {
     if (await prisma.radioAsset.findUnique({ where: { key }, select: { id: true } })) return;
     await assertNewsCredits();
@@ -578,7 +611,7 @@ export async function generateNewsExample(language: "de" | "tr") {
       const rendered = await renderBulletin(slot, content, true);
       await prisma.radioAsset.create({ data: { key, kind: "demo", title: "Hörbeispiel · Türkçe 07:00 · Cavit", ...rendered } });
     } else {
-      const mainKey = `${baseKey}:main`;
+      const mainKey = `${key}:main`;
       let main = await prisma.radioAsset.findUnique({ where: { key: mainKey } });
       if (!main) {
         const content = await editorialContent(slot);
@@ -586,7 +619,7 @@ export async function generateNewsExample(language: "de" | "tr") {
         main = await prisma.radioAsset.create({ data: { key: mainKey, kind: "demo-part", title: "Hörbeispiel · Hauptnachrichten · Elias", slot, ...rendered } });
       }
       const rendered = await renderGermanHourly(slot, main, true);
-      await prisma.radioAsset.create({ data: { key, kind: "demo", title: `Hörbeispiel · Elias + ${servicePresenter().name} · Mainz, Wetter und Verkehr · ohne Übergangssounds`, ...rendered } });
+      await prisma.radioAsset.create({ data: { key, kind: "demo", title: weatherTrafficEnabled() ? `Hörbeispiel · Elias + ${servicePresenter().name} · Mainz, Wetter und Verkehr` : "Hörbeispiel · Elias · ohne Wetter und Verkehr", ...rendered } });
     }
   });
   return prisma.radioAsset.findUniqueOrThrow({ where: { key } });

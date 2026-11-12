@@ -131,8 +131,8 @@ export default function ControlPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Steuerung</h1>
         <p className="text-sm text-neutral-600 dark:text-neutral-400">
-          Lautstärke, Tab-Audio und Durchsagen pro Zone. Das Radio läuft von 08 bis 18 Uhr automatisch,
-          wenn keine Live-Quelle aktiv ist. Nachrichten laufen montags bis samstags um 07:00 und 20:00 Uhr auf Türkisch sowie von 10:00 bis 17:00 Uhr stündlich auf Deutsch.
+          Lautstärke, Tab-Audio und Durchsagen pro Zone. Musik läuft täglich von 07:00 bis 21:00 Uhr,
+          wenn keine Live-Quelle aktiv ist. Nachrichten laufen montags bis samstags um 07:00 und 21:00 Uhr auf Türkisch sowie von 08:00 bis 20:00 Uhr stündlich auf Deutsch. Hatim läuft täglich von 22:00 bis 04:00 Uhr.
         </p>
       </div>
 

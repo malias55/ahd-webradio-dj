@@ -11,7 +11,7 @@ export function presenterForSlot(slot: Date) {
   return presenterForHour(stationTime(slot).hour);
 }
 export function presenterForHour(hour: number) {
-  if (hour === 7 || hour === 20) return { gender: "male" as const, name: "Cavit", language: "tr" as const, voiceId: process.env.ELEVENLABS_TURKISH_VOICE_ID || "Q2IX97JeHBY3vNGzgM5s", assistant: "yapay zekâ haber sunucunuz" };
+  if (hour === 7 || hour === 21) return { gender: "male" as const, name: "Cavit", language: "tr" as const, voiceId: process.env.ELEVENLABS_TURKISH_VOICE_ID || "Q2IX97JeHBY3vNGzgM5s", assistant: "yapay zekâ haber sunucunuz" };
   return { gender: "male" as const, name: "Elias", language: "de" as const, voiceId: process.env.ELEVENLABS_MALE_VOICE_ID || "1h6gHcRvQugDNZgdAo9N", assistant: "Ihr KI-Nachrichtenassistent" };
 }
 export function servicePresenter(slot = new Date()) {

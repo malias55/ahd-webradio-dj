@@ -82,7 +82,7 @@ test("direct play respects news, programme hours and concurrent transitions", ()
   const state = { started: true, shutdown: false, selecting: false, playing: { kind: "music" } };
   const ordinary = new Date("2026-11-09T12:30:00Z");
   assert.equal(musicPlayBlockedReason(state, ordinary), null);
-  assert.match(musicPlayBlockedReason(state, new Date("2026-11-09T17:00:00Z"))!, /08 bis 18/);
+  assert.match(musicPlayBlockedReason(state, new Date("2026-11-09T21:00:00Z"))!, /07 bis 21/);
   assert.match(musicPlayBlockedReason(state, new Date("2026-11-09T12:59:50Z"))!, /Nachrichten beginnen/);
   assert.match(musicPlayBlockedReason({ ...state, playing: { kind: "news" } }, ordinary)!, /laufen Nachrichten/);
   assert.match(musicPlayBlockedReason({ ...state, newsTransition: true, playing: null }, ordinary)!, /laufen Nachrichten/);

@@ -191,7 +191,7 @@ app.prepare().then(() => {
 
     if (pathname === RADIO_STREAM_PATH) {
       if (req.method !== "GET") { res.writeHead(405).end(); return; }
-      if (!isOnAir()) { res.writeHead(503, { "Retry-After": "60", "Cache-Control": "no-store" }).end("Radio: 07 Uhr Türkçe, Musik von 08 bis 18 Uhr (Europe/Berlin)."); return; }
+      if (!isOnAir()) { res.writeHead(503, { "Retry-After": "60", "Cache-Control": "no-store" }).end("Sendepause: Musik 07–21 Uhr, Hatim 22–04 Uhr, Nachrichten Mo–Sa (Europe/Berlin)."); return; }
       res.writeHead(200, { "Content-Type": "audio/mpeg", "Cache-Control": "no-cache, no-store", "X-Accel-Buffering": "no", "Connection": "keep-alive" });
       res.flushHeaders();
       attachRadio(res);

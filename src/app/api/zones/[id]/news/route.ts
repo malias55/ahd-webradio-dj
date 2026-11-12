@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { isAuthorized } from "@/lib/admin";
 import { currentMode } from "@/lib/broadcast";
 import { pushConfigForZone } from "@/lib/serverActions";
-import { stationDayBounds, stationTime, newsAllowedOn } from "@/lib/radio/config";
+import { stationDayBounds, stationTime, newsAllowedOn, weatherTrafficEnabled } from "@/lib/radio/config";
 import { familyAssetAllowed } from "@/lib/radio/family";
 import { assetFile } from "@/lib/radio/store";
 import { startZoneNews, stopZoneNews } from "@/lib/radio/zone-news";
@@ -26,7 +26,7 @@ export async function POST(request: Request, { params }: Context) {
     orderBy: [{ slot: "desc" }, { createdAt: "desc" }],
     select: { id: true, kind: true, script: true, metadata: true },
   });
-  const edition = editions.find(familyAssetAllowed);
+  const edition = editions.find(asset => familyAssetAllowed(asset) && (data.language === "tr" || weatherTrafficEnabled() || (asset.metadata as { weatherTrafficPaused?: boolean } | null)?.weatherTrafficPaused === true));
   if (!edition) return failure("Für heute liegt noch keine Ausgabe in dieser Sprache vor.", 404);
   const session = startZoneNews(id, data.language, await assetFile(edition.id), ["radio", "azuracast"].includes(zone.defaultSource), () => pushConfigForZone(id));
   if (!session) return failure("In dieser Zone läuft bereits eine Wiedergabe.", 409);

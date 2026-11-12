@@ -1,5 +1,5 @@
 export const RADIO_TIMEZONE = "Europe/Berlin";
-export const NEWS_SCHEDULE = { mode: "daily-editions", weekdays: [1, 2, 3, 4, 5, 6], hours: [7, 10, 11, 12, 13, 14, 15, 16, 17, 20], generationHours: { tr: 6, de: 9 }, timezone: RADIO_TIMEZONE } as const;
+export const NEWS_SCHEDULE = { mode: "daily-editions", weekdays: [1, 2, 3, 4, 5, 6], hours: [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21], generationHours: { tr: 6, de: 7 }, timezone: RADIO_TIMEZONE } as const;
 export const RADIO_STREAM_PATH = "/api/radio/stream";
 
 export function stationTime(date = new Date()) {
@@ -12,6 +12,17 @@ export function stationTime(date = new Date()) {
 }
 
 export function radioEnabled() { return process.env.RADIO_ENABLED !== "false"; }
+export function weatherTrafficEnabled() { return process.env.NEWS_WEATHER_TRAFFIC_ENABLED === "true"; }
+export function isHatimHours(date = new Date()) {
+  const { hour } = stationTime(date);
+  return radioEnabled() && (hour >= 22 || hour < 4);
+}
+export function hatimWindowEnd(date = new Date()) {
+  if (!isHatimHours(date)) return null;
+  const local = stationTime(date);
+  const day = local.hour < 4 ? local.date : stationTime(stationDayBounds(local.date).end).date;
+  return stationHour(day, 4);
+}
 export function newsAllowedOn(date = new Date()) {
   // Derive the weekday from the station's calendar date, independent of the
   // server's timezone and of daylight-saving changes on Sundays.
@@ -20,14 +31,14 @@ export function newsAllowedOn(date = new Date()) {
 }
 export function isMusicHours(date = new Date()) {
   const { hour } = stationTime(date);
-  return radioEnabled() && hour >= 8 && hour < 18;
+  return radioEnabled() && hour >= 7 && hour < 21;
 }
 export function isTurkishNewsWindow(date = new Date()) {
   const { hour, minute } = stationTime(date);
-  return radioEnabled() && newsAllowedOn(date) && (hour === 7 || hour === 20) && minute < 5;
+  return radioEnabled() && newsAllowedOn(date) && (hour === 7 || hour === 21) && minute < 5;
 }
-export function isOnAir(date = new Date()) { return isMusicHours(date) || isTurkishNewsWindow(date); }
-export function newsLanguage(slot: Date): "de" | "tr" { return [7, 20].includes(stationTime(slot).hour) ? "tr" : "de"; }
+export function isOnAir(date = new Date()) { return isMusicHours(date) || isTurkishNewsWindow(date) || isHatimHours(date); }
+export function newsLanguage(slot: Date): "de" | "tr" { return [7, 21].includes(stationTime(slot).hour) ? "tr" : "de"; }
 
 export function stationHour(day: string, hour: number) {
   const { start, end } = stationDayBounds(day);
@@ -42,8 +53,8 @@ export function dailyNewsPlan(date = new Date()): DailyPlan[] {
   if (!newsAllowedOn(date)) return [];
   const day = stationTime(date).date;
   if (planCache?.day !== day) planCache = { day, entries: [
-    { language: "tr", generateAt: stationHour(day, 6), firstBroadcast: stationHour(day, 7), lastBroadcast: stationHour(day, 20) },
-    { language: "de", generateAt: stationHour(day, 9), firstBroadcast: stationHour(day, 10), lastBroadcast: stationHour(day, 17) },
+    { language: "tr", generateAt: stationHour(day, 6), firstBroadcast: stationHour(day, 7), lastBroadcast: stationHour(day, 21) },
+    { language: "de", generateAt: stationHour(day, 7), firstBroadcast: stationHour(day, 8), lastBroadcast: stationHour(day, 20) },
   ] };
   return planCache.entries;
 }

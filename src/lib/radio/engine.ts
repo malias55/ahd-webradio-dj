@@ -1,10 +1,11 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import type { ServerResponse } from "node:http";
 import { prisma } from "../prisma";
-import { isOnAir, isNewsSlot, NEWS_SCHEDULE, isMusicHours, upcomingNewsSlot, dueNewsEditions, radioEnabled, stationTime, newsLanguage } from "./config";
+import { isOnAir, isNewsSlot, NEWS_SCHEDULE, isMusicHours, isHatimHours, upcomingNewsSlot, dueNewsEditions, radioEnabled, stationTime, newsLanguage, weatherTrafficEnabled } from "./config";
+import { HatimPlayer, HATIM_SOURCE } from "./hatim";
 import { assetFile, pruneCache } from "./store";
 import { presenterForSlot, editorialConfigured } from "./providers";
-import { prepareNews, bulletinForSlot, isRepeatSlot, usesSlotUpdates, NEWS_REFRESH_LEAD_MS, GERMAN_NEWS_VERSION } from "./news";
+import { prepareNews, bulletinForSlot, isBulletinRepeat, usesSlotUpdates, NEWS_REFRESH_LEAD_MS, GERMAN_NEWS_VERSION } from "./news";
 import { stationIdAsset, IMAGING_VERSION } from "./imaging";
 import { trackPlayback } from "./audit";
 import { NEWS_PLAYBACK_CODEC } from "./playback-level";
@@ -28,6 +29,8 @@ type RadioState = {
   musicSinceId: number;
   musicControlBusy?: boolean; musicLibraryRevision?: number;
   finishPlayback?: (status: "completed" | "interrupted" | "failed", error?: string) => Promise<void>;
+  hatim?: HatimPlayer;
+  hatimPlaying?: { surah: number; title: string; completedLoops: number } | null;
 };
 const globalRadio = globalThis as unknown as { __ahdRadio?: RadioState };
 const state = globalRadio.__ahdRadio ??= {
@@ -36,9 +39,9 @@ const state = globalRadio.__ahdRadio ??= {
 };
 
 export function radioStatus() {
-  return { programmeVersion: GERMAN_NEWS_VERSION, imagingVersion: IMAGING_VERSION, presenter: presenterForSlot(new Date()).name, newsSchedule: NEWS_SCHEDULE, newsRefreshHours: 24, serviceRefreshHours: usesSlotUpdates(new Date()) ? 1 : 24, started: state.started, onAir: isOnAir(), playing: state.playing, startedAt: state.startedAt || null,
+  return { programmeVersion: GERMAN_NEWS_VERSION, imagingVersion: IMAGING_VERSION, presenter: isHatimHours() ? HATIM_SOURCE.reciter : presenterForSlot(new Date()).name, newsSchedule: NEWS_SCHEDULE, newsRefreshHours: 24, serviceRefreshHours: weatherTrafficEnabled() ? 1 : null, weatherTrafficPaused: !weatherTrafficEnabled(), hatim: { ...HATIM_SOURCE, hours: "22:00–04:00", ...state.hatimPlaying }, started: state.started, onAir: isOnAir(), playing: state.hatimPlaying ? { id: `hatim:${state.hatimPlaying.surah}`, title: state.hatimPlaying.title, kind: "quran", duration: 0 } : state.playing, startedAt: state.startedAt || null,
     listeners: state.listeners.size, preparing: state.preparing, error: state.error,
-    nextNewsAt: upcomingNewsSlot()?.toISOString() ?? null, timezone: "Europe/Berlin", hours: "Mo–Sa 07/20 Uhr Türkçe · täglich 08:00–18:00 Musik", newsHours: "Mo–Sa: 07/20 Uhr Türkçe · 10–17 Uhr stündlich Deutsch" };
+    nextNewsAt: upcomingNewsSlot()?.toISOString() ?? null, timezone: "Europe/Berlin", hours: "Täglich 07:00–21:00 Musik · 22:00–04:00 Hatim", newsHours: "Mo–Sa: 07/21 Uhr Türkçe · 08–20 Uhr stündlich Deutsch" };
 }
 
 export function attachRadio(res: ServerResponse) {
@@ -47,7 +50,7 @@ export function attachRadio(res: ServerResponse) {
 }
 
 export function hasRadioMusic() {
-  return isMusicHours() && !state.newsTransition && !!state.playing && state.playing.kind !== "news";
+  return !!state.hatimPlaying || (isMusicHours() && !state.newsTransition && !!state.playing && state.playing.kind !== "news");
 }
 
 function publish(chunk: Buffer) {
@@ -273,7 +276,9 @@ async function tick(onBoundary: () => Promise<void>) {
     }
     await onBoundary();
   }
-  // Exact slot identity: never replay an old bulletin after a restart or at 18:00.
+  // A chapter download must not block the wall-clock stream cutoff.
+  void state.hatim?.tick().catch(report);
+  // Exact slot identity: never replay an old bulletin after a restart.
   const lead = isMusicHours(now) ? NEWS_LEAD_MS : 0;
   const hour = new Date(Math.floor((now.getTime() + lead) / HOUR_MS) * HOUR_MS);
   const slotKey = hour.toISOString();
@@ -291,7 +296,7 @@ async function tick(onBoundary: () => Promise<void>) {
     } else if (!early) {
       state.error = "Zur vollen Stunde keine geprüfte Nachrichtenausgabe bereit.";
       await prisma.radioPlayback.create({ data: { title: "Nachrichtenausgabe nicht gesendet", language: newsLanguage(hour), kind: "news", status: "skipped", scheduledFor: hour,
-        repeated: !usesSlotUpdates(hour) && isRepeatSlot(hour), endedAt: new Date(), listeners: state.listeners.size, error: state.error } });
+        repeated: isBulletinRepeat(hour), endedAt: new Date(), listeners: state.listeners.size, error: state.error } });
     }
   }
   if (active && !state.process) await nextMusic();
@@ -316,6 +321,7 @@ export function startRadio(onBoundary: () => Promise<void>) {
   if (state.started) return;
   state.started = true;
   state.shutdown = false;
+  state.hatim = new HatimPlayer({ publish, error: report, status: status => { state.hatimPlaying = status; } });
   // Align checks to wall-clock quarters of a second; no accumulating interval drift.
   const loop = async () => {
     try { await tick(onBoundary); } catch (error) { report(error); }
@@ -338,6 +344,7 @@ export function startRadio(onBoundary: () => Promise<void>) {
 export async function stopRadio() {
   state.shutdown = true;
   if (state.timer) clearTimeout(state.timer);
+  await state.hatim?.stop();
   const finishing = state.finishPlayback?.("interrupted");
   stopTrack();
   for (const res of state.listeners) res.end();

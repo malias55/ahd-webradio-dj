@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { isAdmin, isAuthorized } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
 import { radioStatus } from "@/lib/radio/engine";
-import { upcomingNewsSlot, publicOrigin, stationTime, stationDayBounds, newsLanguage } from "@/lib/radio/config";
+import { upcomingNewsSlot, publicOrigin, stationTime, stationDayBounds, newsLanguage, weatherTrafficEnabled } from "@/lib/radio/config";
 import { normalizeAudio } from "@/lib/radio/store";
 import { randomUUID } from "node:crypto";
 import { presenterForSlot, servicePresenter, newsModelConfig, editorialConfigured } from "@/lib/radio/providers";
@@ -24,7 +24,7 @@ export async function GET(req: Request) {
   return NextResponse.json({ ...radioStatus(), day, assets: assets.filter(familyAssetAllowed), failures, jobs, playbacks, generationEnabled: false,
     configured: { elevenlabs: !!process.env.ELEVENLABS_API_KEY, edenai: !!process.env.EDENAI_API_KEY, editorial: editorialConfigured() },
     region: process.env.NEWS_REGION || "Mainz und Rheinhessen", model: newsModelConfig().primary, modelPolicy: newsModelConfig(),
-    nextPresenter: upcomingNewsSlot() ? `${presenterForSlot(upcomingNewsSlot()!).name}${newsLanguage(upcomingNewsSlot()!) === "tr" ? "" : ` · ${servicePresenter().name} für Wetter und Verkehr`}` : null });
+    nextPresenter: upcomingNewsSlot() ? `${presenterForSlot(upcomingNewsSlot()!).name}${newsLanguage(upcomingNewsSlot()!) === "tr" || !weatherTrafficEnabled() ? "" : ` · ${servicePresenter().name} für Wetter und Verkehr`}` : null });
 }
 
 export async function POST(req: Request) {

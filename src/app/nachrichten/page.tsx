@@ -1,4 +1,3 @@
-import { servicePresenter } from "@/lib/radio/providers";
 import { familyAssetAllowed } from "@/lib/radio/family";
 import { redirect } from "next/navigation";
 import { getAppUser } from "@/lib/admin";
@@ -26,11 +25,11 @@ export default async function NewsArchive() {
     seen.add(key); return true;
   });
   const failure = await prisma.radioJob.findFirst({ where: { key: { startsWith: "news" }, status: "failed", updatedAt: { gte: new Date(Date.now() - 48 * 3600_000) } }, orderBy: { updatedAt: "desc" }, select: { key: true, error: true, updatedAt: true } });
-  const failedSlot = failure?.key.match(/\d{4}-\d{2}-\d{2}T[\d:.]+Z$/)?.[0];
+  const failedSlot = failure?.key.match(/(\d{4}-\d{2}-\d{2}T[\d:.]+Z)(?::no-service)?$/)?.[1];
   const unresolved = failure && !rows.some(row => row.slot?.toISOString() === failedSlot && row.createdAt >= failure.updatedAt);
   return <div className="space-y-6">
-    <div><h1 className="text-2xl font-bold">Nachrichten</h1><p className="mt-2 text-sm text-neutral-500">Montag bis Samstag um 07:00 und 20:00 Uhr Türkisch mit Cavit. Von 10:00 bis 17:00 Uhr stündlich Deutsch mit Elias sowie Wetter und Verkehr mit {servicePresenter().name}. Sonntags keine Nachrichten. Deutsche Ortszeit.</p></div>
-    <p className="text-sm text-neutral-500">Hier können alle angemeldeten Nutzer die tatsächlich erstellten Ausgaben der letzten 14 Tage nachhören, mit Transkript und Quellen. Die Hauptmeldungen entstehen einmal täglich. Ab dem 6. November werden der türkische Marktteil und der deutsche Wetter- und Verkehrsblock vor jedem Sendetermin aktualisiert. Alle Stimmen und Ausgaben sind KI-generiert.</p>
+    <div><h1 className="text-2xl font-bold">Nachrichten</h1><p className="mt-2 text-sm text-neutral-500">Montag bis Samstag um 07:00 und 21:00 Uhr Türkisch mit Cavit. Von 08:00 bis 20:00 Uhr stündlich Deutsch mit Elias. Wetter und Verkehr pausieren vorerst. Sonntags keine Nachrichten. Deutsche Ortszeit.</p></div>
+    <p className="text-sm text-neutral-500">Hier können alle angemeldeten Nutzer die tatsächlich erstellten Ausgaben der letzten 14 Tage nachhören, mit Transkript und Quellen. Die Hauptmeldungen entstehen einmal täglich. Der türkische Marktteil wird vor den Sendungen aktualisiert. Die deutschen Tagesnachrichten werden ohne zusätzlichen Wetter- und Verkehrsblock wiederholt. Alle Stimmen und Ausgaben sind KI-generiert.</p>
     {unresolved && <div role="status" className="card space-y-1 border-amber-400 text-sm"><p className="font-medium">Die Erstellung {failedSlot ? `für ${time(failedSlot)} Uhr` : `vom ${time(failure.updatedAt.toISOString())}`} ist fehlgeschlagen.</p><p>{failure.error || "Die Ausgabe konnte nicht fertiggestellt werden."}</p><p>Vorhandene Ausgaben bleiben abspielbar. Fehlende Sendungen werden nicht als neue Nachrichten ausgegeben.</p></div>}
     {user.role === "admin" && <RetryGermanNews />}
     {!assets.length && <div className="card">Noch keine Nachrichtenausgabe gespeichert. Die nächsten Ausgaben werden automatisch vor ihrem Sendetermin erstellt.</div>}
