@@ -1,6 +1,7 @@
 "use client";
 
 import { io, type Socket } from "socket.io-client";
+import { prepareAnnouncementIntro } from "./announcement-intro";
 
 export type CaptureSource = "tab" | "microphone";
 export type BroadcastMode = "stream" | "announce";
@@ -18,6 +19,7 @@ export type BroadcasterState = {
   analyser: AnalyserNode;
   audioCtx: AudioContext;
   startedAt: number;
+  intro?: Awaited<ReturnType<typeof prepareAnnouncementIntro>>;
 };
 
 let active: BroadcasterState | null = null;
@@ -33,6 +35,10 @@ export function activeBroadcast() {
   return active
     ? { zoneIds: [...active.zoneIds], mode: active.mode, source: active.source, startedAt: active.startedAt }
     : null;
+}
+
+export function announcementIntroPlaying() {
+  return active?.intro?.isPlaying() ?? false;
 }
 
 // Returns 0..1 peak level of the current mic/tab capture, for a VU meter.
@@ -100,13 +106,6 @@ export async function startBroadcast(opts: StartOpts): Promise<BroadcasterState>
     t.addEventListener("ended", () => { stopBroadcast().catch(() => {}); });
   }
 
-  const mime = pickMime();
-  const bps = source === "tab" ? 320_000 : 96_000;
-  const recorder = new MediaRecorder(
-    audioOnly,
-    mime ? { mimeType: mime, audioBitsPerSecond: bps } : { audioBitsPerSecond: bps },
-  );
-
   // Analyser for the VU meter — separate tap on the same stream.
   const audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
   const src = audioCtx.createMediaStreamSource(audioOnly);
@@ -114,40 +113,57 @@ export async function startBroadcast(opts: StartOpts): Promise<BroadcasterState>
   analyser.fftSize = 1024;
   src.connect(analyser);
 
-  const socket = io("/broadcast", { path: "/ws", transports: ["websocket"] });
-  await new Promise<void>((resolve, reject) => {
-    socket.once("connect", resolve);
-    socket.once("connect_error", reject);
-  });
+  let socket: Socket | undefined;
+  let intro: BroadcasterState["intro"];
+  try {
+    await audioCtx.resume();
+    if (mode === "announce") intro = await prepareAnnouncementIntro(audioCtx, src);
+    const mime = pickMime();
+    const bps = source === "tab" ? 320_000 : 96_000;
+    const recorder = new MediaRecorder(
+      intro?.stream ?? audioOnly,
+      mime ? { mimeType: mime, audioBitsPerSecond: bps } : { audioBitsPerSecond: bps },
+    );
+    const connectedSocket = io("/broadcast", { path: "/ws", transports: ["websocket"] });
+    socket = connectedSocket;
+    await new Promise<void>((resolve, reject) => {
+      connectedSocket.once("connect", resolve);
+      connectedSocket.once("connect_error", reject);
+    });
 
-  // Pre-check (announce lock). Relay itself is spawned by the socket handler.
-  const resp = await fetch(`/api/broadcast`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ action: "start", zoneIds, mode }),
-  });
-  if (!resp.ok) {
-    socket.close();
-    audioCtx.close().catch(() => {});
-    stream.getTracks().forEach((t) => t.stop());
-    const { error } = (await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }))) as { error?: string };
-    throw new Error(error || `HTTP ${resp.status}`);
+    // Pre-check (announce lock). Relay itself is spawned by the socket handler.
+    const resp = await fetch(`/api/broadcast`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "start", zoneIds, mode }),
+    });
+    if (!resp.ok) {
+      const { error } = (await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }))) as { error?: string };
+      throw new Error(error || `HTTP ${resp.status}`);
+    }
+
+    for (const zoneId of zoneIds) connectedSocket.emit("broadcast:start", { zoneId, mode, mime, email: opts.email, name: opts.name, tabTitle });
+
+    recorder.ondataavailable = async (ev) => {
+      if (!ev.data || ev.data.size === 0) return;
+      const buf = await ev.data.arrayBuffer();
+      for (const zoneId of zoneIds) connectedSocket.emit("broadcast:chunk", { zoneId, chunk: buf });
+    };
+    recorder.start(100);
+    intro?.start();
+    active = { zoneIds, source, mode, stream: audioOnly, recorder, socket: connectedSocket, analyser, audioCtx, startedAt: Date.now(), intro };
+  } catch (error) {
+    intro?.stop();
+    socket?.close();
+    await audioCtx.close().catch(() => {});
+    audioOnly.getTracks().forEach((track) => track.stop());
+    throw error;
   }
-
-  for (const zoneId of zoneIds) socket.emit("broadcast:start", { zoneId, mode, mime, email: opts.email, name: opts.name, tabTitle });
-
-  recorder.ondataavailable = async (ev) => {
-    if (!ev.data || ev.data.size === 0) return;
-    const buf = await ev.data.arrayBuffer();
-    for (const zoneId of zoneIds) socket.emit("broadcast:chunk", { zoneId, chunk: buf });
-  };
-  recorder.start(100);
-
-  active = { zoneIds, source, mode, stream: audioOnly, recorder, socket, analyser, audioCtx, startedAt: Date.now() };
 
   // 60s cap for Durchsage
   if (mode === "announce") {
-    setTimeout(() => { if (active && active.mode === "announce") stopBroadcast().catch(() => {}); }, ANNOUNCE_MAX_MS);
+    const thisBroadcast = active;
+    setTimeout(() => { if (active === thisBroadcast) stopBroadcast().catch(() => {}); }, ANNOUNCE_MAX_MS);
   }
 
   notify();
@@ -158,7 +174,8 @@ const ANNOUNCE_DRAIN_MS = 3000;
 
 export async function stopBroadcast() {
   if (!active) return;
-  const { zoneIds, stream, recorder, socket, audioCtx, mode } = active;
+  const { zoneIds, stream, recorder, socket, audioCtx, mode, intro } = active;
+  intro?.stop();
 
   if (mode === "announce") {
     // Keep the relay open so buffered audio arrives at listeners.

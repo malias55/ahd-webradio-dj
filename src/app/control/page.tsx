@@ -8,6 +8,7 @@ import { sendZoneCommand } from "@/lib/apiClient";
 import {
   ANNOUNCE_MAX_MS,
   activeBroadcast,
+  announcementIntroPlaying,
   peakLevel,
   startBroadcast,
   stopBroadcast,
@@ -192,11 +193,13 @@ export default function ControlPage() {
 
 function LiveMeter({ startedAt, mode }: { startedAt: number; mode: BroadcastMode }) {
   const [level, setLevel] = useState(0);
+  const [introPlaying, setIntroPlaying] = useState(announcementIntroPlaying);
   const [remaining, setRemaining] = useState<number | null>(null);
 
   useEffect(() => {
     const frame = () => {
       setLevel(peakLevel());
+      setIntroPlaying(announcementIntroPlaying());
       if (mode === "announce") {
         const left = Math.max(0, ANNOUNCE_MAX_MS - (Date.now() - startedAt));
         setRemaining(Math.ceil(left / 1000));
@@ -211,7 +214,12 @@ function LiveMeter({ startedAt, mode }: { startedAt: number; mode: BroadcastMode
 
   const pct = Math.round(level * 100);
   return (
-    <div className="flex w-full items-center gap-3 sm:w-auto">
+    <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto">
+      {mode === "announce" && (
+        <span role="status" className="text-sm font-medium">
+          {introPlaying ? "Gong läuft… bitte kurz warten" : "Jetzt sprechen"}
+        </span>
+      )}
       <div className="flex h-2 flex-1 min-w-[6rem] overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800 sm:w-40">
         <div
           className="h-full rounded-full bg-green-500 transition-[width] duration-75"
