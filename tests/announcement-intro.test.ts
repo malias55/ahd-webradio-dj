@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { prepareAnnouncementIntro } from "../src/lib/announcement-intro";
+import { getAnnouncementStatus, prepareAnnouncementIntro } from "../src/lib/announcement-intro";
 
 function audioFixture(duration = 1.8) {
   const connections: unknown[] = [];
@@ -69,4 +69,27 @@ test("a missing gong fails before connecting the microphone", async t => {
   const f = audioFixture();
   await assert.rejects(prepareAnnouncementIntro(f.context as unknown as AudioContext, f.microphone as unknown as AudioNode), /Gong konnte nicht geladen/);
   assert.deepEqual(f.connections, []);
+});
+
+
+test("speaker cue follows the microphone gate and cannot turn green while audio is suspended", async t => {
+  t.mock.method(globalThis, "fetch", async () => new Response(new ArrayBuffer(4)));
+  const f = audioFixture();
+  const context = Object.assign(f.context, { state: "running" as AudioContextState });
+  const intro = await prepareAnnouncementIntro(context as unknown as AudioContext, f.microphone as unknown as AudioNode);
+  intro.start();
+  assert.equal(Math.ceil(intro.remainingMs() / 1000), 2);
+  context.currentTime = f.startedAt + 1;
+  assert.equal(Math.ceil(intro.remainingMs() / 1000), 1);
+  assert.equal(getAnnouncementStatus(context, intro).phase, "intro");
+  assert.equal(f.micAt(context.currentTime), 0);
+  context.state = "suspended";
+  assert.equal(getAnnouncementStatus(context, intro).phase, "paused");
+  context.state = "running";
+  assert.equal(getAnnouncementStatus(context, intro).phase, "intro");
+  context.currentTime = f.startedAt + 1.8;
+  assert.equal(getAnnouncementStatus(context, intro).phase, "speaking");
+  assert.equal(f.micAt(context.currentTime), 1);
+  context.state = "suspended";
+  assert.equal(getAnnouncementStatus(context, intro).phase, "paused");
 });

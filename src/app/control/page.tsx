@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Headphones, Megaphone, MonitorPlay, Square, Volume2 } from "lucide-react";
 import type { Zone, Device } from "@/types";
 import { ZoneNewsControls } from "@/components/ZoneNewsControls";
@@ -8,7 +8,7 @@ import { sendZoneCommand } from "@/lib/apiClient";
 import {
   ANNOUNCE_MAX_MS,
   activeBroadcast,
-  announcementIntroPlaying,
+  announcementStatus,
   peakLevel,
   startBroadcast,
   stopBroadcast,
@@ -34,6 +34,8 @@ export default function ControlPage() {
   const [zones, setZones] = useState<ZoneWithDevices[]>([]);
   const [loading, setLoading] = useState(true);
   const [liveState, setLiveState] = useState<{ zoneIds: string[]; mode: BroadcastMode; startedAt: number } | null>(null);
+  const startingRef = useRef(false);
+  const [starting, setStarting] = useState<{ zoneIds: string[]; mode: BroadcastMode } | null>(null);
   const [speakerZoneId, setSpeakerZoneId] = useState<string | null>(null);
   const [speakerLive, setSpeakerLive] = useState(false);
   const [speakerStatus, setSpeakerStatus] = useState<SpeakerPlaybackStatus>("idle");
@@ -94,12 +96,18 @@ export default function ControlPage() {
     await reload();
   };
 
-  const doBroadcast = async (zoneId: string, source: CaptureSource, mode: BroadcastMode) => {
+  const doBroadcast = async (zoneIds: string[], source: CaptureSource, mode: BroadcastMode) => {
+    if (startingRef.current || !zoneIds.length) return;
+    startingRef.current = true;
+    setStarting({ zoneIds, mode });
     try {
       if (speakerZoneId) stopSpeakerMode();
-      await startBroadcast({ zoneIds: [zoneId], source, mode, email: me.email, name: me.name });
+      await startBroadcast({ zoneIds, source, mode, email: me.email, name: me.name });
     } catch (e) {
       alert((e as Error).message);
+    } finally {
+      startingRef.current = false;
+      setStarting(null);
     }
   };
   const endBroadcast = async () => { await stopBroadcast(); };
@@ -114,12 +122,7 @@ export default function ControlPage() {
   // "Durchsage an alle" — toggles the same mic broadcast across every zone.
   const announceAll = async () => {
     if (liveState) { await endBroadcast(); return; }
-    try {
-      if (speakerZoneId) stopSpeakerMode();
-      const ids = zones.map((z) => z.id);
-      if (ids.length === 0) return;
-      await startBroadcast({ zoneIds: ids, source: "microphone", mode: "announce", email: me.email, name: me.name });
-    } catch (e) { alert((e as Error).message); }
+    await doBroadcast(zones.map(z => z.id), "microphone", "announce");
   };
 
   const globalBroadcasting =
@@ -141,7 +144,7 @@ export default function ControlPage() {
         <span className="mr-1 w-full text-sm font-semibold sm:w-auto">Alle Zonen:</span>
         <button
           onClick={announceAll}
-          disabled={liveState !== null && !globalBroadcasting}
+          disabled={!!starting || (liveState !== null && !globalBroadcasting)}
           className={`btn flex-1 sm:flex-none ${
             globalBroadcasting
               ? "bg-red-700 text-white hover:bg-red-800"
@@ -153,7 +156,8 @@ export default function ControlPage() {
             : <Megaphone className="h-4 w-4" aria-hidden />}
           {globalBroadcasting ? "Durchsage an alle beenden" : "Durchsage an alle beginnen"}
         </button>
-        {liveState && <LiveMeter startedAt={liveState.startedAt} mode={liveState.mode} />}
+        {starting?.mode === "announce" && starting.zoneIds.length === zones.length && <AnnouncementPreparing />}
+        {globalBroadcasting && liveState && <LiveMeter startedAt={liveState.startedAt} mode={liveState.mode} />}
       </div>
 
       {loading ? (
@@ -170,6 +174,9 @@ export default function ControlPage() {
               zone={z}
               liveHere={liveState?.zoneIds.includes(z.id) ?? false}
               liveMode={liveState?.mode}
+              startedAt={liveState?.startedAt}
+              starting={!!starting}
+              preparingHere={starting?.mode === "announce" && starting.zoneIds.includes(z.id)}
               anyLive={!!liveState}
               globalAnnounce={globalBroadcasting}
               speakerActive={speakerZoneId === z.id}
@@ -179,7 +186,7 @@ export default function ControlPage() {
               isAdmin={me.admin}
               myEmail={me.email}
               onVolume={(v) => updateVolume(z.id, v)}
-              onBroadcast={(src, mode) => doBroadcast(z.id, src, mode)}
+              onBroadcast={(src, mode) => doBroadcast([z.id], src, mode)}
               onEndBroadcast={endBroadcast}
               onToggleSpeaker={() => toggleSpeaker(z)}
               onNewsChange={reload}
@@ -191,15 +198,24 @@ export default function ControlPage() {
   );
 }
 
+function AnnouncementPreparing() {
+  return (
+    <div role="status" className="w-full rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-950 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100">
+      <p className="font-semibold">Durchsage wird vorbereitet…</p>
+      <p className="text-sm">Noch nicht sprechen. Nach dem Gong erscheint „Jetzt sprechen“.</p>
+    </div>
+  );
+}
+
 function LiveMeter({ startedAt, mode }: { startedAt: number; mode: BroadcastMode }) {
   const [level, setLevel] = useState(0);
-  const [introPlaying, setIntroPlaying] = useState(announcementIntroPlaying);
+  const [announcement, setAnnouncement] = useState(announcementStatus);
   const [remaining, setRemaining] = useState<number | null>(null);
 
   useEffect(() => {
     const frame = () => {
       setLevel(peakLevel());
-      setIntroPlaying(announcementIntroPlaying());
+      setAnnouncement(announcementStatus());
       if (mode === "announce") {
         const left = Math.max(0, ANNOUNCE_MAX_MS - (Date.now() - startedAt));
         setRemaining(Math.ceil(left / 1000));
@@ -213,22 +229,33 @@ function LiveMeter({ startedAt, mode }: { startedAt: number; mode: BroadcastMode
   }, [startedAt, mode]);
 
   const pct = Math.round(level * 100);
+  const ready = announcement?.phase === "speaking";
+  const introSeconds = Math.ceil((announcement?.remainingMs ?? 0) / 1000);
   return (
-    <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto">
+    <div className={`w-full space-y-2 rounded-lg border p-3 ${mode === "announce"
+      ? ready
+        ? "border-green-400 bg-green-50 text-green-950 dark:border-green-600 dark:bg-green-950 dark:text-green-100"
+        : "border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100"
+      : "border-neutral-200 dark:border-neutral-700"}`}>
       {mode === "announce" && (
-        <span role="status" className="text-sm font-medium">
-          {introPlaying ? "Gong läuft… bitte kurz warten" : "Jetzt sprechen"}
-        </span>
+        <div role="status" aria-live="polite" aria-atomic="true">
+          <p className="text-lg font-bold">
+            {ready ? "Jetzt sprechen – Mikrofon an" : announcement?.phase === "paused"
+              ? "Audio unterbrochen – bitte neu starten"
+              : `Gong läuft – noch ${introSeconds} ${introSeconds === 1 ? "Sekunde" : "Sekunden"}`}
+          </p>
+          <p className="text-sm">{ready ? "Deine Durchsage wird übertragen." : "Mikrofon noch aus. Bitte mit dem Sprechen warten."}</p>
+        </div>
       )}
-      <div className="flex h-2 flex-1 min-w-[6rem] overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800 sm:w-40">
-        <div
-          className="h-full rounded-full bg-green-500 transition-[width] duration-75"
-          style={{ width: `${Math.min(100, pct)}%` }}
-        />
+      <div className="flex items-center gap-3">
+        <div className="flex h-2 flex-1 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
+          <div
+            className="h-full rounded-full bg-green-500 transition-[width] duration-75"
+            style={{ width: `${Math.min(100, pct)}%` }}
+          />
+        </div>
+        <span className="font-mono text-xs">{remaining !== null ? `${remaining}s verbleibend` : "live"}</span>
       </div>
-      <span className="font-mono text-xs text-neutral-600 dark:text-neutral-400">
-        {remaining !== null ? `${remaining}s` : "live"}
-      </span>
     </div>
   );
 }
@@ -237,6 +264,9 @@ function ZoneCard(props: {
   zone: ZoneWithDevices;
   liveHere: boolean;
   liveMode?: BroadcastMode;
+  startedAt?: number;
+  starting: boolean;
+  preparingHere?: boolean;
   anyLive: boolean;
   globalAnnounce: boolean;
   speakerActive: boolean;
@@ -277,7 +307,7 @@ function ZoneCard(props: {
   const canStopTab = isAdmin || (si?.email === myEmail);
   const canStartTab = isAdmin || !someoneElseStreaming;
 
-  const disableTabAudio = (anyLive && !tabActive) || (!canStartTab);
+  const disableTabAudio = props.starting || (anyLive && !tabActive) || (!canStartTab);
 
   return (
     <div className={`card space-y-5 ${liveHere ? "ring-2 ring-brand-500" : ""}`}>
@@ -288,7 +318,7 @@ function ZoneCard(props: {
             {onlineCount}/{totalCount} Geräte online
             {(liveHere || si?.broadcasting) && (
               <span className="ml-2 inline-flex items-center gap-1 font-medium text-brand-600 dark:text-brand-400">
-                · {si?.kind === "announce" ? "LIVE-Durchsage" : "LIVE Tab-Audio"}
+                · {(liveHere ? liveMode : si?.kind) === "announce" ? "LIVE-Durchsage" : "LIVE Tab-Audio"}
               </span>
             )}
           </p>
@@ -352,19 +382,24 @@ function ZoneCard(props: {
           <button
             onClick={() => props.onBroadcast("microphone", "announce")}
             className="btn bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
-            disabled={tabActive}
+            disabled={props.starting || tabActive}
           >
             <Megaphone className="h-4 w-4" aria-hidden /> Durchsage beginnen
           </button>
         )}
       </div>
 
-      <ZoneNewsControls zone={zone} busy={liveHere || !!zone.streamInfo?.broadcasting} onChange={props.onNewsChange} />
+      {props.preparingHere && !liveHere && <AnnouncementPreparing />}
+      {liveHere && liveMode && props.startedAt !== undefined && (
+        <LiveMeter startedAt={props.startedAt} mode={liveMode} />
+      )}
+
+      <ZoneNewsControls zone={zone} busy={props.starting || liveHere || !!zone.streamInfo?.broadcasting} onChange={props.onNewsChange} />
 
       <div>
         <button
           onClick={props.onToggleSpeaker}
-          disabled={speakerElsewhere}
+          disabled={props.starting || speakerElsewhere}
           className={speakerActive ? "btn-danger w-full" : "btn-outline w-full"}
         >
           {speakerActive

@@ -23,6 +23,7 @@ export async function prepareAnnouncementIntro(context: AudioContext, microphone
       gate.gain.setValueAtTime(1, endsAt);
       gong.start(startsAt);
     },
+    remainingMs() { return stopped ? 0 : Math.max(0, (endsAt - context.currentTime) * 1000); },
     isPlaying() { return !stopped && context.currentTime < endsAt; },
     stop() {
       stopped = true;
@@ -31,4 +32,11 @@ export async function prepareAnnouncementIntro(context: AudioContext, microphone
       try { gong.stop(); } catch { /* Already stopped or not started. */ }
     },
   };
+}
+
+// Read the audio clock, not wall time: a suspended context must never show "speak".
+export function getAnnouncementStatus(context: Pick<AudioContext, "state">, intro?: { remainingMs(): number }) {
+  if (context.state !== "running") return { phase: "paused" as const, remainingMs: 0 };
+  const remainingMs = intro?.remainingMs() ?? 0;
+  return { phase: remainingMs > 0 ? "intro" as const : "speaking" as const, remainingMs };
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { io, type Socket } from "socket.io-client";
-import { prepareAnnouncementIntro } from "./announcement-intro";
+import { getAnnouncementStatus, prepareAnnouncementIntro } from "./announcement-intro";
 
 export type CaptureSource = "tab" | "microphone";
 export type BroadcastMode = "stream" | "announce";
@@ -37,14 +37,15 @@ export function activeBroadcast() {
     : null;
 }
 
-export function announcementIntroPlaying() {
-  return active?.intro?.isPlaying() ?? false;
+export function announcementStatus() {
+  if (!active || active.mode !== "announce") return null;
+  return getAnnouncementStatus(active.audioCtx, active.intro);
 }
 
 // Returns 0..1 peak level of the current mic/tab capture, for a VU meter.
 // Re-reads the analyser on each call; 0 if no active broadcast.
 export function peakLevel() {
-  if (!active) return 0;
+  if (!active || (active.mode === "announce" && announcementStatus()?.phase !== "speaking")) return 0;
   const { analyser } = active;
   const data = new Uint8Array(analyser.fftSize);
   analyser.getByteTimeDomainData(data);
