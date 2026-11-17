@@ -214,7 +214,16 @@ app.prepare().then(() => {
     // Handle live + current-source directly — bypasses Next.js so relay state
     // is guaranteed accessible and res.write() flushes immediately.
     if (LIVE_RE.test(pathname)) return handleLive(req, res);
-    if (CURRENT_SOURCE_RE.test(pathname)) return handleCurrentSource(req, res);
+    if (CURRENT_SOURCE_RE.test(pathname)) {
+      void handleCurrentSource(req, res).catch(() => {
+        // The HTTP server does not handle promise rejections from a route.
+        // A failed status lookup must leave existing audio connections alive.
+        if (res.destroyed || res.writableEnded) return;
+        if (res.headersSent) { res.end(); return; }
+        res.writeHead(503, { "Cache-Control": "no-store", "Retry-After": "2" }).end();
+      });
+      return;
+    }
 
     const parsedUrl = parse(req.url || "/", true);
     handle(req, res, parsedUrl);
