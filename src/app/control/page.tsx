@@ -290,6 +290,7 @@ function ZoneCard(props: {
     connecting: "Verbinde mit dem Stream…",
     buffering: "Audiopuffer wird gefüllt. Bei einem Verbindungsabbruch startet die Wiedergabe automatisch neu…",
     reconnecting: "Verbindung unterbrochen. Der Stream wird automatisch neu verbunden…",
+    paused: "Wiedergabe pausiert. Mit „Wiedergabe fortsetzen“ oder über den Sperrbildschirm geht es weiter.",
     blocked: "Der Browser hat die Audiowiedergabe blockiert. Bitte Ton freigeben.",
     playing: speakerLive ? "Spielt den aktiven Live-Stream dieser Zone ab." : "Spielt den nativen Stream dieser Zone ab.",
   }[speakerStatus];
@@ -407,9 +408,9 @@ function ZoneCard(props: {
             : <Headphones className="h-4 w-4" aria-hidden />}
           {speakerActive ? "Lautsprecher-Modus beenden" : "Lautsprecher-Modus starten"}
         </button>
-        {speakerActive && speakerStatus === "blocked" && (
+        {speakerActive && (speakerStatus === "blocked" || speakerStatus === "paused") && (
           <button onClick={resumeSpeakerPlayback} className="btn-primary mt-2 w-full">
-            <Volume2 className="h-4 w-4" aria-hidden /> Ton freigeben
+            <Volume2 className="h-4 w-4" aria-hidden /> {speakerStatus === "paused" ? "Wiedergabe fortsetzen" : "Ton freigeben"}
           </button>
         )}
         <p className="mt-1.5 text-xs text-neutral-500" role="status">

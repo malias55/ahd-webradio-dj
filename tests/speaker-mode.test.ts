@@ -155,17 +155,16 @@ test("a status timeout keeps audio playing and polling recovers", async () => {
   assert.equal(calls, 3); assert.equal(FakeAudio.instances.length, 1);
 });
 
-test("a changed URL replaces a relay even if its relay ID stays the same", async () => {
+test("a changed URL reuses the authorized player even if its relay ID stays the same", async () => {
   reply = async () => source("/first.mp3", 80, "relay");
   await startSpeakerMode("showroom");
   reply = async () => source("/second.mp3", 80, "relay");
   await advance(2000);
-  assert.equal(FakeAudio.instances.length, 2);
-  assert.equal(FakeAudio.instances[0].pauses, 1);
-  assert.equal(FakeAudio.instances[1].src, "/second.mp3");
+  assert.equal(FakeAudio.instances.length, 1);
+  assert.equal(FakeAudio.instances[0].pauses, 0);
+  assert.equal(FakeAudio.instances[0].src, "/second.mp3");
   assert.equal(activeSpeakerZone(), "showroom");
-  FakeAudio.instances[0].dispatchEvent(new Event("error"));
-  assert.equal(FakeAudio.instances[1].pauses, 0, "a retired element cannot remove its replacement");
+
 });
 
 test("an open connection with no media progress reconnects without error or ended events", async () => {
@@ -266,4 +265,50 @@ test("a late rejection from the previous play attempt cannot restart a recovered
   await advance(4000);
   assert.equal(audio.loads, 1);
   assert.equal(activeSpeakerPlaybackStatus(), "playing");
+});
+
+
+test("visibility/online/resume recover paused playback without replacing it or seeking", async () => {
+  const page = new EventTarget();
+  const doc = Object.assign(new EventTarget(), { visibilityState: "visible" as DocumentVisibilityState });
+  const detach = attachSpeakerLifecycle(page as unknown as Window, doc);
+  await startSpeakerMode("showroom");
+  const audio = FakeAudio.instances[0];
+  doc.visibilityState = "hidden"; doc.dispatchEvent(new Event("visibilitychange"));
+  assert.equal(audio.pauses, 0, "locking the screen must never stop the player");
+  // Model suspended JavaScript: no timers execute while the clock advances.
+  audio.paused = true; now += 60_000;
+  doc.visibilityState = "visible"; doc.dispatchEvent(new Event("visibilitychange")); await flush();
+  assert.equal(audio.paused, false);
+  assert.equal(audio.loads, 0); assert.equal(audio.seeks, 0);
+  audio.paused = true; page.dispatchEvent(new Event("online")); await flush();
+  assert.equal(audio.paused, false);
+  audio.paused = true; doc.dispatchEvent(new Event("resume")); await flush();
+  assert.equal(audio.paused, false); assert.equal(FakeAudio.instances.length, 1);
+  stopSpeakerMode(); doc.dispatchEvent(new Event("resume")); await flush();
+  assert.equal(activeSpeakerZone(), null);
+  detach();
+});
+
+test("media-session pause is respected across news changes and resumes from lock-screen play", async t => {
+  const handlers = new Map<string, (()=>void) | null>();
+  const media = { playbackState: "none", metadata: null, setActionHandler: (name:string, fn:(()=>void)|null) => handlers.set(name,fn) };
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  Object.defineProperty(globalThis,"navigator",{configurable:true,value:{mediaSession:media}});
+  try {
+    await startSpeakerMode("showroom");
+    const audio = FakeAudio.instances[0];
+    audio.dispatchEvent(new Event("playing"));assert.equal(media.playbackState,"playing");
+    handlers.get("pause")!();
+    assert.equal(activeSpeakerPlaybackStatus(),"paused");assert.equal(media.playbackState,"paused");
+    reply=async()=>source("/news.mp3");await advance(30_000);
+    assert.equal(audio.paused,true);assert.equal(audio.src,"/news.mp3");assert.equal(audio.loads,0);
+    handlers.get("play")!();await flush();assert.equal(audio.paused,false);
+    handlers.get("stop")!();await advance(5000);
+    assert.equal(activeSpeakerZone(),null);assert.equal(media.playbackState,"none");
+    assert.equal(handlers.get("play"),null);assert.equal(timers.size,0);
+  } finally {
+    stopSpeakerMode();
+    if(descriptor)Object.defineProperty(globalThis,"navigator",descriptor);else Reflect.deleteProperty(globalThis,"navigator");
+  }
 });

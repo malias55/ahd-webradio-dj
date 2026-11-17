@@ -79,10 +79,11 @@ Ein eigener Wiedergabewächter prüft alle zwei Sekunden den tatsächlichen
 Fortschritt der Audiozeit. Steht sie mindestens 15 Sekunden still, wird die
 ausgewählte Quelle neu verbunden, auch wenn die HTTP-Verbindung offen bleibt
 und der Browser keinen Audiofehler meldet. Kurzes Puffern wird abgewartet.
-Beim Wiederverbinden bleibt dasselbe Audioelement erhalten; nur seine Verbindung
+Beim Wechsel zwischen Musik, Nachrichten und Live-Quellen sowie beim Wiederverbinden bleibt das bereits freigegebene Audioelement erhalten; nur seine Verbindung
 wird neu geladen. Alte, dadurch abgebrochene `play()`-Versuche können keinen
 weiteren Neustart auslösen.
-Die Oberfläche unterscheidet Verbindung, Puffern, Wiederverbinden und Wiedergabe.
+Media Session stellt Wiedergabe/Pause/Stopp auf dem Sperrbildschirm bereit. Eine dort absichtlich pausierte Wiedergabe wird auch bei Quellenwechseln nicht automatisch gestartet. Sichtbarwerden, Browser-Resume und Netzrückkehr prüfen die Wiedergabe zusätzlich zu den Timern; gesunde Streams werden dabei nicht neu geladen. Der Bildschirm wird nicht künstlich wach gehalten. Eine vom Betriebssystem vollständig beendete PWA kann sich nicht selbst starten; dafür wäre ein nativer Android-Vordergrunddienst erforderlich.
+Die Oberfläche unterscheidet Verbindung, Puffern, Wiederverbinden, Pause und Wiedergabe.
 Verweigert der Browser `play()` wegen fehlender Nutzerinteraktion, erscheint
 „Ton freigeben“; zeitgesteuerte Wiederholungen umgehen diese Browsersperre nicht.
 Die aktive Zone wird pro Tab in `sessionStorage` gespeichert. Die angemeldete
@@ -107,8 +108,7 @@ angemeldeten EventStream `/api/zones/:id/volume-events`. Der Server prüft den
 gespeicherten Wert sekündlich; Änderungen aus Steuerung und Zoneneinstellungen
 erreichen so auch andere laufende Browser-Sitzungen. Die normale Statusabfrage
 bleibt als Rückfallebene erhalten. Verspätete Statusantworten überschreiben keine
-neueren Live-Werte. Ein Web-Audio-GainNode regelt den Pegel auch auf Browsern,
-die `HTMLMediaElement.volume` nicht unterstützen. Die Audiodatei und Verbindung
+neueren Live-Werte. Android/Chrome nutzt native Medienwiedergabe und `HTMLMediaElement.volume`; Web Audio wird nur angelegt, wenn ein synchroner Fähigkeitstest zeigt, dass der Browser Elementlautstärke ignoriert (etwa iOS). So erhält Android beim Nachrichtenwechsel denselben freigegebenen Player ohne zusätzliche Web-Audio-Abhängigkeit. Die Audiodatei und Verbindung
 bleiben beim Regeln unverändert; 0 Prozent schaltet die Ausgabe stumm.
 `node scripts/speaker-volume-e2e.cjs` prüft nach dem Build mit zwei getrennten
 Browsersitzungen den tatsächlichen Audiopegel, Stummschaltung, einen ignorierten

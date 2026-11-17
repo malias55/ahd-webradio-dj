@@ -44,7 +44,7 @@ async function flush() { for(let i=0;i<30;i++)await Promise.resolve(); }
 beforeEach(()=>{
  AudioWithoutVolume.instances=[];VolumeEvents.instances=[];GainContext.instances=[];GainContext.allowResume=true;
  reply=async()=>response();
- for(const [name,value] of Object.entries({Audio:AudioWithoutVolume,AudioContext:GainContext,EventSource:VolumeEvents,fetch:()=>reply()})) {
+ for(const [name,value] of Object.entries({document:{createElement:()=>({get volume(){return 1;},set volume(_v:number){}})},Audio:AudioWithoutVolume,AudioContext:GainContext,EventSource:VolumeEvents,fetch:()=>reply()})) {
   saved.set(name,Object.getOwnPropertyDescriptor(globalThis,name));Object.defineProperty(globalThis,name,{configurable:true,writable:true,value});
  }
 });
@@ -88,7 +88,7 @@ test('live volume survives a source change and old-zone events are ignored after
  const oldEvents=VolumeEvents.instances[0],oldContext=GainContext.instances[0];
  oldEvents.send('showroom',35);reply=async()=>response(80,'/news.mp3');
  t.mock.timers.tick(2000);await flush();
- assert.equal(oldContext.gain.gain.value,.35);assert.equal(AudioWithoutVolume.instances[1].src,'/news.mp3');
+ assert.equal(oldContext.gain.gain.value,.35);assert.equal(AudioWithoutVolume.instances[0].src,'/news.mp3');assert.equal(AudioWithoutVolume.instances.length,1);assert.equal(oldContext.sources.length,1);
  await startSpeakerMode('workshop');
  assert.equal(oldEvents.closed,true);assert.equal(oldContext.state,'closed');
  assert.ok(oldContext.sources.every(source=>source.disconnects===1));
@@ -102,4 +102,26 @@ test('a suspended gain context requests a gesture and resumes without replacing 
  await startSpeakerMode('showroom');assert.equal(activeSpeakerPlaybackStatus(),'blocked');
  GainContext.allowResume=true;resumeSpeakerPlayback();await flush();
  assert.notEqual(activeSpeakerPlaybackStatus(),'blocked');assert.equal(AudioWithoutVolume.instances.length,1);
+});
+
+
+test('Android/native volume uses no AudioContext, survives news switches and accepts remote changes',async t=>{
+ t.mock.timers.enable({apis:['setTimeout']});
+ class NativeAudio extends AudioWithoutVolume {
+   level=1; get volume(){return this.level;} set volume(value:number){this.level=value;}
+ }
+ Object.defineProperty(globalThis,'Audio',{configurable:true,value:NativeAudio});
+ Object.defineProperty(globalThis,'document',{configurable:true,value:{createElement:()=>({volume:1})}});
+ await startSpeakerMode('showroom');
+ const audio=AudioWithoutVolume.instances[0];
+ assert.equal(GainContext.instances.length,0,'native playback is never routed through Web Audio');
+ assert.equal(audio.volume,.8);
+ VolumeEvents.instances[0].send('showroom',26);assert.equal(audio.volume,.26);
+ reply=async()=>response(80,'/news.mp3');t.mock.timers.tick(2000);await flush();
+ assert.equal(AudioWithoutVolume.instances.length,1,'news retains the unlocked player');
+ assert.equal(audio.src,'/news.mp3');assert.equal(audio.volume,.26);
+ assert.equal(audio.pauses,0,'source changes do not explicitly pause background playback');
+ reply=async()=>response();t.mock.timers.tick(2000);await flush();
+ assert.equal(audio.src,'/radio.mp3');assert.equal(AudioWithoutVolume.instances.length,1);
+ VolumeEvents.instances[0].send('showroom',0);assert.equal(audio.volume,0);
 });

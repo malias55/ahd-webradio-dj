@@ -5,7 +5,7 @@ const STATUS_TIMEOUT_MS = 5000;
 const STALL_TIMEOUT_MS = 15_000;
 const SELECTION_KEY = "ahd:speaker-zone:v1";
 
-export type SpeakerPlaybackStatus = "idle" | "waiting" | "connecting" | "playing" | "buffering" | "reconnecting" | "blocked";
+export type SpeakerPlaybackStatus = "waiting" | "connecting" | "idle" | "playing" | "buffering" | "reconnecting" | "blocked" | "paused";
 
 type Source = { url: string; relayId?: string; kind?: string };
 
@@ -15,6 +15,7 @@ type State = {
   live: boolean;
   volume: number;
 };
+type ResolvedSource = Omit<State, "zoneId">;
 
 const audioElements = new Map<string, HTMLAudioElement>();
 const retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -24,6 +25,7 @@ let gainContext: AudioContext | null = null;
 let speakerGain: GainNode | null = null;
 let volumeEvents: EventSource | null = null;
 let pushedVolume = false, volumeRevision = 0;
+let userPaused = false;
 const playback = new Map<string, {
   time: number; progressedAt: number; attempt: number; status: SpeakerPlaybackStatus; reconnect: () => void;
 }>();
@@ -33,7 +35,13 @@ let watchdogTimer: ReturnType<typeof setTimeout> | null = null;
 let statusRequest: AbortController | null = null;
 const listeners = new Set<() => void>();
 
-function notify() { for (const fn of listeners) fn(); }
+function notify() {
+  const media = globalThis.navigator?.mediaSession;
+  if (media && state) {
+    try { media.playbackState = userPaused ? "paused" : activeSpeakerPlaybackStatus() === "playing" ? "playing" : "none"; } catch { /* Unsupported media session. */ }
+  }
+  for (const fn of listeners) fn();
+}
 
 // buffered.end() is downloaded audio, not a measured live timestamp. Seeking
 // towards it discards the browser's jitter buffer and can repeatedly underrun.
@@ -47,6 +55,15 @@ function setAudioVolume(volume: number) {
 }
 
 function prepareVolumeControl() {
+  // Android/Chrome supports native volume. Keep its media element on the native
+  // playback path, including lock-screen audio focus and background playback.
+  // Only browsers that ignore element volume (notably iOS) need a GainNode.
+  if (typeof document === "undefined") return;
+  try {
+    const probe = document.createElement("audio");
+    probe.volume = 0.5;
+    if (probe.volume === 0.5) return;
+  } catch { return; }
   const Context = globalThis.AudioContext || (globalThis as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!Context) return;
   try {
@@ -81,9 +98,7 @@ function watchVolume(session: State) {
   } catch { /* Source polling remains available when EventSource is unavailable. */ }
 }
 
-async function resolveSource(
-  zoneId: string,
-): Promise<{ sources: Source[]; live: boolean; volume: number } | null> {
+async function resolveSource(zoneId: string): Promise<ResolvedSource | null> {
   const request = new AbortController();
   statusRequest = request;
   const timeout = setTimeout(() => request.abort(), STATUS_TIMEOUT_MS);
@@ -108,27 +123,28 @@ async function resolveSource(
   }
 }
 
-function removeAudio(key: string) {
+type AudioBinding = { el: HTMLAudioElement; source?: MediaElementAudioSourceNode };
+
+function removeAudio(key: string, retain = false): AudioBinding | undefined {
   const retry = retryTimers.get(key);
   if (retry) clearTimeout(retry);
   retryTimers.delete(key);
   audioCleanup.get(key)?.();
   audioCleanup.delete(key);
-  mediaSources.get(key)?.disconnect();
+  const source = mediaSources.get(key);
+  if (!retain) source?.disconnect();
   mediaSources.delete(key);
   playback.delete(key);
   const el = audioElements.get(key);
   audioElements.delete(key);
   if (!el) return;
+  if (retain) return { el, source };
   el.pause();
   el.removeAttribute("src");
   el.load();
 }
 
-function applyState(
-  session: State,
-  next: { sources: Source[]; live: boolean; volume: number } | null,
-) {
+function applyState(session: State, next: ResolvedSource | null) {
   // A failed status request is not an explicit instruction to stop the stream.
   // Session identity also rejects late responses after stop/restart of a zone.
   if (state !== session || !next) return;
@@ -138,19 +154,28 @@ function applyState(
   session.volume = nextVol;
 
   const nextKeys = new Set(nextSources.map(keyFor));
+  const missing = [...nextKeys].filter(key => !audioElements.has(key)).length;
+  const reusable: AudioBinding[] = [];
   for (const key of new Set([...audioElements.keys(), ...retryTimers.keys()])) {
-    if (!nextKeys.has(key)) removeAudio(key);
+    if (!nextKeys.has(key)) {
+      // Keep the already-authorized element when switching music/news/live.
+      // Creating a new player in a locked PWA can lose background playback.
+      const binding = removeAudio(key, reusable.length < missing);
+      if (binding) reusable.push(binding);
+    }
   }
 
   for (const src of nextSources) {
     const key = keyFor(src);
     if (!audioElements.has(key) && !retryTimers.has(key)) {
-      const el = new Audio();
+      const retained = reusable.shift();
+      const el = retained?.el ?? new Audio();
       el.preload = "auto";
       el.crossOrigin = "anonymous";
       el.volume = Math.max(0, Math.min(1, nextVol / 100));
       el.src = src.url;
-      if (gainContext && speakerGain) {
+      if (retained?.source) mediaSources.set(key, retained.source);
+      else if (gainContext && speakerGain) {
         try {
           const source = gainContext.createMediaElementSource(el);
           source.connect(speakerGain);
@@ -159,13 +184,13 @@ function applyState(
         } catch { /* Retain media-element volume on unsupported browsers. */ }
       }
       const retry = () => {
-        if (state !== session || audioElements.get(key) !== el || retryTimers.has(key)) return;
+        if (userPaused || state !== session || audioElements.get(key) !== el || retryTimers.has(key)) return;
         const progress = playback.get(key);
         if (!progress) return;
         progress.status = "reconnecting";
         retryTimers.set(key, setTimeout(() => {
           retryTimers.delete(key);
-          if (state !== session || audioElements.get(key) !== el) return;
+          if (userPaused || state !== session || audioElements.get(key) !== el) return;
           // Keep the already-authorized media element across server restarts.
           // Invalidate the previous play promise before load() can abort it.
           progress.attempt++;
@@ -183,6 +208,8 @@ function applyState(
         const progress = playback.get(key);
         if (!progress || audioElements.get(key) !== el) return;
         progress.status = "playing";
+        progress.time = el.currentTime;
+        progress.progressedAt = Date.now();
         notify();
       };
       const waiting = () => {
@@ -193,6 +220,17 @@ function applyState(
       };
       el.addEventListener("error", retry);
       el.addEventListener("ended", retry);
+      const timeupdate = () => {
+        const progress = playback.get(key);
+        if (!progress || audioElements.get(key) !== el || el.paused || el.currentTime <= progress.time + 0.01) return;
+        progress.time = el.currentTime;
+        progress.progressedAt = Date.now();
+        progress.status = "playing";
+        const timer = retryTimers.get(key);
+        if (timer) clearTimeout(timer);
+        retryTimers.delete(key);
+      };
+      el.addEventListener("timeupdate", timeupdate);
       el.addEventListener("playing", playing);
       el.addEventListener("waiting", waiting);
       el.addEventListener("stalled", waiting);
@@ -200,6 +238,7 @@ function applyState(
       audioCleanup.set(key, () => {
         el.removeEventListener("error", retry);
         el.removeEventListener("ended", retry);
+        el.removeEventListener("timeupdate", timeupdate);
         el.removeEventListener("playing", playing);
         el.removeEventListener("waiting", waiting);
         el.removeEventListener("stalled", waiting);
@@ -216,7 +255,7 @@ function applyState(
 
 function playAudio(key: string, el: HTMLAudioElement) {
   const current = playback.get(key);
-  if (!current) return;
+  if (!current || userPaused) return;
   const attempt = ++current.attempt;
   void el.play().catch(error => {
     const progress = playback.get(key);
@@ -234,7 +273,7 @@ function watchPlayback(session: State) {
   if (state !== session) return;
   for (const [key, el] of audioElements) {
     const progress = playback.get(key);
-    if (!progress || progress.status === "blocked") continue;
+    if (!progress || userPaused || progress.status === "blocked") continue;
     if (el.currentTime > progress.time + 0.01) {
       progress.time = el.currentTime;
       progress.progressedAt = Date.now();
@@ -268,6 +307,8 @@ export async function startSpeakerMode(zoneId: string) {
   try { sessionStorage.setItem(SELECTION_KEY, zoneId); } catch { /* Storage can be disabled. */ }
   const session: State = { zoneId, sources: [], live: false, volume: 80 };
   state = session;
+  userPaused = false;
+  setupMediaSession();
   prepareVolumeControl();
   watchVolume(session);
   notify();
@@ -282,6 +323,8 @@ export function stopSpeakerMode() {
 
 export function suspendSpeakerMode() {
   state = null;
+  userPaused = false;
+  clearMediaSession();
   volumeEvents?.close(); volumeEvents = null;
   pushedVolume = false; volumeRevision++;
   statusRequest?.abort();
@@ -303,18 +346,81 @@ export async function restoreSpeakerMode() {
   } catch { /* No remembered playback when storage is unavailable. */ }
 }
 
+// Timers and requests can be frozen while Android backgrounds a PWA. Recover
+// on lifecycle/network events as well, without interrupting healthy playback.
+function recoverSpeakerPlayback() {
+  if (!state) { void restoreSpeakerMode(); return; }
+  if (userPaused) return;
+  if (gainContext && gainContext.state !== "running") void gainContext.resume().catch(notify);
+  for (const [key, el] of audioElements) {
+    const progress = playback.get(key);
+    if (!progress) continue;
+    if (el.paused && progress.status !== "blocked") {
+      progress.progressedAt = Date.now();
+      playAudio(key, el);
+    } else if (progress.status !== "blocked" && Date.now() - progress.progressedAt >= STALL_TIMEOUT_MS && el.currentTime <= progress.time + 0.01) {
+      progress.reconnect();
+    }
+  }
+  // Abort a frozen request; its finally path resumes serialized polling.
+  if (statusRequest) statusRequest.abort();
+  else {
+    if (pollTimer) clearTimeout(pollTimer);
+    pollTimer = null;
+    void poll(state);
+  }
+  notify();
+}
+
 // Owned by the app layout so route changes do not disable the player lifecycle.
-// Page exit releases resources but preserves intent; explicit Stop clears it.
-export function attachSpeakerLifecycle(target: Pick<Window, "addEventListener" | "removeEventListener">) {
-  const restore = () => { void restoreSpeakerMode(); };
+export function attachSpeakerLifecycle(
+  target: Pick<Window, "addEventListener" | "removeEventListener">,
+  doc: Pick<Document, "addEventListener" | "removeEventListener" | "visibilityState"> | undefined = typeof document === "undefined" ? undefined : document,
+) {
+  const visible = () => { if (doc?.visibilityState === "visible") recoverSpeakerPlayback(); };
   target.addEventListener("pagehide", suspendSpeakerMode);
-  target.addEventListener("pageshow", restore);
-  restore();
+  target.addEventListener("pageshow", recoverSpeakerPlayback);
+  target.addEventListener("online", recoverSpeakerPlayback);
+  doc?.addEventListener("visibilitychange", visible);
+  doc?.addEventListener("resume", recoverSpeakerPlayback);
+  void restoreSpeakerMode();
   return () => {
     target.removeEventListener("pagehide", suspendSpeakerMode);
-    target.removeEventListener("pageshow", restore);
+    target.removeEventListener("pageshow", recoverSpeakerPlayback);
+    target.removeEventListener("online", recoverSpeakerPlayback);
+    doc?.removeEventListener("visibilitychange", visible);
+    doc?.removeEventListener("resume", recoverSpeakerPlayback);
     suspendSpeakerMode();
   };
+}
+
+function pauseSpeakerPlayback() {
+  if (!state) return;
+  userPaused = true;
+  for (const timer of retryTimers.values()) clearTimeout(timer);
+  retryTimers.clear();
+  for (const el of audioElements.values()) el.pause();
+  notify();
+}
+
+function setupMediaSession() {
+  const media = globalThis.navigator?.mediaSession;
+  if (!media) return;
+  try {
+    if (typeof MediaMetadata !== "undefined") media.metadata = new MediaMetadata({ title: "AHD Radio DJ", artist: "Zonen-Lautsprecher", artwork: [{ src: "/icon-512.png", sizes: "512x512", type: "image/png" }] });
+    media.setActionHandler("play", resumeSpeakerPlayback);
+    media.setActionHandler("pause", pauseSpeakerPlayback);
+    media.setActionHandler("stop", stopSpeakerMode);
+  } catch { /* Playback works without lock-screen controls. */ }
+}
+
+function clearMediaSession() {
+  const media = globalThis.navigator?.mediaSession;
+  if (!media) return;
+  for (const action of ["play", "pause", "stop"] as const) {
+    try { media.setActionHandler(action, null); } catch { /* Unsupported action. */ }
+  }
+  try { media.playbackState = "none"; media.metadata = null; } catch { /* Unsupported media session. */ }
 }
 
 export function activeSpeakerZone() { return state?.zoneId ?? null; }
@@ -323,6 +429,7 @@ export function activeSpeakerVolume() { return state?.volume ?? null; }
 export function activeSpeakerHasSource() { return (state?.sources.length ?? 0) > 0; }
 export function activeSpeakerPlaybackStatus(): SpeakerPlaybackStatus {
   if (!state) return "idle";
+  if (userPaused) return "paused";
   if (!state.sources.length) return "waiting";
   if (gainContext?.state === "suspended") return "blocked";
   const statuses = [...playback.values()].map(p => p.status);
@@ -334,10 +441,11 @@ export function activeSpeakerPlaybackStatus(): SpeakerPlaybackStatus {
 }
 
 export function resumeSpeakerPlayback() {
+  userPaused = false;
   if (gainContext) void gainContext.resume().catch(notify);
   for (const [key, el] of audioElements) {
     const progress = playback.get(key);
-    if (!progress || progress.status !== "blocked") continue;
+    if (!progress || (!el.paused && progress.status !== "blocked")) continue;
     progress.status = "connecting";
     progress.progressedAt = Date.now();
     playAudio(key, el);

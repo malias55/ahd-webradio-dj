@@ -6,18 +6,18 @@ import { attachSpeakerLifecycle, activeSpeakerPlaybackStatus, resumeSpeakerPlayb
 
 export function SpeakerPlaybackLifecycle() {
   const pathname = usePathname();
-  const [blocked, setBlocked] = useState(false);
+  const [status, setStatus] = useState(activeSpeakerPlaybackStatus);
   useEffect(() => attachSpeakerLifecycle(window), []);
   useEffect(() => {
-    const sync = () => setBlocked(activeSpeakerPlaybackStatus() === "blocked");
+    const sync = () => setStatus(activeSpeakerPlaybackStatus());
     sync();
     return subscribeSpeaker(sync);
   }, []);
-  if (!blocked || pathname === "/control") return null;
+  if ((status !== "blocked" && status !== "paused") || pathname === "/control") return null;
   return (
     <div className="card mb-4 flex flex-wrap items-center gap-3" role="status">
-      <p className="flex-1 text-sm">Das Radio ist ausgewählt. Der Browser benötigt noch deine Freigabe für den Ton.</p>
-      <button className="btn-primary" onClick={resumeSpeakerPlayback}>Ton freigeben</button>
+      <p className="flex-1 text-sm">{status === "paused" ? "Die Radio-Wiedergabe ist pausiert." : "Das Radio ist ausgewählt. Der Browser benötigt noch deine Freigabe für den Ton."}</p>
+      <button className="btn-primary" onClick={resumeSpeakerPlayback}>{status === "paused" ? "Wiedergabe fortsetzen" : "Ton freigeben"}</button>
     </div>
   );
 }

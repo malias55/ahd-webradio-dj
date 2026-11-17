@@ -20,6 +20,7 @@ const server=http.createServer((req,res)=>{
  res.writeHead(200,{'Content-Type':'text/html'}).end(`<!doctype html><button id="start">Start</button><script type="module">
  const NativeAudio=window.Audio,NativeContext=window.AudioContext;window.metrics={elements:0,loads:0,pauses:0};
  window.Audio=function(){const el=new NativeAudio();window.audio=el;window.metrics.elements++;if(location.search==='?ignore-volume')Object.defineProperty(el,'volume',{get:()=>1,set:()=>{}});const load=el.load.bind(el);el.load=()=>{window.metrics.loads++;load()};el.addEventListener('pause',()=>window.metrics.pauses++);return el};
+ const createElement=document.createElement.bind(document);document.createElement=function(name,...args){const el=createElement(name,...args);if(name==='audio'&&location.search==='?ignore-volume')Object.defineProperty(el,'volume',{get:()=>1,set:()=>{}});return el};
  window.AudioContext=class extends NativeContext{createGain(){const node=super.createGain();window.gain=node;window.analyser=this.createAnalyser();node.connect(window.analyser);return node}};
  window.rms=()=>{const samples=new Float32Array(window.analyser.fftSize);window.analyser.getFloatTimeDomainData(samples);return Math.sqrt(samples.reduce((s,v)=>s+v*v,0)/samples.length)};
  window.player=await import('/player.js');document.querySelector('#start').onclick=()=>window.player.startSpeakerMode('test');</script>`);
@@ -32,22 +33,23 @@ const server=http.createServer((req,res)=>{
   const receiverContext=await browser.newContext(),senderContext=await browser.newContext();
   const receiver=await receiverContext.newPage(),sender=await senderContext.newPage();
   await receiver.goto(url+(ignoreVolume?'/?ignore-volume':'/'));await receiver.waitForFunction(()=>window.player);await receiver.click('#start');
-  await receiver.waitForFunction(()=>window.audio?.currentTime>0.5&&window.rms()>0);
-  const baseline=await receiver.evaluate(()=>window.rms());await sender.goto(url);
+  await receiver.waitForFunction(()=>window.audio?.currentTime>0.5&&(!window.gain||window.rms()>0));
+  assert.equal(await receiver.evaluate(()=>!!window.gain),ignoreVolume,'Web Audio is only used when native volume is unavailable');
+  const baseline=await receiver.evaluate(()=>window.gain?window.rms():window.audio.volume);await sender.goto(url);
   statusFails=true;const started=Date.now();
   await sender.evaluate(()=>fetch('/volume',{method:'POST',body:JSON.stringify({volume:25})}));
-  await receiver.waitForFunction(()=>window.gain.gain.value===.25&&window.player.activeSpeakerVolume()===25);
+  await receiver.waitForFunction(()=>(window.gain?window.gain.gain.value:window.audio.volume)===.25&&window.player.activeSpeakerVolume()===25);
   const latency=Date.now()-started;await receiver.waitForTimeout(120);
-  const quiet=await receiver.evaluate(()=>window.rms());assert.ok(Math.abs(quiet/baseline-.25/.8)<.03,'actual audio amplitude follows the remote setting');
+  const quiet=await receiver.evaluate(()=>window.gain?window.rms():window.audio.volume);assert.ok(Math.abs(quiet/baseline-.25/.8)<.03,'output level follows the remote setting');
   await sender.evaluate(()=>fetch('/volume',{method:'POST',body:JSON.stringify({volume:0})}));
-  await receiver.waitForFunction(()=>window.gain.gain.value===0);await receiver.waitForTimeout(100);assert.equal(await receiver.evaluate(()=>window.rms()),0);
-  statusFails=false;await receiver.waitForTimeout(2200);assert.equal(await receiver.evaluate(()=>window.gain.gain.value),0,'stale status does not unmute');
+  await receiver.waitForFunction(()=>(window.gain?window.gain.gain.value:window.audio.volume)===0);await receiver.waitForTimeout(100);assert.equal(await receiver.evaluate(()=>window.gain?window.rms():window.audio.volume),0);
+  statusFails=false;await receiver.waitForTimeout(2200);assert.equal(await receiver.evaluate(()=>window.gain?window.gain.gain.value:window.audio.volume),0,'stale status does not unmute');
   await sender.evaluate(()=>fetch('/volume',{method:'POST',body:JSON.stringify({volume:100})}));
-  await receiver.waitForFunction(()=>window.gain.gain.value===1);await receiver.waitForTimeout(100);
-  assert.ok((await receiver.evaluate(()=>window.rms()))>baseline,'remote unmute restores the audible level');
+  await receiver.waitForFunction(()=>(window.gain?window.gain.gain.value:window.audio.volume)===1);await receiver.waitForTimeout(100);
+  assert.ok((await receiver.evaluate(()=>window.gain?window.rms():window.audio.volume))>baseline,'remote unmute restores the audible level');
   const metrics=await receiver.evaluate(()=>window.metrics);assert.deepEqual(metrics,{elements:1,loads:0,pauses:0});
   await receiver.evaluate(()=>window.player.stopSpeakerMode());const stoppedReads=reads;await receiver.waitForTimeout(1200);assert.equal(reads,stoppedReads,'stop closes the server subscription');
-  console.log(JSON.stringify({passed:true,ignoreMediaElementVolume:ignoreVolume,remoteUpdateMs:latency,measuredAmplitudeRatio:quiet/baseline,metrics}));
+  console.log(JSON.stringify({passed:true,ignoreMediaElementVolume:ignoreVolume,remoteUpdateMs:latency,measuredOutputRatio:quiet/baseline,metrics}));
   await receiverContext.close();await senderContext.close();
  }
 })().catch(e=>{console.error(e);process.exitCode=1}).finally(async()=>{await browser?.close();server.closeAllConnections();server.close()});
