@@ -69,18 +69,21 @@ Die lokale `users`-Tabelle dient nur noch den bestehenden Radio-Rollen und Anzei
 
 ## Entwicklung und Prüfung
 
+Für das eingebaute Radio verwendet der Lautsprecher-Modus eine einzige angemeldete Verbindung zu `/api/zones/:id/speaker-stream`. Der Server wechselt Musik, manuelle Nachrichten, Hatim, Tab-Audio und Durchsagen, ohne die Audio-URL auf dem Handy zu ändern. Quellenwechsel benötigen dadurch keine Hintergrund-Timer des Handys. Ein gemeinsamer Router je aktiver Zone reicht vollständige MP3-Frames unverändert weiter, mit kleinem Jitterpuffer und begrenztem Speicher. Nur gleichzeitig laufende Durchsagen werden gemischt. Quellenausfälle und Sendepausen liefern echte Stille auf derselben Verbindung; der Server verbindet fehlende oder hängende Quellen mit begrenzten Wiederholungen neu. Langsame Empfänger bremsen andere Empfänger nicht aus. Nach dem letzten Empfänger werden Quellen und Timer freigegeben. Der Quellenstatus zeigt Warten/Puffern/Wiederverbinden auch dann an, wenn die Verbindung noch Stille überträgt. Eigene externe Stream-URLs behalten den bisherigen direkten Wiedergabeweg.
+
+`npx tsx scripts/speaker-stream-e2e.ts` prüft mit echten HTTP-Verbindungen und FFmpeg Musik → Nachrichten → Stille → parallele Durchsagen → Musik sowie einen 14-sekündigen Quellenausfall, ohne Änderungen am Liveprogramm. Die Audiofrequenzen im Ergebnis bestätigen den Quellenwechsel auf einer einzigen Empfängerverbindung.
+
 Der Lautsprecher-Modus erhält den Audiopuffer des Browsers, statt bei drei Sekunden
 Puffervorsprung nach vorn zu springen. Fehlgeschlagene Statusabfragen lassen den
-laufenden Stream unverändert. Eine bestätigte Quellenänderung wechselt die
-Quelle; Audio-Ende, Audiofehler und anhaltender Stillstand verbinden sie neu.
+laufenden Stream unverändert. Bei externen Quellen wechselt eine bestätigte Quellenänderung die
+Audio-URL; Audio-Ende, Audiofehler und anhaltender Stillstand verbinden sie neu.
 Statusabfragen laufen nacheinander mit fünf Sekunden Zeitlimit. Stoppen und
 Zonenwechsel entfernen ausstehende Wiederverbindungen und verwerfen alte Antworten.
 Ein eigener Wiedergabewächter prüft alle zwei Sekunden den tatsächlichen
 Fortschritt der Audiozeit. Steht sie mindestens 15 Sekunden still, wird die
 ausgewählte Quelle neu verbunden, auch wenn die HTTP-Verbindung offen bleibt
 und der Browser keinen Audiofehler meldet. Kurzes Puffern wird abgewartet.
-Beim Wechsel zwischen Musik, Nachrichten und Live-Quellen sowie beim Wiederverbinden bleibt das bereits freigegebene Audioelement erhalten; nur seine Verbindung
-wird neu geladen. Alte, dadurch abgebrochene `play()`-Versuche können keinen
+Beim Wiederverbinden und bei externen Quellenwechseln bleibt das bereits freigegebene Audioelement erhalten; nur seine Verbindung wird neu geladen. Beim eingebauten Radio bleibt auch die Verbindung über Programmwechsel hinweg erhalten. Alte, dadurch abgebrochene `play()`-Versuche können keinen
 weiteren Neustart auslösen.
 Media Session stellt Wiedergabe/Pause/Stopp auf dem Sperrbildschirm bereit. Eine dort absichtlich pausierte Wiedergabe wird auch bei Quellenwechseln nicht automatisch gestartet. Sichtbarwerden, Browser-Resume und Netzrückkehr prüfen die Wiedergabe zusätzlich zu den Timern; gesunde Streams werden dabei nicht neu geladen. Der Bildschirm wird nicht künstlich wach gehalten. Eine vom Betriebssystem vollständig beendete PWA kann sich nicht selbst starten; dafür wäre ein nativer Android-Vordergrunddienst erforderlich.
 Die Oberfläche unterscheidet Verbindung, Puffern, Wiederverbinden, Pause und Wiedergabe.

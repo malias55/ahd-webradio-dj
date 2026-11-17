@@ -1,6 +1,7 @@
 import { nativeSource } from "@/lib/radio/config";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { usesContinuousSpeaker, speakerStreamUrl } from "@/lib/speaker-stream-url";
 import { currentMode, announceRelaysForZone } from "@/lib/broadcast";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +15,7 @@ export async function GET(req: Request, { params }: Ctx) {
 
   const mode = currentMode(id);
   const origin = new URL(req.url).origin;
+  const speakerUrl = usesContinuousSpeaker(zone) ? speakerStreamUrl(id, origin) : undefined;
 
   if (mode === "announce") {
     const relays = announceRelaysForZone(id);
@@ -25,6 +27,7 @@ export async function GET(req: Request, { params }: Ctx) {
     return NextResponse.json({
       zoneId: id,
       zoneName: zone.name,
+      speakerUrl,
       url: sources[0]?.url ?? null,
       sources,
       live: true,
@@ -38,6 +41,7 @@ export async function GET(req: Request, { params }: Ctx) {
     return NextResponse.json({
       zoneId: id,
       zoneName: zone.name,
+      speakerUrl,
       url,
       sources: [{ url, kind: "stream" as const }],
       live: true,
@@ -49,6 +53,7 @@ export async function GET(req: Request, { params }: Ctx) {
   return NextResponse.json({
     zoneId: id,
     zoneName: zone.name,
+    speakerUrl,
     url: nativeSource(zone, origin),
     sources: [],
     live: false,

@@ -12,6 +12,7 @@ type Source = { url: string; relayId?: string; kind?: string };
 type State = {
   zoneId: string;
   sources: Source[];
+  upstreamStatus?: "waiting" | "buffering" | "reconnecting";
   live: boolean;
   volume: number;
 };
@@ -110,12 +111,14 @@ async function resolveSource(zoneId: string): Promise<ResolvedSource | null> {
     const data = await r.json();
     const vol = typeof data.volume === "number" ? data.volume : 80;
     const sources: Source[] =
-      Array.isArray(data.sources) && data.sources.length > 0
+      typeof data.speakerUrl === "string" && data.speakerUrl
+        ? [{ url: data.speakerUrl }]
+        : Array.isArray(data.sources) && data.sources.length > 0
         ? data.sources
         : data.url
           ? [{ url: data.url }]
           : [];
-    return { sources, live: data.live ?? false, volume: vol };
+    return { sources, upstreamStatus: ["waiting", "buffering", "reconnecting"].includes(data.speakerStatus) ? data.speakerStatus : undefined, live: data.live ?? false, volume: vol };
   } catch { return null; }
   finally {
     clearTimeout(timeout);
@@ -150,6 +153,7 @@ function applyState(session: State, next: ResolvedSource | null) {
   if (state !== session || !next) return;
   const { sources: nextSources, volume: nextVol } = next;
   session.sources = nextSources;
+  session.upstreamStatus = next.upstreamStatus;
   session.live = next.live;
   session.volume = nextVol;
 
@@ -435,12 +439,14 @@ export function activeSpeakerPlaybackStatus(): SpeakerPlaybackStatus {
   const statuses = [...playback.values()].map(p => p.status);
   if (statuses.includes("blocked")) return "blocked";
   if (retryTimers.size) return "reconnecting";
+  if (state.upstreamStatus) return state.upstreamStatus;
   if (statuses.includes("playing")) return "playing";
   if (statuses.includes("buffering")) return "buffering";
   return "connecting";
 }
 
 export function resumeSpeakerPlayback() {
+  const wasPaused = userPaused;
   userPaused = false;
   if (gainContext) void gainContext.resume().catch(notify);
   for (const [key, el] of audioElements) {
@@ -448,6 +454,7 @@ export function resumeSpeakerPlayback() {
     if (!progress || (!el.paused && progress.status !== "blocked")) continue;
     progress.status = "connecting";
     progress.progressedAt = Date.now();
+    if (wasPaused) { progress.attempt++; progress.time = 0; el.load(); }
     playAudio(key, el);
   }
   notify();

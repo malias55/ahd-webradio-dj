@@ -28,6 +28,8 @@ import {
 
 import { userForCookie } from "./src/lib/session";
 import { handleSpeakerVolumeEvents } from "./src/lib/speaker-volume-events";
+import { handleSpeakerStream, stopSpeakerStreams, speakerStatusForZone } from "./src/lib/speaker-stream-server";
+import { usesContinuousSpeaker, speakerStreamUrl } from "./src/lib/speaker-stream-url";
 import { nativeSource, isOnAir, RADIO_STREAM_PATH, publicOrigin } from "./src/lib/radio/config";
 import { attachRadio, startRadio, stopRadio } from "./src/lib/radio/engine";
 import { pushConfigForZone } from "./src/lib/serverActions";
@@ -62,6 +64,7 @@ async function isAuthenticated(req: IncomingMessage): Promise<boolean> {
 
 const LIVE_RE = /^\/api\/zones\/([^/]+)\/live\/?$/;
 const CURRENT_SOURCE_RE = /^\/api\/zones\/([^/]+)\/current-source\/?$/;
+const SPEAKER_STREAM_RE = /^\/api\/zones\/([^/]+)\/speaker-stream\/?$/;
 const SPEAKER_VOLUME_RE = /^\/api\/zones\/([^/]+)\/volume-events\/?$/;
 const ZONE_NEWS_RE = /^\/api\/zones\/([^/]+)\/news-stream\/([\da-f-]{36})$/;
 
@@ -150,6 +153,10 @@ async function handleCurrentSource(req: IncomingMessage, res: ServerResponse) {
     body = { zoneId, zoneName: zone.name, url: nativeSource(zone, origin), sources: [], live: false, mode: null, volume: zone.volume };
   }
 
+  if (usesContinuousSpeaker(zone)) {
+    body.speakerUrl = speakerStreamUrl(zoneId, origin);
+    body.speakerStatus = speakerStatusForZone(zoneId);
+  }
   res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-cache" }).end(JSON.stringify(body));
 }
 
@@ -177,6 +184,8 @@ async function pushConfig(socket: Socket, serial: string) {
 app.prepare().then(() => {
   const httpServer = createServer((req, res) => {
     const pathname = req.url?.split("?")[0] || "/";
+    const speakerStream = pathname.match(SPEAKER_STREAM_RE);
+    if (speakerStream) { void handleSpeakerStream(req, res, speakerStream[1]); return; }
     const speakerVolume = pathname.match(SPEAKER_VOLUME_RE);
     if (speakerVolume) {
       void handleSpeakerVolumeEvents(req, res, speakerVolume[1]);
@@ -426,5 +435,5 @@ app.prepare().then(() => {
   });
 });
 
-process.on("SIGTERM", async () => { stopAllZoneNews(); await stopRadio(); process.exit(0); });
-process.on("SIGINT", async () => { stopAllZoneNews(); await stopRadio(); process.exit(0); });
+process.on("SIGTERM", async () => { stopSpeakerStreams(); stopAllZoneNews(); await stopRadio(); process.exit(0); });
+process.on("SIGINT", async () => { stopSpeakerStreams(); stopAllZoneNews(); await stopRadio(); process.exit(0); });

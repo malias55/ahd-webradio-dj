@@ -304,6 +304,7 @@ test("media-session pause is respected across news changes and resumes from lock
     reply=async()=>source("/news.mp3");await advance(30_000);
     assert.equal(audio.paused,true);assert.equal(audio.src,"/news.mp3");assert.equal(audio.loads,0);
     handlers.get("play")!();await flush();assert.equal(audio.paused,false);
+    assert.equal(audio.loads,1,"explicit resume rejoins live audio instead of replaying an old buffer");
     handlers.get("stop")!();await advance(5000);
     assert.equal(activeSpeakerZone(),null);assert.equal(media.playbackState,"none");
     assert.equal(handlers.get("play"),null);assert.equal(timers.size,0);
@@ -311,4 +312,32 @@ test("media-session pause is respected across news changes and resumes from lock
     stopSpeakerMode();
     if(descriptor)Object.defineProperty(globalThis,"navigator",descriptor);else Reflect.deleteProperty(globalThis,"navigator");
   }
+});
+
+
+test("a continuous zone stream never changes the browser source for news, live audio or scheduled silence", async () => {
+  const speakerUrl = "/api/zones/showroom/speaker-stream";
+  reply = async () => Response.json({url:"/music.mp3",speakerUrl,volume:70});
+  await startSpeakerMode("showroom");
+  const audio = FakeAudio.instances[0];
+  for (const url of ["/news.mp3", "/live?r=1", null, "/music.mp3"]) {
+    reply = async () => Response.json({url,speakerUrl,sources:url?[{url}]:[],live:url?.includes("live"),volume:70});
+    await advance(4000);
+    assert.equal(audio.src,speakerUrl);
+    assert.equal(FakeAudio.instances.length,1);
+    assert.equal(audio.pauses,0);assert.equal(audio.loads,0);
+  }
+});
+
+
+test("a silent but connected zone reports upstream failure instead of pretending the programme is playing", async () => {
+  const speakerUrl = "/api/zones/showroom/speaker-stream";
+  reply = async () => Response.json({speakerUrl, speakerStatus: "buffering", volume: 70});
+  await startSpeakerMode("showroom");await advance(4000);
+  assert.equal(activeSpeakerPlaybackStatus(),"buffering");
+  reply = async () => Response.json({speakerUrl, speakerStatus: "waiting", volume: 70});await advance(4000);
+  assert.equal(activeSpeakerPlaybackStatus(),"waiting");
+  reply = async () => Response.json({speakerUrl, speakerStatus: "playing", volume: 70});await advance(4000);
+  assert.equal(activeSpeakerPlaybackStatus(),"playing");
+  assert.equal(FakeAudio.instances.length,1);assert.equal(FakeAudio.instances[0].loads,0);
 });
