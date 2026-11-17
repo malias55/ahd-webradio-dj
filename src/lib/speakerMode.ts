@@ -1,5 +1,7 @@
 "use client";
 
+import { speakerSyncAdjustment, type ClockSample, type SpeakerClock } from "./speaker-sync";
+
 const POLL_MS = 2000;
 const STATUS_TIMEOUT_MS = 5000;
 const STALL_TIMEOUT_MS = 15_000;
@@ -12,6 +14,7 @@ type Source = { url: string; relayId?: string; kind?: string };
 type State = {
   zoneId: string;
   sources: Source[];
+  speakerClock?: ClockSample;
   upstreamStatus?: "waiting" | "buffering" | "reconnecting";
   live: boolean;
   volume: number;
@@ -29,6 +32,7 @@ let pushedVolume = false, volumeRevision = 0;
 let userPaused = false;
 const playback = new Map<string, {
   time: number; progressedAt: number; attempt: number; status: SpeakerPlaybackStatus; reconnect: () => void;
+  listener?: string; connection?: string; clock?: ClockSample; lastSeekAt?: number; lastRejoinAt?: number;
 }>();
 let state: State | null = null;
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
@@ -39,7 +43,7 @@ const listeners = new Set<() => void>();
 function notify() {
   const media = globalThis.navigator?.mediaSession;
   if (media && state) {
-    try { media.playbackState = userPaused ? "paused" : activeSpeakerPlaybackStatus() === "playing" ? "playing" : "none"; } catch { /* Unsupported media session. */ }
+    try { media.playbackState = userPaused ? "paused" : [...audioElements.values()].some(el => !el.paused) ? "playing" : "none"; } catch { /* Unsupported media session. */ }
   }
   for (const fn of listeners) fn();
 }
@@ -101,14 +105,23 @@ function watchVolume(session: State) {
 
 async function resolveSource(zoneId: string): Promise<ResolvedSource | null> {
   const request = new AbortController();
+  const started = performance.now();
+  const listener = [...playback.values()].find(progress => progress.listener)?.listener;
   statusRequest = request;
   const timeout = setTimeout(() => request.abort(), STATUS_TIMEOUT_MS);
   try {
-    const r = await fetch(`/api/zones/${encodeURIComponent(zoneId)}/current-source`, {
+    const r = await fetch(`/api/zones/${encodeURIComponent(zoneId)}/current-source${listener ? `?listener=${encodeURIComponent(listener)}` : ""}`, {
       cache: "no-store", signal: request.signal,
     });
     if (!r.ok) return null;
     const data = await r.json();
+    const receivedAt = performance.now(), roundTrip = receivedAt - started;
+    const processing = typeof data.speakerProcessingMs === "number" && Number.isFinite(data.speakerProcessingMs) ? Math.max(0, data.speakerProcessingMs) : 0;
+    const transportMs = Math.max(0, roundTrip - processing);
+    const clock = data.speakerClock as SpeakerClock | undefined;
+    const speakerClock = clock?.listener === listener && typeof clock?.connection === "string"
+      && Number.isFinite(clock.mediaSeconds) && clock.mediaSeconds >= 0 && roundTrip >= 0 && transportMs < 500
+      ? { ...clock, receivedAt, transitSeconds: transportMs / 2000 } : undefined;
     const vol = typeof data.volume === "number" ? data.volume : 80;
     const sources: Source[] =
       typeof data.speakerUrl === "string" && data.speakerUrl
@@ -118,7 +131,7 @@ async function resolveSource(zoneId: string): Promise<ResolvedSource | null> {
         : data.url
           ? [{ url: data.url }]
           : [];
-    return { sources, upstreamStatus: ["waiting", "buffering", "reconnecting"].includes(data.speakerStatus) ? data.speakerStatus : undefined, live: data.live ?? false, volume: vol };
+    return { sources, speakerClock, upstreamStatus: ["waiting", "buffering", "reconnecting"].includes(data.speakerStatus) ? data.speakerStatus : undefined, live: data.live ?? false, volume: vol };
   } catch { return null; }
   finally {
     clearTimeout(timeout);
@@ -201,6 +214,7 @@ function applyState(session: State, next: ResolvedSource | null) {
           progress.time = 0;
           progress.progressedAt = Date.now();
           progress.status = "connecting";
+          resetConnection(key, el, src.url);
           el.load();
           playAudio(key, el);
           notify();
@@ -208,6 +222,7 @@ function applyState(session: State, next: ResolvedSource | null) {
         notify();
       };
       playback.set(key, { time: 0, progressedAt: Date.now(), attempt: 0, status: "connecting", reconnect: retry });
+      resetConnection(key, el, src.url);
       const playing = () => {
         const progress = playback.get(key);
         if (!progress || audioElements.get(key) !== el) return;
@@ -233,6 +248,7 @@ function applyState(session: State, next: ResolvedSource | null) {
         const timer = retryTimers.get(key);
         if (timer) clearTimeout(timer);
         retryTimers.delete(key);
+        synchronizeAudio(key, el);
       };
       el.addEventListener("timeupdate", timeupdate);
       el.addEventListener("playing", playing);
@@ -253,8 +269,67 @@ function applyState(session: State, next: ResolvedSource | null) {
     }
   }
 
+  if (next.speakerClock) {
+    for (const [key, progress] of playback) {
+      if (progress.listener !== next.speakerClock.listener) continue;
+      if (progress.connection && progress.connection !== next.speakerClock.connection) {
+        // A native reconnect can reuse the URL without resetting currentTime.
+        // Re-establish an unambiguous frame-zero connection once.
+        const el = audioElements.get(key);
+        if (el && !userPaused) {
+          const timer = retryTimers.get(key); if (timer) clearTimeout(timer); retryTimers.delete(key);
+          progress.attempt++; progress.time = 0; progress.progressedAt = Date.now(); progress.status = "connecting";
+          resetConnection(key, el, JSON.parse(key)[1]); el.load(); playAudio(key, el);
+        }
+      } else {
+        progress.connection = next.speakerClock.connection;
+        progress.clock = next.speakerClock;
+        const el = audioElements.get(key);
+        if (el) synchronizeAudio(key, el);
+      }
+    }
+  }
   setAudioVolume(nextVol);
   notify();
+}
+
+function resetConnection(key: string, el: HTMLAudioElement, url: string) {
+  const progress = playback.get(key);
+  if (!progress) return;
+  progress.connection = undefined; progress.clock = undefined; progress.lastSeekAt = undefined;
+  el.playbackRate = 1;
+  // External stations have no clock contract and keep their existing behavior.
+  if (!/\/speaker-stream(?:[?]|$)/.test(url)) { progress.listener = undefined; return; }
+  progress.listener = crypto.randomUUID();
+  el.src = `${url}${url.includes("?") ? "&" : "?"}listener=${progress.listener}`;
+}
+
+function synchronizeAudio(key: string, el: HTMLAudioElement) {
+  const progress = playback.get(key);
+  if (!progress?.listener || !progress.clock || userPaused || el.paused || el.seeking) return;
+  const now = performance.now();
+  let end = 0;
+  for (let i = 0; i < el.buffered.length; i++) {
+    if (el.buffered.start(i) <= el.currentTime && el.buffered.end(i) >= el.currentTime) end = el.buffered.end(i);
+  }
+  const adjustment = speakerSyncAdjustment(progress.clock, now, el.currentTime, end - el.currentTime);
+  // Small deviations converge gently. Seek only when the server clock proves
+  // a larger delay AND the target is safely downloaded and seekable.
+  if (adjustment.target !== null && now - (progress.lastSeekAt ?? -Infinity) > 15_000) {
+    const target = adjustment.target;
+    let buffered = false, seekable = false;
+    for (let i = 0; i < el.buffered.length; i++) if (el.buffered.start(i) <= target && el.buffered.end(i) >= target + 0.5) buffered = true;
+    for (let i = 0; i < el.seekable.length; i++) if (el.seekable.start(i) <= target && el.seekable.end(i) >= target) seekable = true;
+    if (buffered && seekable) { progress.lastSeekAt = now; el.currentTime = target; el.playbackRate = 1; return; }
+    // Progressive MP3 may expose no seekable range. A verified backlog over
+    // four seconds must not take minutes to catch up at a gentle rate.
+    if (target - el.currentTime > 4 && now - (progress.lastRejoinAt ?? -Infinity) > 60_000) {
+      progress.lastRejoinAt = now; progress.attempt++; progress.time = 0;
+      progress.progressedAt = Date.now(); progress.status = "connecting";
+      resetConnection(key, el, JSON.parse(key)[1]); el.load(); playAudio(key, el); return;
+    }
+  }
+  if (Math.abs(el.playbackRate - adjustment.rate) > 0.001) el.playbackRate = adjustment.rate;
 }
 
 function playAudio(key: string, el: HTMLAudioElement) {
@@ -278,6 +353,7 @@ function watchPlayback(session: State) {
   for (const [key, el] of audioElements) {
     const progress = playback.get(key);
     if (!progress || userPaused || progress.status === "blocked") continue;
+    synchronizeAudio(key, el);
     if (el.currentTime > progress.time + 0.01) {
       progress.time = el.currentTime;
       progress.progressedAt = Date.now();
@@ -382,14 +458,15 @@ export function attachSpeakerLifecycle(
   doc: Pick<Document, "addEventListener" | "removeEventListener" | "visibilityState"> | undefined = typeof document === "undefined" ? undefined : document,
 ) {
   const visible = () => { if (doc?.visibilityState === "visible") recoverSpeakerPlayback(); };
-  target.addEventListener("pagehide", suspendSpeakerMode);
+  // Mobile pagehide can accompany a suspended/background document. Explicitly
+  // tearing down audio here turned a lifecycle transition into an outage.
+  // Navigation destroys its resources naturally; pageshow checks recovery.
   target.addEventListener("pageshow", recoverSpeakerPlayback);
   target.addEventListener("online", recoverSpeakerPlayback);
   doc?.addEventListener("visibilitychange", visible);
   doc?.addEventListener("resume", recoverSpeakerPlayback);
   void restoreSpeakerMode();
   return () => {
-    target.removeEventListener("pagehide", suspendSpeakerMode);
     target.removeEventListener("pageshow", recoverSpeakerPlayback);
     target.removeEventListener("online", recoverSpeakerPlayback);
     doc?.removeEventListener("visibilitychange", visible);
@@ -452,9 +529,10 @@ export function resumeSpeakerPlayback() {
   for (const [key, el] of audioElements) {
     const progress = playback.get(key);
     if (!progress || (!el.paused && progress.status !== "blocked")) continue;
+    const wasBlocked = progress.status === "blocked";
     progress.status = "connecting";
     progress.progressedAt = Date.now();
-    if (wasPaused) { progress.attempt++; progress.time = 0; el.load(); }
+    if (wasPaused || wasBlocked) { progress.attempt++; progress.time = 0; resetConnection(key, el, JSON.parse(key)[1]); el.load(); }
     playAudio(key, el);
   }
   notify();

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { get as httpGet, type IncomingMessage } from "node:http";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 
@@ -78,10 +79,15 @@ type Sink = {
   readonly destroyed: boolean;
   write(chunk: Buffer): boolean;
   end(): unknown;
+  destroy?(): unknown;
   once(event: "close" | "drain", listener: () => void): unknown;
 };
 export class SpeakerStream {
-  private clients = new Map<Sink, boolean>();
+  private clients = new Map<Sink, { blocked: boolean; pending: Buffer[]; listener?: string; connection: string; firstFrame: number }>();
+  private frameNumber = 0;
+  private reconnects = 0;
+  private slowDisconnects = 0;
+  private underruns = 0;
   private frames: Buffer[] = [];
   private primed = false;
   private urls: string[] = [];
@@ -108,11 +114,11 @@ export class SpeakerStream {
     if (!silence.length) throw new Error("Speaker silence is missing");
   }
 
-  attach(res: Sink) {
+  attach(res: Sink, listener?: string) {
     if (this.closed) throw new Error("Speaker stream is closed");
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.idleTimer = undefined;
-    this.clients.set(res, false);
+    this.clients.set(res, { blocked: false, pending: [], listener, connection: randomUUID(), firstFrame: this.frameNumber });
     res.once("close", () => {
       this.detach(res);
     });
@@ -128,6 +134,7 @@ export class SpeakerStream {
     this.stopInput?.(); this.stopInput = undefined;
     this.frames = []; this.primed = false;
     const revision = ++this.revision;
+    this.reconnects++;
     this.urls = urls; this.received = false;
     if (!urls.length || this.closed) return;
     const parser = new Mp3Frames();
@@ -174,22 +181,56 @@ export class SpeakerStream {
     // A small server-side jitter buffer absorbs upstream FFmpeg bursts. Do not
     // alternate silence and reservoir-dependent MP3 frames on every input gap.
     if (!this.primed && this.frames.length >= 12) this.primed = true;
+    // A small scheduling/input hiccup is not a programme gap. Inserting MP3
+    // silence here breaks reservoir continuity and creates periodic dropouts.
+    // Keep the existing browser buffer and catch up when the next packet lands.
+    if (this.primed && !this.frames.length && this.stopInput && Date.now() - this.lastInputAt < 1000) {
+      this.tickTimer = setTimeout(() => this.tick(), 20);
+      return;
+    }
     const programme = this.primed ? this.frames.shift() : undefined;
-    if (!programme) this.primed = false;
+    if (!programme) { if (this.primed && this.urls.length) this.underruns++; this.primed = false; }
     const frame = programme ?? this.silence[this.silenceIndex++ % this.silence.length];
-    for (const [client, blocked] of this.clients) {
+    this.frameNumber++;
+    for (const [client, state] of this.clients) {
       if (client.destroyed) { this.detach(client); continue; }
-      if (blocked) continue;
-      try {
-        if (!client.write(frame)) {
-          this.clients.set(client, true);
-          client.once("drain", () => { if (this.clients.has(client)) this.clients.set(client, false); });
-        }
-      } catch { this.detach(client); }
+      // Dropping individual MP3 frames corrupts the decoder's bit reservoir
+      // and the client's time mapping. Buffer a short hiccup in order; reconnect
+      // a genuinely slow receiver instead of silently skipping programme.
+      state.pending.push(frame);
+      if (state.pending.length > 76) {
+        this.slowDisconnects++;
+        this.detach(client);
+        if (client.destroy) client.destroy(); else client.end();
+        continue;
+      }
+      this.flushClient(client, state);
     }
     this.nextFrameAt += MP3_FRAME_MS;
     if (this.nextFrameAt < performance.now() - 100) this.nextFrameAt = performance.now();
     this.tickTimer = setTimeout(() => this.tick(), Math.max(0, this.nextFrameAt - performance.now()));
+  }
+
+  private flushClient(client: Sink, state: { blocked: boolean; pending: Buffer[] }) {
+    if (state.blocked || !this.clients.has(client)) return;
+    try {
+      while (state.pending.length) {
+        if (!client.write(state.pending.shift()!)) {
+          state.blocked = true;
+          client.once("drain", () => { state.blocked = false; this.flushClient(client, state); });
+          break;
+        }
+      }
+    } catch { this.detach(client); client.destroy?.(); }
+  }
+
+  clock(listener: string) {
+    // Duplicate requests with the same token cannot establish a trustworthy
+    // media timeline. The player will request a fresh connection when absent.
+    const matches = [...this.clients.values()].filter(client => client.listener === listener);
+    if (!listener || matches.length !== 1) return undefined;
+    const client = matches[0];
+    return { listener, connection: client.connection, mediaSeconds: (this.frameNumber - client.firstFrame) * MP3_FRAME_MS / 1000 };
   }
 
   close() {
@@ -210,5 +251,5 @@ export class SpeakerStream {
     return !this.received || Date.now() - this.lastInputAt > 2000 ? "buffering" : "playing";
   }
 
-  diagnostics() { return { clients: this.clients.size, bufferedFrames: this.frames.length, connected: !!this.stopInput, closed: this.closed, status: this.status() }; }
+  diagnostics() { return { clients: this.clients.size, bufferedFrames: this.frames.length, connected: !!this.stopInput, closed: this.closed, status: this.status(), reconnects: this.reconnects, underruns: this.underruns, slowDisconnects: this.slowDisconnects }; }
 }

@@ -74,7 +74,8 @@ test('a wedged upstream, slow receiver and overproducing input stay bounded',asy
   assert.ok(h.sink.chunks.length>2000,'other clients keep receiving frames');
   assert.ok(h.inputs.length>1,'an open upstream without frames is restarted');
   assert.ok(h.stream.diagnostics().bufferedFrames<=230);
-  slow.blocked=false;slow.emit('drain');await h.advance(50);assert.ok(slow.chunks.length>1);
+  assert.equal(slow.ended,1,"a permanently slow receiver reconnects instead of losing individual frames");
+  assert.equal(h.stream.diagnostics().slowDisconnects,1);
 });
 
 test('last listener cleanup stops upstreams and timers; quick reconnect reuses the zone stream',async t=>{
@@ -92,4 +93,30 @@ test('continuous routing is limited to built-in stations and escapes zone ids',(
   assert.equal(usesContinuousSpeaker({defaultSource:'azuracast'}),true);
   assert.equal(usesContinuousSpeaker({defaultSource:'custom_url'}),false);
   assert.equal(speakerStreamUrl('a/b','https://radio.test'),'https://radio.test/api/zones/a%2Fb/speaker-stream');
+});
+
+
+test('short backpressure preserves every frame and each connection has its own shared-clock origin',async t=>{
+  const h=harness(t);await h.advance(1000);
+  const next=new Sink();h.stream.attach(next,'second');
+  const initial=h.stream.clock('second')!;assert.equal(initial.mediaSeconds,0);
+  next.blocked=true;await h.advance(100);const count=next.chunks.length;
+  await h.advance(600);assert.equal(next.chunks.length,count);
+  const clock=h.stream.clock('second')!;assert.ok(clock.mediaSeconds>0.65&&clock.mediaSeconds<0.75);
+  next.blocked=false;next.emit('drain');
+  assert.equal(next.chunks.length,Math.round(clock.mediaSeconds*1000/(1152/44.1)));
+  assert.equal(next.ended,0);assert.equal(clock.connection,initial.connection);
+  const reconnect=new Sink();h.stream.attach(reconnect,'second');
+  assert.equal(h.stream.clock('second'),undefined,'ambiguous native reconnect is not synchronized');
+  next.end();assert.notEqual(h.stream.clock('second')!.connection,initial.connection);
+});
+
+
+test('a short upstream scheduling gap does not splice silence into reservoir-dependent MP3 frames',async t=>{
+ const h=harness(t);await h.advance(1);h.inputs[0].data(framesFor(11,20));await h.advance(550);
+ const before=h.sink.chunks.length;await h.advance(150);
+ assert.equal(h.sink.chunks.length,before,'preserve continuous MP3 while awaiting the next short burst');
+ h.inputs[0].data(framesFor(12,20));await h.advance(150);
+ assert.ok(h.sink.chunks.length>before);assert.ok(h.sink.chunks.slice(before).every(frame=>frame.at(-1)===12));
+ assert.equal(h.stream.diagnostics().underruns,0);
 });

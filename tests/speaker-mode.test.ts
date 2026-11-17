@@ -5,7 +5,8 @@ import { startSpeakerMode, stopSpeakerMode, activeSpeakerZone, activeSpeakerHasS
 class FakeAudio extends EventTarget {
   static instances: FakeAudio[] = [];
   preload = ""; crossOrigin = ""; volume = 1; src = "";
-  paused = true; pauses = 0; loads = 0; seeks = 0;
+  paused = true; pauses = 0; loads = 0; seeks = 0; playbackRate = 1; seeking = false;
+  seekable = { length: 1, start: () => 0, end: () => 60 };
   frozen = false; rejectPlay: Error | null = null;
   createdAt = now;
   buffered = { length: 1, start: () => 0, end: () => 60 };
@@ -217,18 +218,18 @@ test("autoplay refusal is visible, does not retry in a loop and can be resumed b
   assert.equal(FakeAudio.instances.length, 1);
 });
 
-test("page exit remembers the selected zone, while an explicit stop prevents restoration", async () => {
+test("pagehide preserves mobile playback, while an explicit stop prevents restoration", async () => {
   const page = new EventTarget();
   const detach = attachSpeakerLifecycle(page as unknown as Window);
   await startSpeakerMode("showroom");
   assert.equal(saved.get("ahd:speaker-zone:v1"), "showroom");
   page.dispatchEvent(new Event("pagehide"));
-  assert.equal(activeSpeakerZone(), null);
-  assert.equal(timers.size, 0);
+  assert.equal(activeSpeakerZone(), "showroom");
+  assert.equal(FakeAudio.instances[0].pauses, 0);
   assert.equal(saved.get("ahd:speaker-zone:v1"), "showroom");
   page.dispatchEvent(new Event("pageshow")); await flush();
   assert.equal(activeSpeakerZone(), "showroom");
-  assert.equal(FakeAudio.instances.length, 2);
+  assert.equal(FakeAudio.instances.length, 1);
   stopSpeakerMode();
   page.dispatchEvent(new Event("pageshow")); await restoreSpeakerMode();
   assert.equal(activeSpeakerZone(), null);
@@ -320,10 +321,12 @@ test("a continuous zone stream never changes the browser source for news, live a
   reply = async () => Response.json({url:"/music.mp3",speakerUrl,volume:70});
   await startSpeakerMode("showroom");
   const audio = FakeAudio.instances[0];
+  const connectionUrl = audio.src;
+  assert.ok(connectionUrl.startsWith(speakerUrl + "?listener="));
   for (const url of ["/news.mp3", "/live?r=1", null, "/music.mp3"]) {
     reply = async () => Response.json({url,speakerUrl,sources:url?[{url}]:[],live:url?.includes("live"),volume:70});
     await advance(4000);
-    assert.equal(audio.src,speakerUrl);
+    assert.equal(audio.src,connectionUrl);
     assert.equal(FakeAudio.instances.length,1);
     assert.equal(audio.pauses,0);assert.equal(audio.loads,0);
   }
@@ -340,4 +343,34 @@ test("a silent but connected zone reports upstream failure instead of pretending
   reply = async () => Response.json({speakerUrl, speakerStatus: "playing", volume: 70});await advance(4000);
   assert.equal(activeSpeakerPlaybackStatus(),"playing");
   assert.equal(FakeAudio.instances.length,1);assert.equal(FakeAudio.instances[0].loads,0);
+});
+
+
+test("server clock corrects drift, expires safely and re-establishes native reconnect timing", async t => {
+  t.mock.method(performance,"now",()=>now);
+  const speakerUrl="/api/zones/showroom/speaker-stream";
+  let connection="first", clock=true;
+  reply=async()=>{
+    const audio=FakeAudio.instances[0];
+    const listener=audio?new URL(audio.src,"http://localhost").searchParams.get("listener"):null;
+    return Response.json({speakerUrl,volume:80,speakerClock:clock&&listener?{listener,connection,mediaSeconds:now/1000+2.5}:undefined});
+  };
+  await startSpeakerMode("showroom");const audio=FakeAudio.instances[0];
+  await advance(2500);assert.ok(audio.playbackRate>1);assert.equal(audio.seeks,0);assert.equal(audio.loads,0);
+  clock=false;await advance(13000);assert.equal(audio.playbackRate,1,"old timing cannot leave playback accelerated");
+  clock=true;connection="native-reconnected";const oldUrl=audio.src;await advance(2000);
+  assert.equal(audio.loads,1);assert.notEqual(audio.src,oldUrl);assert.equal(FakeAudio.instances.length,1);
+});
+
+test("a proven large backlog on an unseekable stream rejoins live once, without a reload loop", async t => {
+  t.mock.method(performance,"now",()=>now);
+  const speakerUrl="/api/zones/showroom/speaker-stream";
+  reply=async()=>{
+    const audio=FakeAudio.instances[0];
+    const listener=audio?new URL(audio.src,"http://localhost").searchParams.get("listener"):null;
+    return Response.json({speakerUrl,volume:80,speakerClock:listener?{listener,connection:"first",mediaSeconds:now/1000+10}:undefined});
+  };
+  await startSpeakerMode("showroom");const audio=FakeAudio.instances[0];audio.seekable.length=0;
+  await advance(2500);assert.equal(audio.loads,1);assert.equal(audio.seeks,0);
+  await advance(12000);assert.equal(audio.loads,1);assert.equal(FakeAudio.instances.length,1);
 });

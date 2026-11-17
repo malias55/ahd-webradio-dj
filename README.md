@@ -71,6 +71,12 @@ Die lokale `users`-Tabelle dient nur noch den bestehenden Radio-Rollen und Anzei
 
 Für das eingebaute Radio verwendet der Lautsprecher-Modus eine einzige angemeldete Verbindung zu `/api/zones/:id/speaker-stream`. Der Server wechselt Musik, manuelle Nachrichten, Hatim, Tab-Audio und Durchsagen, ohne die Audio-URL auf dem Handy zu ändern. Quellenwechsel benötigen dadurch keine Hintergrund-Timer des Handys. Ein gemeinsamer Router je aktiver Zone reicht vollständige MP3-Frames unverändert weiter, mit kleinem Jitterpuffer und begrenztem Speicher. Nur gleichzeitig laufende Durchsagen werden gemischt. Quellenausfälle und Sendepausen liefern echte Stille auf derselben Verbindung; der Server verbindet fehlende oder hängende Quellen mit begrenzten Wiederholungen neu. Langsame Empfänger bremsen andere Empfänger nicht aus. Nach dem letzten Empfänger werden Quellen und Timer freigegeben. Der Quellenstatus zeigt Warten/Puffern/Wiederverbinden auch dann an, wenn die Verbindung noch Stille überträgt. Eigene externe Stream-URLs behalten den bisherigen direkten Wiedergabeweg.
 
+Die Browser gleichen ihre Wiedergabe mit dem MP3-Framezähler der jeweiligen Zone ab. Jede Verbindung hat eine eigene Kennung und einen definierten Nullpunkt; langsame Statusabfragen werden um die serverseitige Bearbeitungszeit bereinigt. Ziel sind zwei Sekunden gemeinsamer Puffer. Kleine Abweichungen werden mit höchstens vier Prozent Tempoänderung bei erhaltener Tonhöhe ausgeglichen. Größere Sprünge erfolgen nur zu nachweislich gepufferten und suchbaren Positionen, höchstens einmal je 15 Sekunden. Wenn der Browser keine suchbare Position anbietet, wird ein nachgewiesener Rückstand über vier Sekunden durch eine neue Verbindung aufgeholt; dieser Eingriff ist auf einmal je Minute begrenzt. Ohne frische Zeitmessung fällt das Tempo auf normal zurück. Externe Streams werden nicht korrigiert. Hardware-/Bluetooth-Latenz ist damit nicht messbar; eine phasengenaue Multiroom-Wiedergabe oder Synchronität bei vollständig eingefrorenem Browser wird nicht garantiert.
+
+Kurze Quellenschwankungen unter einer Sekunde fügen keine fremden Stille-Frames in laufende MP3-Daten ein. Bei kurzzeitiger Empfänger-Rückstauung werden die Frames vollständig und in Reihenfolge nachgereicht. Dauert der Rückstau über zwei Sekunden, wird die Verbindung beendet und frisch aufgebaut, statt einzelne Frames zu verlieren. Die angemeldete Quellen-API enthält Diagnosezähler für Quellstarts, Pufferleerlauf und langsame Empfänger. `pagehide` beendet aktive Wiedergabe nicht; ein ausdrücklicher Stopp bleibt erhalten.
+
+`npx tsx scripts/speaker-sync-fixture.ts` öffnet einen lokalen Testserver auf Port 3186 mit zwei echten Browser-Playern und Bedienelementen für 500 ms Versatz, Verbindungsabbruch, Quellenausfall, Programmwechsel und `pagehide`. Der Test nutzt synthetischen Ton ohne Zugriff auf das Liveprogramm.
+
 `npx tsx scripts/speaker-stream-e2e.ts` prüft mit echten HTTP-Verbindungen und FFmpeg Musik → Nachrichten → Stille → parallele Durchsagen → Musik sowie einen 14-sekündigen Quellenausfall, ohne Änderungen am Liveprogramm. Die Audiofrequenzen im Ergebnis bestätigen den Quellenwechsel auf einer einzigen Empfängerverbindung.
 
 Der Lautsprecher-Modus erhält den Audiopuffer des Browsers, statt bei drei Sekunden
@@ -92,7 +98,7 @@ Verweigert der Browser `play()` wegen fehlender Nutzerinteraktion, erscheint
 Die aktive Zone wird pro Tab in `sessionStorage` gespeichert. Die angemeldete
 App stellt sie nach F5, vollständiger Navigation und Rückkehr aus dem
 Browser-Seitencache automatisch wieder her, einschließlich außerhalb der
-Steuerungsseite. Das Verlassen einer Seite beendet nur die laufenden Ressourcen;
+Steuerungsseite. Beim tatsächlichen Abbau der Anwendung werden die laufenden Ressourcen freigegeben;
 „Lautsprecher-Modus beenden“ löscht zusätzlich die gespeicherte Auswahl und
 verhindert eine Wiederaufnahme. Gesperrter Browserspeicher verhindert die normale
 Wiedergabe nicht. Nach einem vollständigen Reload kann der Browser erneut einen

@@ -28,7 +28,7 @@ import {
 
 import { userForCookie } from "./src/lib/session";
 import { handleSpeakerVolumeEvents } from "./src/lib/speaker-volume-events";
-import { handleSpeakerStream, stopSpeakerStreams, speakerStatusForZone } from "./src/lib/speaker-stream-server";
+import { handleSpeakerStream, stopSpeakerStreams, speakerStatusForZone, speakerClockForZone, speakerDiagnosticsForZone } from "./src/lib/speaker-stream-server";
 import { usesContinuousSpeaker, speakerStreamUrl } from "./src/lib/speaker-stream-url";
 import { nativeSource, isOnAir, RADIO_STREAM_PATH, publicOrigin } from "./src/lib/radio/config";
 import { attachRadio, startRadio, stopRadio } from "./src/lib/radio/engine";
@@ -115,6 +115,7 @@ function handleLive(req: IncomingMessage, res: ServerResponse) {
 
 // ── /api/zones/:id/current-source ──
 async function handleCurrentSource(req: IncomingMessage, res: ServerResponse) {
+  const requestStarted = performance.now();
   if (!(await isAuthenticated(req))) {
     res.writeHead(401, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "Unauthorized" }));
     return;
@@ -156,6 +157,9 @@ async function handleCurrentSource(req: IncomingMessage, res: ServerResponse) {
   if (usesContinuousSpeaker(zone)) {
     body.speakerUrl = speakerStreamUrl(zoneId, origin);
     body.speakerStatus = speakerStatusForZone(zoneId);
+    body.speakerDiagnostics = speakerDiagnosticsForZone(zoneId);
+    body.speakerClock = speakerClockForZone(zoneId, url.searchParams.get("listener") || "");
+    body.speakerProcessingMs = performance.now() - requestStarted;
   }
   res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-cache" }).end(JSON.stringify(body));
 }

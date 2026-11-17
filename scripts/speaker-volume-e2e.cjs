@@ -8,6 +8,7 @@ const player=ts.transpileModule(fs.readFileSync('src/lib/speakerMode.ts','utf8')
 const audio=execFileSync('ffmpeg',['-v','error','-f','lavfi','-i','sine=frequency=440:sample_rate=44100:duration=30','-c:a','libmp3lame','-b:a','128k','-f','mp3','pipe:1']);
 let volume=80,reads=0,statusFails=false,browser;
 const server=http.createServer((req,res)=>{
+ if(req.url==='/speaker-sync')return res.writeHead(200,{'Content-Type':'text/javascript'}).end(ts.transpileModule(fs.readFileSync('src/lib/speaker-sync.ts','utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText);
  if(req.url==='/player.js')return res.writeHead(200,{'Content-Type':'text/javascript'}).end(player);
  if(req.url==='/api/zones/test/volume-events'){void streamSpeakerVolume(res,'test',async()=>{reads++;return volume});return;}
  if(req.url==='/api/zones/test/current-source'){

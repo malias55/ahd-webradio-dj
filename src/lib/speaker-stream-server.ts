@@ -46,7 +46,8 @@ export async function handleSpeakerStream(req: IncomingMessage, res: ServerRespo
     }
     res.writeHead(200, { "Content-Type": "audio/mpeg", "Cache-Control": "no-cache, no-store, no-transform", "X-Accel-Buffering": "no", Connection: "keep-alive" });
     res.flushHeaders();
-    stream.attach(res);
+    const listener = new URL(req.url || "/", "http://localhost").searchParams.get("listener");
+    stream.attach(res, listener && /^[a-zA-Z0-9-]{1,80}$/.test(listener) ? listener : undefined);
   } catch (error) {
     console.error("[speaker stream] start failed", error instanceof Error ? error.message : "unknown error");
     if (!res.headersSent) res.writeHead(503).end();
@@ -64,3 +65,7 @@ export function speakerStreamDiagnostics() {
 }
 
 export function speakerStatusForZone(zoneId: string) { return streams.get(zoneId)?.status(); }
+
+export function speakerClockForZone(zoneId: string, listener: string) { return streams.get(zoneId)?.clock(listener); }
+
+export function speakerDiagnosticsForZone(zoneId: string) { return streams.get(zoneId)?.diagnostics(); }
