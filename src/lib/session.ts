@@ -8,12 +8,35 @@ export function authCookies(cookie: string) {
   return cookie.split(";").map(s => s.trim()).filter(s => SESSION_COOKIES.some(name => s.startsWith(`${name}=`))).join("; ");
 }
 
-export async function userForCookie(cookie: string) {
+type SessionUser = { email: string; name: string | null; role: string };
+
+// Every page, API call and stream connection is checked. Without this, each of
+// them waited for two requests to other services: a single page view caused
+// about ten. A confirmed session is reused for a few seconds; a refusal is
+// never reused, and a revoked session loses access after at most this long.
+export const SESSION_CACHE_MS = 10_000;
+const shared = globalThis as typeof globalThis & { __ahdSessions?: Map<string, { expires: number; user: Promise<SessionUser | null> }> };
+const sessions = shared.__ahdSessions ??= new Map();
+export function clearSessionCache() { sessions.clear(); }
+
+export async function userForCookie(cookie: string): Promise<SessionUser | null> {
   if (process.env.SKIP_AUTH === "true" && process.env.NODE_ENV !== "production") {
     return { email: "info@autohaus-doerrschuck.de", name: "Dev User", role: "admin" };
   }
   const forwarded = authCookies(cookie);
   if (!forwarded) return null;
+  const now = Date.now();
+  const known = sessions.get(forwarded);
+  if (known && known.expires > now) return known.user;
+  // Simultaneous requests of one page share a single verification.
+  const entry = { expires: now + SESSION_CACHE_MS, user: verifySession(forwarded) };
+  sessions.set(forwarded, entry);
+  if (sessions.size > 500) for (const [key, value] of sessions) if (value.expires <= now) sessions.delete(key);
+  void entry.user.then(user => { if (!user && sessions.get(forwarded) === entry) sessions.delete(forwarded); });
+  return entry.user;
+}
+
+async function verifySession(forwarded: string): Promise<SessionUser | null> {
   try {
     // Use the same authority as AHD-DMS, including central session revocation.
     const response = await fetch(`${centralAuthUrl()}/api/auth/get-session`, {

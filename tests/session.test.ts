@@ -2,7 +2,7 @@ import test, { beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { NextRequest } from "next/server";
 import { prisma } from "../src/lib/prisma";
-import { userForCookie } from "../src/lib/session";
+import { userForCookie, clearSessionCache, SESSION_CACHE_MS } from "../src/lib/session";
 import { proxy } from "../src/proxy";
 
 const cookie = "__Secure-better-auth.session_token=local-test-only";
@@ -20,6 +20,7 @@ beforeEach(() => {
   identity = { user: { email: "Oemer@autohaus-doerrschuck.de", name: "Ömer", emailVerified: true }, session: { expiresAt: new Date(Date.now() + 60_000).toISOString() } };
   access = { authenticated: true, state: "active" };
   localUser = null; requests = []; roleReads = 0;
+  clearSessionCache();
   prisma.user.findFirst = (async (args: unknown) => {
     roleReads++;
     assert.deepEqual(args, { where: { email: { equals: "oemer@autohaus-doerrschuck.de", mode: "insensitive" } }, select: { name: true, role: true } });
@@ -61,6 +62,7 @@ test("an active DMS user can enter radio without a radio user record", async () 
 test("existing radio admin roles survive but cannot bypass DMS deactivation", async () => {
   localUser = { name: "Existing name", role: "admin" };
   assert.deepEqual(await userForCookie(cookie), { email: "oemer@autohaus-doerrschuck.de", name: "Existing name", role: "admin" });
+  clearSessionCache();
   access = { authenticated: false, state: "active" };
   assert.equal(await userForCookie(cookie), null);
   assert.equal(roleReads, 1, "no local-role fallback after DMS denial");
@@ -69,6 +71,7 @@ test("existing radio admin roles survive but cannot bypass DMS deactivation", as
 test("DMS-only device exclusivity does not interrupt radio, explicit revocation does", async () => {
   access = { authenticated: true, state: "superseded" };
   assert.equal((await userForCookie(cookie))?.role, "user");
+  clearSessionCache();
   access = { authenticated: true, state: "revoked" };
   assert.equal(await userForCookie(cookie), null);
   assert.equal(roleReads, 1);
@@ -76,6 +79,7 @@ test("DMS-only device exclusivity does not interrupt radio, explicit revocation 
 
 test("a central identity without active DMS access is rejected on every check", async () => {
   assert.ok(await userForCookie(cookie));
+  clearSessionCache();
   for (const denied of [null, {}, { authenticated: false, state: "active" }, { authenticated: "true", state: "active" }, { authenticated: true }, { authenticated: true, state: "unexpected" }]) {
     access = denied;
     assert.equal(await userForCookie(cookie), null);
@@ -107,6 +111,7 @@ test("new DMS accounts cannot obtain radio admin privileges from central role cl
   (identity as { user: Record<string, unknown> }).user.role = "admin";
   (identity as { user: Record<string, unknown> }).user.isSuperuser = true;
   assert.equal((await userForCookie(cookie))?.role, "user");
+  clearSessionCache();
   localUser = { name: null, role: "chief" };
   assert.equal((await userForCookie(cookie))?.role, "user");
 });
@@ -117,4 +122,19 @@ test("production ignores the development bypass in both session and route gates"
   const response = await proxy(new NextRequest("https://radio.doerrschuck.de/api/me"));
   assert.equal(response.status, 401);
   assert.equal(requests.length, 0);
+});
+
+test("a confirmed session is reused briefly; refusals are never reused and revocation applies within seconds", async t => {
+  t.mock.timers.enable({ apis: ["Date"] });
+  const [first, second] = await Promise.all([userForCookie(cookie), userForCookie(cookie)]);
+  assert.deepEqual(first, second);
+  assert.equal(requests.length, 2, "simultaneous requests share one verification");
+  assert.ok(await userForCookie(cookie)); assert.equal(requests.length, 2);
+  assert.equal(await userForCookie(cookie.replace("local-test-only", "another-session")) !== null, true);
+  assert.equal(requests.length, 4, "each session is verified on its own");
+  access = { authenticated: true, state: "revoked" };
+  t.mock.timers.tick(SESSION_CACHE_MS + 1);
+  assert.equal(await userForCookie(cookie), null, "revocation is effective once the short reuse period ends");
+  access = { authenticated: true, state: "active" };
+  assert.ok(await userForCookie(cookie), "a refusal is not remembered");
 });
