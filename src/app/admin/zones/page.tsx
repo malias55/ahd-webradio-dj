@@ -52,7 +52,7 @@ export default function ZonesPage() {
           Noch keine Zonen in der Datenbank.
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {zones.map((z) => (
             <ZoneCard key={z.id} zone={z} admin={admin} onUpdate={update} />
           ))}

@@ -3,12 +3,12 @@
 const assert=require('node:assert/strict'),http=require('node:http'),fs=require('node:fs');
 const {execFileSync}=require('node:child_process'),ts=require('typescript');
 const {chromium}=require('playwright');
-const {streamSpeakerVolume}=require('../dist/src/lib/speaker-volume-events');
+const {streamSpeakerVolume,publishZoneVolume}=require('../dist/src/lib/speaker-volume-events');
 const player=ts.transpileModule(fs.readFileSync('src/lib/speakerMode.ts','utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText;
 const audio=execFileSync('ffmpeg',['-v','error','-f','lavfi','-i','sine=frequency=440:sample_rate=44100:duration=30','-c:a','libmp3lame','-b:a','128k','-f','mp3','pipe:1']);
 let volume=80,reads=0,statusFails=false,browser;
 const server=http.createServer((req,res)=>{
- if(req.url==='/speaker-sync')return res.writeHead(200,{'Content-Type':'text/javascript'}).end(ts.transpileModule(fs.readFileSync('src/lib/speaker-sync.ts','utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText);
+ if(req.url==='/speaker-sync'||req.url==='/speaker-sync-player')return res.writeHead(200,{'Content-Type':'text/javascript'}).end(ts.transpileModule(fs.readFileSync('src/lib'+req.url+'.ts','utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText);
  if(req.url==='/player.js')return res.writeHead(200,{'Content-Type':'text/javascript'}).end(player);
  if(req.url==='/api/zones/test/volume-events'){void streamSpeakerVolume(res,'test',async()=>{reads++;return volume});return;}
  if(req.url==='/api/zones/test/current-source'){
@@ -16,7 +16,7 @@ const server=http.createServer((req,res)=>{
   // A stale HTTP volume must never undo the latest live update.
   return res.writeHead(200,{'Content-Type':'application/json'}).end(JSON.stringify({url:'/audio.mp3',volume:80}));
  }
- if(req.url==='/volume'&&req.method==='POST'){let body='';req.on('data',b=>body+=b);req.on('end',()=>{volume=JSON.parse(body).volume;res.end('ok')});return;}
+ if(req.url==='/volume'&&req.method==='POST'){let body='';req.on('data',b=>body+=b);req.on('end',()=>{volume=JSON.parse(body).volume;publishZoneVolume('test',volume);res.end('ok')});return;}
  if(req.url==='/audio.mp3')return res.writeHead(200,{'Content-Type':'audio/mpeg'}).end(audio);
  res.writeHead(200,{'Content-Type':'text/html'}).end(`<!doctype html><button id="start">Start</button><script type="module">
  const NativeAudio=window.Audio,NativeContext=window.AudioContext;window.metrics={elements:0,loads:0,pauses:0};
@@ -28,7 +28,7 @@ const server=http.createServer((req,res)=>{
 });
 (async()=>{
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const url='http://127.0.0.1:'+server.address().port;
- browser=await chromium.launch({channel:'chrome',headless:true});
+ browser=await chromium.launch({headless:true});
  for(const ignoreVolume of [false,true]){
   volume=80;statusFails=false;
   const receiverContext=await browser.newContext(),senderContext=await browser.newContext();

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { realtime } from "./realtime";
 import { spawn, type ChildProcess } from "node:child_process";
 import type { ServerResponse } from "node:http";
 import { currentMode } from "../broadcast";
@@ -21,7 +22,7 @@ type Session = {
 const shared = globalThis as typeof globalThis & { __ahdZoneNews?: Map<string, Session> };
 const sessions = shared.__ahdZoneNews ??= new Map<string, Session>();
 const mp3 = ["-ar", "44100", "-ac", "2", "-c:a", "libmp3lame", "-b:a", "128k"];
-const silence = ["-re", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", "5", ...mp3];
+const silence = () => [...realtime(), "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", "5", ...mp3];
 
 export function manualNewsStatus(zoneId: string) {
   const session = sessions.get(zoneId);
@@ -74,7 +75,7 @@ function returnToSource(zoneId: string, session: Session) {
     // If the shared station is airing its own bulletin, keep this zone quiet
     // until music is available. Otherwise Abort could switch straight back to news.
     if (!hasRadioMusic()) {
-      pipe(zoneId, session, silence, () => { session.timer = setTimeout(() => returnToSource(zoneId, session), 250); });
+      pipe(zoneId, session, silence(), () => { session.timer = setTimeout(() => returnToSource(zoneId, session), 250); });
       return;
     }
     const source = `http://127.0.0.1:${process.env.PORT || 3000}${RADIO_STREAM_PATH}`;
@@ -98,9 +99,9 @@ export function startZoneNews(zoneId: string, language: Language, file: string, 
   if (previous) dispose(previous, true);
   // Allow the browser and assigned devices to connect before the first note.
   session.timer = setTimeout(() => {
-    pipe(zoneId, session, ["-re", "-i", file, ...NEWS_PLAYBACK_CODEC], () => {
+    pipe(zoneId, session, [...realtime(), "-i", file, ...NEWS_PLAYBACK_CODEC], () => {
       session.phase = "returning";
-      pipe(zoneId, session, silence, () => returnToSource(zoneId, session));
+      pipe(zoneId, session, silence(), () => returnToSource(zoneId, session));
     });
   }, 2500);
   notify(session);

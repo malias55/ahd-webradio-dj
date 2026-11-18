@@ -3,7 +3,7 @@ import { createServer, get, type ServerResponse } from 'node:http';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import assert from 'node:assert/strict';
-import { SpeakerStream, Mp3Frames } from '../src/lib/speaker-stream';
+import { SpeakerStream, Mp3Frames, MP3_FRAME_MS, SPEAKER_DELAY_MS } from '../src/lib/speaker-stream';
 
 async function main() {
   const silence = new Mp3Frames().push(readFileSync('public/audio/speaker-silence.mp3'));
@@ -46,9 +46,11 @@ async function main() {
     const output=Buffer.concat(chunks);
     const pcm=execFileSync('ffmpeg',['-v','error','-i','pipe:0','-f','f32le','-ar','8000','-ac','1','pipe:1'],{input:output,maxBuffer:16*1024*1024});
     const samples=new Float32Array(pcm.buffer,pcm.byteOffset,pcm.byteLength/4);
-    const rms=(start:number,end:number)=>{const a=samples.subarray(start*8000,end*8000);return Math.sqrt(a.reduce((sum,x)=>sum+x*x,0)/a.length);};
+    // Every connection begins with the buffered backlog (silence on a new stream).
+    const lead=Math.round(Math.ceil((SPEAKER_DELAY_MS+1500)/MP3_FRAME_MS)*MP3_FRAME_MS*8);
+    const rms=(start:number,end:number)=>{const a=samples.subarray(lead+start*8000,lead+end*8000);return Math.sqrt(a.reduce((sum,x)=>sum+x*x,0)/a.length);};
     const energy=(start:number,hz:number)=>{
-      const a=samples.subarray(start*8000,(start+1)*8000);let real=0,imag=0;
+      const a=samples.subarray(lead+start*8000,lead+(start+1)*8000);let real=0,imag=0;
       for(let i=0;i<a.length;i++){const phase=2*Math.PI*hz*i/8000;real+=a[i]*Math.cos(phase);imag+=a[i]*Math.sin(phase);}
       return Math.hypot(real,imag)/a.length;
     };

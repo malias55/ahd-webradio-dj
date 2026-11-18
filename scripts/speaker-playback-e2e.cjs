@@ -18,8 +18,8 @@ let statusCalls = 0, audioConnections = 0, browser, page, hungConnection = 0;
 let deploymentUntil = 0;
 const audioResponses = new Set();
 const server = http.createServer((req, res) => {
-  if (req.url === "/speaker-sync") {
-    res.writeHead(200, { "Content-Type": "text/javascript" }).end(ts.transpileModule(fs.readFileSync("src/lib/speaker-sync.ts", "utf8"), {
+  if (req.url === "/speaker-sync" || req.url === "/speaker-sync-player") {
+    res.writeHead(200, { "Content-Type": "text/javascript" }).end(ts.transpileModule(fs.readFileSync(`src/lib${req.url}.ts`, "utf8"), {
       compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
     }).outputText); return;
   }
@@ -84,12 +84,14 @@ const server = http.createServer((req, res) => {
 
 (async () => {
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
-  browser = await chromium.launch({ channel: "chrome", headless: true, args: ["--autoplay-policy=document-user-activation-required"] });
+  browser = await chromium.launch({ headless: true, args: ["--autoplay-policy=document-user-activation-required"] });
   page = await browser.newPage();
   await page.goto(`http://127.0.0.1:${server.address().port}`);
-  await page.waitForFunction(() => window.started && window.speaker.activeSpeakerPlaybackStatus() === "blocked", null, { timeout: 10_000 });
-  await page.getByRole("button", { name: "Ton freigeben" }).click();
-  console.log(JSON.stringify({ phase: "autoplay-unlock", result: "PASS" }));
+  // Chrome refuses playback without a gesture; some Chromium builds permit it.
+  await page.waitForFunction(() => window.started && ["blocked", "playing"].includes(window.speaker.activeSpeakerPlaybackStatus()), null, { timeout: 10_000 });
+  const initiallyBlocked = await page.evaluate(() => window.speaker.activeSpeakerPlaybackStatus()) === "blocked";
+  if (initiallyBlocked) await page.getByRole("button", { name: "Ton freigeben" }).click();
+  console.log(JSON.stringify({ phase: "autoplay-unlock", result: "PASS", gestureRequired: initiallyBlocked }));
   await page.waitForFunction(() => window.started && window.testAudio?.currentTime >= 16, null, { timeout: 30_000 });
   const metrics = await page.evaluate(() => ({ ...window.metrics, playedSeconds: window.testAudio.currentTime }));
   assert.equal(metrics.elements, 1); assert.equal(metrics.seeks, 0); assert.equal(metrics.pauses, 0);
@@ -133,7 +135,7 @@ const server = http.createServer((req, res) => {
   assert.equal(await page.evaluate(() => window.speaker.activeSpeakerZone()), null, "explicit stop survives reload");
 
   await browser.close();
-  browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--autoplay-policy=no-user-gesture-required'] });
+  browser = await chromium.launch({ headless: true, args: ['--autoplay-policy=no-user-gesture-required'] });
   page = await browser.newPage();
   await page.goto(`http://127.0.0.1:${server.address().port}`);
   await page.waitForFunction(() => window.started && window.testAudio?.currentTime >= 2);

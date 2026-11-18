@@ -58,7 +58,7 @@ export function ZoneNewsControls({ zone, busy, onChange }: { zone: Zone; busy: b
         </button>
       </div>
     ) : (
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {(["tr", "de"] as const).map(language => (
           <Popover.Root key={language} open={choice === language} onOpenChange={open => {
             if (pending) return;

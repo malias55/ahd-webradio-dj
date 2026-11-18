@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { realtime } from "./realtime";
 import type { ServerResponse } from "node:http";
 import { prisma } from "../prisma";
 import { isOnAir, isNewsSlot, NEWS_SCHEDULE, isMusicHours, isHatimHours, upcomingNewsSlot, dueNewsEditions, radioEnabled, stationTime, newsLanguage, weatherTrafficEnabled } from "./config";
@@ -73,7 +74,7 @@ function stopTrack() {
 }
 
 function silenceInput(seconds: number) {
-  return ["-re", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", String(seconds), ...ENCODE_MP3];
+  return [...realtime(), "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", String(seconds), ...ENCODE_MP3];
 }
 
 type PlayOptions = { scheduledFor?: Date; transition?: boolean; input?: string[] };
@@ -87,7 +88,7 @@ async function play(item: Item | null, options: PlayOptions = {}) {
   const fadeIn = item?.kind === "music" && state.fadeInNextMusic;
   const codec = item?.kind === "news" ? NEWS_PLAYBACK_CODEC
     : fadeIn ? ["-af", `afade=t=in:d=${FADE_SECONDS}:curve=hsin`, ...ENCODE_MP3] : ["-c:a", "copy"];
-  const input = options.input ?? (file ? ["-re", "-i", file, ...codec] : silenceInput(10));
+  const input = options.input ?? (file ? [...realtime(), "-i", file, ...codec] : silenceInput(10));
   const proc = spawn(/* turbopackIgnore: true */ process.env.FFMPEG_PATH || "ffmpeg", ["-hide_banner", "-loglevel", "error", "-nostdin", ...input,
     "-vn", "-id3v2_version", "0", "-write_xing", "0", "-flush_packets", "1", "-f", "mp3", "pipe:1"], { stdio: ["ignore", "pipe", "pipe"] });
   state.process = proc;
@@ -172,7 +173,7 @@ async function fadeCurrentMusic() {
   const offset = Math.max(0, (Date.now() - state.startedAt) / 1000);
   const duration = Math.min(MUSIC_FADE_SECONDS, state.playing.duration - offset);
   if (duration <= 0) { stopTrack(); return true; }
-  return playTransitionStage(null, { input: ["-re", "-ss", String(offset), "-i", file, "-t", String(duration),
+  return playTransitionStage(null, { input: [...realtime(), "-ss", String(offset), "-i", file, "-t", String(duration),
     "-af", `afade=t=out:st=0:d=${duration}:curve=hsin`, ...ENCODE_MP3] });
 }
 
@@ -245,7 +246,7 @@ async function playNews(news: Item, slot: Date) {
         const offset = Math.max(0, (Date.now() - state.startedAt) / 1000);
         const duration = Math.min(FADE_SECONDS, state.playing.duration - offset);
         if (duration > 0) {
-          const input = ["-re", "-ss", String(offset), "-i", file, "-t", String(duration),
+          const input = [...realtime(), "-ss", String(offset), "-i", file, "-t", String(duration),
             "-af", `afade=t=out:st=0:d=${duration}:curve=hsin`, ...ENCODE_MP3];
           if (!await playTransitionStage(null, { input })) return;
         }

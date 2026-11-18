@@ -69,7 +69,7 @@ export default function DevicesPage() {
       ) : (
         <>
           {/* Mobile: card list */}
-          <div className="grid gap-3 md:hidden">
+          <div className="grid grid-cols-1 gap-3 md:hidden">
             {devices.map((d) => (
               <DeviceCard key={d.id} d={d} zones={zones} admin={admin} onAssign={assign} onIdentify={identify} />
             ))}

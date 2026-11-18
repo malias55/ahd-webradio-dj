@@ -65,22 +65,37 @@ Alte AzuraCast-Zonen werden beim Seed auf `radio` umgestellt; benutzerdefinierte
 
 Dieselbe zentrale Better-Auth-Sitzung wie AHD-DMS unter `auth.doerrschuck.de`, mit Cookie für `.doerrschuck.de`. Der Radioserver validiert die verifizierte Identität und die noch gültige Sitzung zentral; anschließend bestätigt das DMS über `/api/session/status`, dass die Sitzung einem aktiven DMS-Benutzer gehört. Alle aktiven DMS-Benutzer erhalten dadurch automatisch Radio-Zugang, ohne zusätzliche Benutzeranlage oder Synchronisation. Ein zentraler Account ohne DMS-Zugang reicht nicht. Deaktivierte Benutzer, widerrufene/abgelaufene Sitzungen und fehlgeschlagene Prüfungen erhalten keinen Zugang. Die DMS-spezifische Ein-Gerät-Sperre (`superseded`, hostgebundenes `ahd_sid`) wird nicht auf Radio-Lautsprecher übertragen; eine explizite Sperre (`revoked`) wird berücksichtigt. Das Radio übernimmt keine DMS-Sitzung und ändert keine DMS-Benutzer.
 
+Eine bestätigte Sitzung wird zehn Sekunden lang wiederverwendet (`SESSION_CACHE_MS`), gleichzeitige Anfragen teilen sich eine Prüfung. Zuvor löste jede Seite, jede API-Anfrage und jede Statusabfrage zwei Anfragen an Auth und DMS aus. Ablehnungen werden nie zwischengespeichert; eine widerrufene Sitzung verliert den Zugang nach spätestens zehn Sekunden.
+
 Die lokale `users`-Tabelle dient nur noch den bestehenden Radio-Rollen und Anzeigenamen. Neue DMS-Benutzer erhalten `user`; bestehende Radio-Administratoren behalten `admin`. `mali@autohaus-doerrschuck.de` und `info@autohaus-doerrschuck.de` sind Administratoren. Diese Rollen umgehen die DMS-Prüfung nicht. `radio.doerrschuck.de` muss in den zentralen Listen für vertrauenswürdige Anwendungen und Login-Rückleitungen stehen. `SKIP_AUTH` wird in Produktion auch im Request-Proxy ignoriert.
 
 ## Entwicklung und Prüfung
 
 Für das eingebaute Radio verwendet der Lautsprecher-Modus eine einzige angemeldete Verbindung zu `/api/zones/:id/speaker-stream`. Der Server wechselt Musik, manuelle Nachrichten, Hatim, Tab-Audio und Durchsagen, ohne die Audio-URL auf dem Handy zu ändern. Quellenwechsel benötigen dadurch keine Hintergrund-Timer des Handys. Ein gemeinsamer Router je aktiver Zone reicht vollständige MP3-Frames unverändert weiter, mit kleinem Jitterpuffer und begrenztem Speicher. Nur gleichzeitig laufende Durchsagen werden gemischt. Quellenausfälle und Sendepausen liefern echte Stille auf derselben Verbindung; der Server verbindet fehlende oder hängende Quellen mit begrenzten Wiederholungen neu. Langsame Empfänger bremsen andere Empfänger nicht aus. Nach dem letzten Empfänger werden Quellen und Timer freigegeben. Der Quellenstatus zeigt Warten/Puffern/Wiederverbinden auch dann an, wenn die Verbindung noch Stille überträgt. Eigene externe Stream-URLs behalten den bisherigen direkten Wiedergabeweg.
 
-Die Browser gleichen ihre Wiedergabe mit dem MP3-Framezähler der jeweiligen Zone ab. Jede Verbindung hat eine eigene Kennung und einen definierten Nullpunkt; langsame Statusabfragen werden um die serverseitige Bearbeitungszeit bereinigt. Ziel sind zwei Sekunden gemeinsamer Puffer. Kleine Abweichungen werden mit höchstens vier Prozent Tempoänderung bei erhaltener Tonhöhe ausgeglichen. Größere Sprünge erfolgen nur zu nachweislich gepufferten und suchbaren Positionen, höchstens einmal je 15 Sekunden. Wenn der Browser keine suchbare Position anbietet, wird ein nachgewiesener Rückstand über vier Sekunden durch eine neue Verbindung aufgeholt; dieser Eingriff ist auf einmal je Minute begrenzt. Ohne frische Zeitmessung fällt das Tempo auf normal zurück. Externe Streams werden nicht korrigiert. Hardware-/Bluetooth-Latenz ist damit nicht messbar; eine phasengenaue Multiroom-Wiedergabe oder Synchronität bei vollständig eingefrorenem Browser wird nicht garantiert.
+### Gleichlauf der Browser-Lautsprecher
 
-Kurze Quellenschwankungen unter einer Sekunde fügen keine fremden Stille-Frames in laufende MP3-Daten ein. Bei kurzzeitiger Empfänger-Rückstauung werden die Frames vollständig und in Reihenfolge nachgereicht. Dauert der Rückstau über zwei Sekunden, wird die Verbindung beendet und frisch aufgebaut, statt einzelne Frames zu verlieren. Die angemeldete Quellen-API enthält Diagnosezähler für Quellstarts, Pufferleerlauf und langsame Empfänger. `pagehide` beendet aktive Wiedergabe nicht; ein ausdrücklicher Stopp bleibt erhalten.
+Alle Browser-Lautsprecher einer Zone spielen im gleichen Takt, unabhängig von Gerät, Verbindungszeitpunkt und Netz:
 
-`npx tsx scripts/speaker-sync-fixture.ts` öffnet einen lokalen Testserver auf Port 3186 mit zwei echten Browser-Playern und Bedienelementen für 500 ms Versatz, Verbindungsabbruch, Quellenausfall, Programmwechsel und `pagehide`. Der Test nutzt synthetischen Ton ohne Zugriff auf das Liveprogramm.
+- Der Zonen-Router nummeriert jeden MP3-Frame und plant Frame *f* fest für den Zeitpunkt `Epoche + f × 26,12 ms` auf der Serveruhr. Diese Uhr verrutscht nie: Nach einer verspäteten Quelle oder einem verspäteten Timer werden die fehlenden Frames sofort nachgeliefert. Bleibt die Quelle länger als eine halbe Sekunde aus, füllt der Server mit Stille. Nach einem angehaltenen Prozess (über fünf Sekunden) beginnt eine neue Zeitachse und die Empfänger verbinden sich neu.
+- Jede neue Verbindung erhält sofort die letzten 4,5 Sekunden und im Header `X-Speaker-Timeline` Instanz, Epoche, Nummer ihres ersten Frames und die Wiedergabeverzögerung (`SPEAKER_DELAY_MS`, Standard 3000 ms). Der Empfänger startet dadurch sofort mit vollem Puffer an der richtigen Stelle.
+- Der Browser lädt den Stream per `fetch` in eine `MediaSource` (`src/lib/speaker-sync-player.ts`) und verwaltet den Puffer selbst. Über `/api/speaker-time` misst er den Versatz zur Serveruhr; die Messung mit der kürzesten Laufzeit zählt. Jeder Frame wird genau `SPEAKER_DELAY_MS` nach seinem Plantermin hörbar.
+- Abweichungen über 120 ms (Start, Wiederverbindung, Pufferabriss) werden mit einem Sprung im eigenen Puffer korrigiert, kleinere mit höchstens 1,2 Prozent Tempoänderung ohne Tonhöhenkorrektur. Im Normalbetrieb läuft die Wiedergabe mit Tempo 1 und ohne Sprünge. Wiederholte Sprünge, die nicht zum Ziel führen, werden gedrosselt statt endlos wiederholt.
+- Die Steuerung zeigt die gemessene Abweichung. „Feinabgleich dieses Geräts“ gleicht Ausgabewege aus, deren Verzögerung der Browser nicht kennt (Bluetooth, Fernseher); der Wert bleibt auf dem Gerät gespeichert. `window.__ahdSpeakerSync()` liefert die Messwerte in der Browser-Konsole.
+
+Selbstheilung, ohne erneute Nutzeraktion: Eine abgebrochene oder stumm offene Verbindung (sechs Sekunden ohne Daten) wird unbegrenzt mit 0,5 bis 5 Sekunden Abstand neu aufgebaut, auch über Deployments hinweg. Eine vom System pausierte Wiedergabe wird fortgesetzt. Eine geschlossene oder hängende Medienpipeline wird auf demselben, bereits freigegebenen Audioelement neu aufgebaut. Der Status zeigt eine unterbrochene Verbindung nach 2,5 Sekunden als „Wiederverbinden“ und eine abgelaufene Anmeldung ausdrücklich an; „Wiedergabe“ erscheint nur, während die Audiozeit tatsächlich fortschreitet. Bereits geöffnete Seiten mit dem vorherigen Player bleiben kompatibel: Sie erhalten denselben Stream ohne Taktabgleich, bis sie neu geladen werden.
+
+Browser ohne `MediaSource` für `audio/mpeg` und Browser, deren Medienpipeline den Stream nicht abspielt, verwenden automatisch ein einfaches Audioelement auf derselben URL: durchgehend und mit Startpuffer, aber ohne Taktabgleich. Externe Stream-URLs behalten ebenfalls den direkten Weg. Raspberry-Pi-Clients spielen `/api/radio/stream` direkt und sind nicht Teil des Browser-Gleichlaufs.
+
+FFmpeg ab 6.1 sendet die erste halbe Sekunde jeder Eingabe sofort. Dadurch lief das Programm je Titel eine halbe Sekunde schneller als Echtzeit; Puffer wuchsen und Überblendungen begannen an bereits gesendeten Stellen. `src/lib/radio/realtime.ts` schaltet diesen Vorlauf ab, sofern die installierte Version die Option kennt.
+
+Kurze Quellenschwankungen fügen keine fremden Stille-Frames in laufende MP3-Daten ein. Bei kurzzeitiger Empfänger-Rückstauung werden die Frames vollständig und in Reihenfolge nachgereicht. Bei mehr als sechs Sekunden Rückstau wird die Verbindung beendet und frisch aufgebaut, statt einzelne Frames zu verlieren. Xing/Info-Kopfframes werden entfernt, damit alle Empfänger dieselben Frames zählen. Die angemeldete Quellen-API enthält Diagnosezähler für Quellstarts, Pufferleerlauf, langsame Empfänger und Neustarts der Zeitachse. `pagehide` beendet aktive Wiedergabe nicht; ein ausdrücklicher Stopp bleibt erhalten.
+
+`node scripts/speaker-sync-e2e.cjs` (nach `npm run build`) lässt zwei getrennte Browser den echten Router über den echten Player abspielen, einen davon über ein verzögertes, stoßweises Netz. Geprüft wird der Abstand der hörbaren Position zur Serveruhr gegen die Systemuhr: höchstens 40 ms im Dauerbetrieb ohne Sprung und ohne Pufferabriss sowie nach Verbindungsabbruch, Quellenausfall, Server-Neustart, Systempause und Seiten-Reload. Der Test nutzt synthetischen Ton ohne Zugriff auf das Liveprogramm.
 
 `npx tsx scripts/speaker-stream-e2e.ts` prüft mit echten HTTP-Verbindungen und FFmpeg Musik → Nachrichten → Stille → parallele Durchsagen → Musik sowie einen 14-sekündigen Quellenausfall, ohne Änderungen am Liveprogramm. Die Audiofrequenzen im Ergebnis bestätigen den Quellenwechsel auf einer einzigen Empfängerverbindung.
 
-Der Lautsprecher-Modus erhält den Audiopuffer des Browsers, statt bei drei Sekunden
-Puffervorsprung nach vorn zu springen. Fehlgeschlagene Statusabfragen lassen den
+Für den direkten Wiedergabeweg (externe Quellen, Rückfallebene) gilt: Fehlgeschlagene Statusabfragen lassen den
 laufenden Stream unverändert. Bei externen Quellen wechselt eine bestätigte Quellenänderung die
 Audio-URL; Audio-Ende, Audiofehler und anhaltender Stillstand verbinden sie neu.
 Statusabfragen laufen nacheinander mit fünf Sekunden Zeitlimit. Stoppen und
@@ -105,7 +120,7 @@ Wiedergabe nicht. Nach einem vollständigen Reload kann der Browser erneut einen
 Klick auf „Ton freigeben“ verlangen; ein erzwungener Reload ist deshalb kein
 allgemeiner Ersatz für die automatische Wiederverbindung.
 Zusätzlich zu `npm test` prüft `node scripts/speaker-playback-e2e.cjs` mit Playwright
-und lokal installiertem Chrome einen echten, zeitgesteuerten MP3-Stream samt zwei
+für den direkten Wiedergabeweg einen echten, zeitgesteuerten MP3-Stream samt zwei
 simulierten Statusfehlern, einer offenen Verbindung ohne weitere Audiodaten und
 einem Server-Neustart mit vorübergehendem HTTP 503; ohne Datenbankzugriff oder
 Änderungen am Liveprogramm. Der Test prüft außerdem die Wiederaufnahme nach
@@ -113,9 +128,9 @@ echtem Seiten-Reload mit erlaubtem und gesperrtem Autoplay sowie einen explizite
 Stop mit anschließendem Reload.
 
 Browser-Lautsprecher erhalten gespeicherte Zonenlautstärken zusätzlich über den
-angemeldeten EventStream `/api/zones/:id/volume-events`. Der Server prüft den
-gespeicherten Wert sekündlich; Änderungen aus Steuerung und Zoneneinstellungen
-erreichen so auch andere laufende Browser-Sitzungen. Die normale Statusabfrage
+angemeldeten EventStream `/api/zones/:id/volume-events`. Änderungen aus Steuerung und
+Zoneneinstellungen werden beim Speichern sofort an alle laufenden Browser-Sitzungen
+gesendet; zusätzlich prüft der Server den gespeicherten Wert alle 15 Sekunden. Die normale Statusabfrage
 bleibt als Rückfallebene erhalten. Verspätete Statusantworten überschreiben keine
 neueren Live-Werte. Android/Chrome nutzt native Medienwiedergabe und `HTMLMediaElement.volume`; Web Audio wird nur angelegt, wenn ein synchroner Fähigkeitstest zeigt, dass der Browser Elementlautstärke ignoriert (etwa iOS). So erhält Android beim Nachrichtenwechsel denselben freigegebenen Player ohne zusätzliche Web-Audio-Abhängigkeit. Die Audiodatei und Verbindung
 bleiben beim Regeln unverändert; 0 Prozent schaltet die Ausgabe stumm.

@@ -12,6 +12,11 @@ html, body {
   @apply bg-neutral-50 text-neutral-900;
 }
 
+/* The page itself never scrolls sideways; wide content scrolls in its own box. */
+body {
+  overflow-x: clip;
+}
+
 .dark html, .dark body, html.dark, html.dark body {
   @apply bg-neutral-950 text-neutral-100;
 }

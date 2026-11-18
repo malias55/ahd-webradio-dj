@@ -2,7 +2,7 @@ import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { EventEmitter } from 'node:events';
-import { Mp3Frames, SpeakerStream, type SourceOpener } from '../src/lib/speaker-stream';
+import { Mp3Frames, SpeakerStream, type SourceOpener, type SpeakerTimeline } from '../src/lib/speaker-stream';
 import { usesContinuousSpeaker, speakerStreamUrl } from '../src/lib/speaker-stream-url';
 
 const silenceBytes = readFileSync('public/audio/speaker-silence.mp3');
@@ -96,25 +96,53 @@ test('continuous routing is limited to built-in stations and escapes zone ids',(
 });
 
 
-test('short backpressure preserves every frame and each connection has its own shared-clock origin',async t=>{
-  const h=harness(t);await h.advance(1000);
-  const next=new Sink();h.stream.attach(next,'second');
-  const initial=h.stream.clock('second')!;assert.equal(initial.mediaSeconds,0);
-  next.blocked=true;await h.advance(100);const count=next.chunks.length;
-  await h.advance(600);assert.equal(next.chunks.length,count);
-  const clock=h.stream.clock('second')!;assert.ok(clock.mediaSeconds>0.65&&clock.mediaSeconds<0.75);
-  next.blocked=false;next.emit('drain');
-  assert.equal(next.chunks.length,Math.round(clock.mediaSeconds*1000/(1152/44.1)));
-  assert.equal(next.ended,0);assert.equal(clock.connection,initial.connection);
-  const reconnect=new Sink();h.stream.attach(reconnect,'second');
-  assert.equal(h.stream.clock('second'),undefined,'ambiguous native reconnect is not synchronized');
-  next.end();assert.notEqual(h.stream.clock('second')!.connection,initial.connection);
+test('every connection is placed on one frame clock and starts with a full buffer',async t=>{
+  const h=harness(t);const frameMs=1152/44.1;const count=(sink:Sink)=>new Mp3Frames().push(Buffer.concat(sink.chunks)).length;
+  await h.advance(1000);
+  let first:SpeakerTimeline|undefined,second:SpeakerTimeline|undefined;
+  const a=new Sink();h.stream.attach(a,timeline=>{first=timeline;});
+  const backlog=count(a);
+  assert.ok(backlog*frameMs>=first!.delayMs+1400,'a new receiver immediately holds more than the playout delay');
+  await h.advance(700);
+  const b=new Sink();h.stream.attach(b,timeline=>{second=timeline;});
+  assert.equal(first!.epoch,second!.epoch);assert.equal(first!.instance,second!.instance);
+  // Both receivers hold the same newest frame, whenever they connected.
+  assert.equal(first!.firstFrame+count(a),second!.firstFrame+count(b));
+  // That frame is the one the clock schedules for the present moment.
+  assert.ok(Math.abs(first!.epoch+(first!.firstFrame+count(a)-1)*frameMs-performance.now())<=frameMs);
+  b.blocked=true;await h.advance(100);const held=b.chunks.length;
+  await h.advance(600);assert.equal(b.chunks.length,held,'a blocked socket receives nothing new');
+  b.blocked=false;b.emit('drain');
+  assert.equal(first!.firstFrame+count(a),second!.firstFrame+count(b),'short backpressure loses no frame');
+  assert.equal(b.ended,0);
 });
 
+test('a late timer is caught up without moving the clock; a suspended process restarts the timeline',async t=>{
+  const h=harness(t);await h.advance(500);
+  let before:SpeakerTimeline|undefined,after:SpeakerTimeline|undefined;
+  const probe=new Sink();h.stream.attach(probe,timeline=>{before=timeline;});
+  const frames=()=>new Mp3Frames().push(Buffer.concat(probe.chunks)).length;
+  const start=frames();
+  // The event loop was busy for two seconds: one timer fires late.
+  t.mock.timers.tick(2000);await flush();
+  assert.ok(Math.abs(frames()-start-2000/(1152/44.1))<=1,'missed frames are delivered at once');
+  assert.equal(h.sink.ended,0);
+  t.mock.timers.tick(30_000);await flush();
+  assert.equal(h.sink.ended,1,'receivers reconnect after a suspension instead of receiving stale audio');
+  assert.equal(h.stream.diagnostics().timelineResets,1);
+  const next=new Sink();h.stream.attach(next,timeline=>{after=timeline;});
+  assert.ok(after!.epoch>before!.epoch);
+});
+
+test('Xing/Info header frames are removed so every receiver counts the same frames',()=>{
+  const info=Buffer.from(silence[0]);info.fill(0,4);info.write('Info',36,'latin1');
+  const out=new Mp3Frames().push(Buffer.concat([info,silence[0],silence[1]]));
+  assert.equal(out.length,2);assert.ok(out[0].equals(silence[0]));
+});
 
 test('a short upstream scheduling gap does not splice silence into reservoir-dependent MP3 frames',async t=>{
- const h=harness(t);await h.advance(1);h.inputs[0].data(framesFor(11,20));await h.advance(550);
- const before=h.sink.chunks.length;await h.advance(150);
+ const h=harness(t);await h.advance(1);h.inputs[0].data(framesFor(11,12));await h.advance(340);
+ const before=h.sink.chunks.length;await h.advance(120);
  assert.equal(h.sink.chunks.length,before,'preserve continuous MP3 while awaiting the next short burst');
  h.inputs[0].data(framesFor(12,20));await h.advance(150);
  assert.ok(h.sink.chunks.length>before);assert.ok(h.sink.chunks.slice(before).every(frame=>frame.at(-1)===12));

@@ -322,7 +322,7 @@ test("a continuous zone stream never changes the browser source for news, live a
   await startSpeakerMode("showroom");
   const audio = FakeAudio.instances[0];
   const connectionUrl = audio.src;
-  assert.ok(connectionUrl.startsWith(speakerUrl + "?listener="));
+  assert.equal(connectionUrl, speakerUrl);
   for (const url of ["/news.mp3", "/live?r=1", null, "/music.mp3"]) {
     reply = async () => Response.json({url,speakerUrl,sources:url?[{url}]:[],live:url?.includes("live"),volume:70});
     await advance(4000);
@@ -346,31 +346,53 @@ test("a silent but connected zone reports upstream failure instead of pretending
 });
 
 
-test("server clock corrects drift, expires safely and re-establishes native reconnect timing", async t => {
-  t.mock.method(performance,"now",()=>now);
-  const speakerUrl="/api/zones/showroom/speaker-stream";
-  let connection="first", clock=true;
-  reply=async()=>{
-    const audio=FakeAudio.instances[0];
-    const listener=audio?new URL(audio.src,"http://localhost").searchParams.get("listener"):null;
-    return Response.json({speakerUrl,volume:80,speakerClock:clock&&listener?{listener,connection,mediaSeconds:now/1000+2.5}:undefined});
-  };
-  await startSpeakerMode("showroom");const audio=FakeAudio.instances[0];
-  await advance(2500);assert.ok(audio.playbackRate>1);assert.equal(audio.seeks,0);assert.equal(audio.loads,0);
-  clock=false;await advance(13000);assert.equal(audio.playbackRate,1,"old timing cannot leave playback accelerated");
-  clock=true;connection="native-reconnected";const oldUrl=audio.src;await advance(2000);
-  assert.equal(audio.loads,1);assert.notEqual(audio.src,oldUrl);assert.equal(FakeAudio.instances.length,1);
-});
-
-test("a proven large backlog on an unseekable stream rejoins live once, without a reload loop", async t => {
-  t.mock.method(performance,"now",()=>now);
-  const speakerUrl="/api/zones/showroom/speaker-stream";
-  reply=async()=>{
-    const audio=FakeAudio.instances[0];
-    const listener=audio?new URL(audio.src,"http://localhost").searchParams.get("listener"):null;
-    return Response.json({speakerUrl,volume:80,speakerClock:listener?{listener,connection:"first",mediaSeconds:now/1000+10}:undefined});
-  };
-  await startSpeakerMode("showroom");const audio=FakeAudio.instances[0];audio.seekable.length=0;
-  await advance(2500);assert.equal(audio.loads,1);assert.equal(audio.seeks,0);
-  await advance(12000);assert.equal(audio.loads,1);assert.equal(FakeAudio.instances.length,1);
+test("the built-in station uses the synchronized player on this page's own origin and falls back when it cannot play", async () => {
+  class FakeBuffer extends EventTarget { updating = false; mode = ""; timestampOffset = 0; buffered = { length: 0 }; abort() {} remove() {} appendBuffer() {} }
+  class FakeMediaSource extends EventTarget {
+    static isTypeSupported = (type: string) => type === "audio/mpeg";
+    readyState = "open";
+    addSourceBuffer() { return new FakeBuffer(); }
+  }
+  const scope = globalThis as unknown as { MediaSource?: unknown };
+  const createObjectURL = URL.createObjectURL, revokeObjectURL = URL.revokeObjectURL;
+  let media: FakeMediaSource | undefined;
+  URL.createObjectURL = ((source: FakeMediaSource) => { media = source; return "blob:speaker"; }) as unknown as typeof URL.createObjectURL;
+  URL.revokeObjectURL = () => {};
+  scope.MediaSource = FakeMediaSource;
+  const urls: string[] = [];
+  const statusFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    urls.push(url);
+    if (url === "/api/speaker-time") return Response.json({ instance: "one", now: now });
+    if (url.endsWith("/speaker-stream")) return new Response("unavailable", { status: 503 });
+    return statusFetch(url, init);
+  }) as typeof fetch;
+  try {
+    // The server may know itself by another host name; the cookie belongs to this origin.
+    reply = async () => Response.json({ speakerUrl: "https://internal.example/api/zones/showroom/speaker-stream", volume: 40 });
+    await startSpeakerMode("showroom");
+    const audio = FakeAudio.instances[0];
+    audio.frozen = true; // No audio arrives, so the media clock cannot advance.
+    assert.equal(audio.src, "blob:speaker"); assert.equal(audio.volume, 0.4);
+    media!.dispatchEvent(new Event("sourceopen"));
+    await advance(3000);
+    assert.ok(urls.includes("/api/zones/showroom/speaker-stream"));
+    assert.ok(urls.includes("/api/speaker-time"));
+    assert.ok(!urls.some(url => url.includes("internal.example")));
+    assert.equal(activeSpeakerPlaybackStatus(), "reconnecting", "an unreachable stream is never reported as playing");
+    assert.equal(FakeAudio.instances.length, 1);
+    stopSpeakerMode(); await advance(30_000);
+    assert.equal(timers.size, 0, "stop ends every timer of the synchronized player");
+    // A browser whose media pipeline keeps failing continues with a plain element.
+    await startSpeakerMode("showroom");
+    FakeAudio.instances.at(-1)!.frozen = true;
+    for (let i = 0; i < 6; i++) { FakeAudio.instances.at(-1)!.dispatchEvent(new Event("error")); await advance(2500); }
+    const fallback = FakeAudio.instances.at(-1)!;
+    assert.equal(fallback.src, "/api/zones/showroom/speaker-stream");
+    assert.equal(activeSpeakerPlaybackStatus(), "playing");
+  } finally {
+    stopSpeakerMode();
+    globalThis.fetch = statusFetch; URL.createObjectURL = createObjectURL; URL.revokeObjectURL = revokeObjectURL;
+    Reflect.deleteProperty(scope, "MediaSource");
+  }
 });

@@ -6,6 +6,14 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 // 44.1 kHz stereo. Route whole frames without another lossy music encode.
 const BITRATES = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320];
 export const MP3_FRAME_MS = 1152 / 44.1;
+// One identifier per server process. Receivers discard clock measurements and
+// timelines from a previous process after a deployment.
+export const SPEAKER_INSTANCE = randomUUID();
+export function speakerTime() { return { instance: SPEAKER_INSTANCE, now: performance.now() }; }
+const configuredDelay = Number(process.env.SPEAKER_DELAY_MS);
+// Every receiver plays a frame this long after the server scheduled it. The
+// delay is the receiver's network jitter buffer.
+export const SPEAKER_DELAY_MS = Number.isFinite(configuredDelay) && configuredDelay >= 1000 && configuredDelay <= 10_000 ? configuredDelay : 3000;
 export class Mp3Frames {
   private pending = Buffer.alloc(0);
   push(chunk: Buffer): Buffer[] {
@@ -29,7 +37,12 @@ export class Mp3Frames {
       if (!valid) { offset++; continue; }
       const size = Math.floor(144000 * bitrate / 44100) + ((header >>> 9) & 1);
       if (this.pending.length - offset < size) break;
-      frames.push(Buffer.from(this.pending.subarray(offset, offset + size)));
+      // Browsers discard Xing/Info/VBRI header frames instead of playing them.
+      // Dropping them here keeps every receiver's frame count identical.
+      const side = offset + 4 + (((header >>> 6) & 3) === 3 ? 17 : 32) + (((header >>> 16) & 1) ? 0 : 2);
+      const tag = side + 4 <= offset + size ? this.pending.toString("latin1", side, side + 4) : "";
+      const vbri = offset + 40 <= offset + size ? this.pending.toString("latin1", offset + 36, offset + 40) : "";
+      if (tag !== "Xing" && tag !== "Info" && vbri !== "VBRI") frames.push(Buffer.from(this.pending.subarray(offset, offset + size)));
       offset += size;
     }
     this.pending = this.pending.subarray(offset);
@@ -82,12 +95,30 @@ type Sink = {
   destroy?(): unknown;
   once(event: "close" | "drain", listener: () => void): unknown;
 };
+// Frame `firstFrame + n` of a connection is the n-th frame it receives. Frame
+// `f` is due on the server clock (speakerTime) at `epoch + f * MP3_FRAME_MS`
+// and is heard on every receiver `delayMs` later.
+export type SpeakerTimeline = { instance: string; epoch: number; firstFrame: number; delayMs: number };
+type Client = { blocked: boolean; pending: Buffer[] };
+
+const PRIME_FRAMES = 12;
+// Input may arrive this late before the gap is filled with silence.
+const DEFER_MS = 500;
+// Frames a receiver may fall behind before it is disconnected to reconnect.
+const MAX_PENDING_FRAMES = 230;
+// A process that was suspended for longer restarts the timeline.
+const MAX_CATCH_UP_MS = 5000;
+
 export class SpeakerStream {
-  private clients = new Map<Sink, { blocked: boolean; pending: Buffer[]; listener?: string; connection: string; firstFrame: number }>();
+  private clients = new Map<Sink, Client>();
   private frameNumber = 0;
+  private epoch = 0;
+  private recent: Buffer[] = [];
+  private readonly backlogFrames: number;
   private reconnects = 0;
   private slowDisconnects = 0;
   private underruns = 0;
+  private timelineResets = 0;
   private frames: Buffer[] = [];
   private primed = false;
   private urls: string[] = [];
@@ -99,7 +130,6 @@ export class SpeakerStream {
   private lastInputAt = 0;
   private received = false;
   private silenceIndex = 0;
-  private nextFrameAt = performance.now();
   private tickTimer?: ReturnType<typeof setTimeout>;
   private pollTimer?: ReturnType<typeof setTimeout>;
   private idleTimer?: ReturnType<typeof setTimeout>;
@@ -110,19 +140,36 @@ export class SpeakerStream {
     private readonly silence: Buffer[],
     private readonly onIdle: () => void,
     private readonly open: SourceOpener = openSpeakerSource,
+    private readonly delayMs = SPEAKER_DELAY_MS,
   ) {
     if (!silence.length) throw new Error("Speaker silence is missing");
+    // A new receiver is sent the most recent frames at once. It can start in
+    // step with the others immediately, with a full jitter buffer.
+    this.backlogFrames = Math.ceil((delayMs + 1500) / MP3_FRAME_MS);
   }
 
-  attach(res: Sink, listener?: string) {
+  private startTimeline() {
+    // Begin with a backlog of silence so the first receiver is not ahead of
+    // the shared playout position with an empty buffer.
+    this.recent = Array.from({ length: this.backlogFrames }, () => this.silence[this.silenceIndex++ % this.silence.length]);
+    this.frameNumber = this.backlogFrames;
+    this.epoch = performance.now() - this.frameNumber * MP3_FRAME_MS;
+  }
+
+  attach(res: Sink, onStart?: (timeline: SpeakerTimeline) => void) {
     if (this.closed) throw new Error("Speaker stream is closed");
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.idleTimer = undefined;
-    this.clients.set(res, { blocked: false, pending: [], listener, connection: randomUUID(), firstFrame: this.frameNumber });
+    const starting = !this.tickTimer;
+    if (starting) this.startTimeline();
+    onStart?.({ instance: SPEAKER_INSTANCE, epoch: this.epoch, firstFrame: this.frameNumber - this.recent.length, delayMs: this.delayMs });
+    const client: Client = { blocked: false, pending: [Buffer.concat(this.recent)] };
+    this.clients.set(res, client);
     res.once("close", () => {
       this.detach(res);
     });
-    if (!this.tickTimer) { this.nextFrameAt = performance.now(); this.tick(); void this.poll(); }
+    this.flushClient(res, client);
+    if (starting) { this.tick(); void this.poll(); }
   }
 
   private detach(client: Sink) {
@@ -176,29 +223,53 @@ export class SpeakerStream {
     if (!this.closed) this.pollTimer = setTimeout(() => { void this.poll(); }, 250);
   }
 
+  // The frame clock never slips: frame f is due at epoch + f * MP3_FRAME_MS.
+  // After a late timer or late input the missing frames are sent at once, so
+  // the frame number alone tells every receiver when a frame must be heard.
   private tick() {
     if (this.closed) return;
-    // A small server-side jitter buffer absorbs upstream FFmpeg bursts. Do not
-    // alternate silence and reservoir-dependent MP3 frames on every input gap.
-    if (!this.primed && this.frames.length >= 12) this.primed = true;
-    // A small scheduling/input hiccup is not a programme gap. Inserting MP3
-    // silence here breaks reservoir continuity and creates periodic dropouts.
-    // Keep the existing browser buffer and catch up when the next packet lands.
-    if (this.primed && !this.frames.length && this.stopInput && Date.now() - this.lastInputAt < 1000) {
-      this.tickTimer = setTimeout(() => this.tick(), 20);
-      return;
+    const now = performance.now();
+    let due = Math.floor((now - this.epoch) / MP3_FRAME_MS) + 1 - this.frameNumber;
+    if (due * MP3_FRAME_MS > MAX_CATCH_UP_MS) {
+      // The process was suspended. Receivers reconnect onto a new timeline
+      // instead of being sent seconds of audio that is already in the past.
+      this.timelineResets++;
+      for (const client of [...this.clients.keys()]) { this.detach(client); if (client.destroy) client.destroy(); else client.end(); }
+      this.startTimeline();
+      due = 1;
     }
-    const programme = this.primed ? this.frames.shift() : undefined;
-    if (!programme) { if (this.primed && this.urls.length) this.underruns++; this.primed = false; }
-    const frame = programme ?? this.silence[this.silenceIndex++ % this.silence.length];
+    let waiting = false;
+    while (due > 0) {
+      // A small server-side jitter buffer absorbs upstream FFmpeg bursts. Do not
+      // alternate silence and reservoir-dependent MP3 frames on every input gap.
+      if (!this.primed && this.frames.length >= PRIME_FRAMES) this.primed = true;
+      let frame = this.primed ? this.frames.shift() : undefined;
+      if (!frame) {
+        // A small scheduling/input hiccup is not a programme gap. Inserting MP3
+        // silence here breaks reservoir continuity and creates audible dropouts.
+        // Wait briefly; the receivers' buffers cover it and the frames follow.
+        if (this.primed && this.stopInput && Date.now() - this.lastInputAt < DEFER_MS && due * MP3_FRAME_MS < DEFER_MS) { waiting = true; break; }
+        if (this.primed && this.urls.length) this.underruns++;
+        this.primed = false;
+        frame = this.silence[this.silenceIndex++ % this.silence.length];
+      }
+      this.emit(frame);
+      due--;
+    }
+    this.tickTimer = setTimeout(() => this.tick(), waiting ? 10 : Math.max(0, this.epoch + this.frameNumber * MP3_FRAME_MS - performance.now()));
+  }
+
+  private emit(frame: Buffer) {
     this.frameNumber++;
+    this.recent.push(frame);
+    if (this.recent.length > this.backlogFrames) this.recent.shift();
     for (const [client, state] of this.clients) {
       if (client.destroyed) { this.detach(client); continue; }
       // Dropping individual MP3 frames corrupts the decoder's bit reservoir
-      // and the client's time mapping. Buffer a short hiccup in order; reconnect
+      // and the receiver's time mapping. Buffer a short hiccup in order; reconnect
       // a genuinely slow receiver instead of silently skipping programme.
       state.pending.push(frame);
-      if (state.pending.length > 76) {
+      if (state.pending.length > MAX_PENDING_FRAMES) {
         this.slowDisconnects++;
         this.detach(client);
         if (client.destroy) client.destroy(); else client.end();
@@ -206,12 +277,9 @@ export class SpeakerStream {
       }
       this.flushClient(client, state);
     }
-    this.nextFrameAt += MP3_FRAME_MS;
-    if (this.nextFrameAt < performance.now() - 100) this.nextFrameAt = performance.now();
-    this.tickTimer = setTimeout(() => this.tick(), Math.max(0, this.nextFrameAt - performance.now()));
   }
 
-  private flushClient(client: Sink, state: { blocked: boolean; pending: Buffer[] }) {
+  private flushClient(client: Sink, state: Client) {
     if (state.blocked || !this.clients.has(client)) return;
     try {
       while (state.pending.length) {
@@ -224,15 +292,6 @@ export class SpeakerStream {
     } catch { this.detach(client); client.destroy?.(); }
   }
 
-  clock(listener: string) {
-    // Duplicate requests with the same token cannot establish a trustworthy
-    // media timeline. The player will request a fresh connection when absent.
-    const matches = [...this.clients.values()].filter(client => client.listener === listener);
-    if (!listener || matches.length !== 1) return undefined;
-    const client = matches[0];
-    return { listener, connection: client.connection, mediaSeconds: (this.frameNumber - client.firstFrame) * MP3_FRAME_MS / 1000 };
-  }
-
   close() {
     if (this.closed) return;
     this.closed = true; this.revision++;
@@ -240,7 +299,7 @@ export class SpeakerStream {
     if (this.pollTimer) clearTimeout(this.pollTimer);
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.stopInput?.(); this.stopInput = undefined;
-    this.frames = [];
+    this.frames = []; this.recent = [];
     for (const client of this.clients.keys()) client.end();
     this.clients.clear();
   }
@@ -251,5 +310,5 @@ export class SpeakerStream {
     return !this.received || Date.now() - this.lastInputAt > 2000 ? "buffering" : "playing";
   }
 
-  diagnostics() { return { clients: this.clients.size, bufferedFrames: this.frames.length, connected: !!this.stopInput, closed: this.closed, status: this.status(), reconnects: this.reconnects, underruns: this.underruns, slowDisconnects: this.slowDisconnects }; }
+  diagnostics() { return { clients: this.clients.size, bufferedFrames: this.frames.length, connected: !!this.stopInput, closed: this.closed, status: this.status(), reconnects: this.reconnects, underruns: this.underruns, slowDisconnects: this.slowDisconnects, timelineResets: this.timelineResets }; }
 }

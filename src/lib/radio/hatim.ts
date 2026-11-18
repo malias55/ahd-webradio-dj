@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { realtime } from "./realtime";
 import { createWriteStream } from "node:fs";
 import { mkdir, readdir, rename, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -137,8 +138,8 @@ export class HatimPlayer {
       if (!segment) { this.cursor = nextHatimCursor(this.cursor, this.deps.chapters); this.save(); return; }
       this.cursor.offsetSeconds = segment.start;
       const audioSeconds = segment.end - segment.start;
-      const input = audioSeconds > 0 ? ["-re", "-ss", String(segment.start), "-i", file, "-af", `atrim=duration=${audioSeconds},apad`, "-t", String(segment.windowComplete ? remaining : audioSeconds)]
-        : ["-re", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", String(remaining)];
+      const input = audioSeconds > 0 ? [...realtime(), "-ss", String(segment.start), "-i", file, "-af", `atrim=duration=${audioSeconds},apad`, "-t", String(segment.windowComplete ? remaining : audioSeconds)]
+        : [...realtime(), "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", String(remaining)];
       const proc = this.deps.spawn(["-hide_banner", "-loglevel", "error", "-nostdin", ...input,
         "-ar", "44100", "-ac", "2", "-c:a", "libmp3lame", "-b:a", "320k", "-vn", "-id3v2_version", "0", "-write_xing", "0", "-flush_packets", "1",
         "-progress", "pipe:3", "-stats_period", "1", "-f", "mp3", "pipe:1"]);

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { pushConfigForZone } from "@/lib/serverActions";
 import { isAdmin } from "@/lib/admin";
+import { publishZoneVolume } from "@/lib/speaker-volume-events";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
   if (typeof volume === "number") data.volume = Math.max(0, Math.min(100, Math.round(volume)));
 
   const zone = await prisma.zone.update({ where: { id }, data });
+  if (typeof data.volume === "number") publishZoneVolume(zone.id, zone.volume);
   await pushConfigForZone(zone.id);
   return NextResponse.json(zone);
 }

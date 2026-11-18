@@ -44,10 +44,16 @@ export async function handleSpeakerStream(req: IncomingMessage, res: ServerRespo
       }, silence, () => { if (streams.get(zoneId) === stream) streams.delete(zoneId); });
       streams.set(zoneId, stream);
     }
-    res.writeHead(200, { "Content-Type": "audio/mpeg", "Cache-Control": "no-cache, no-store, no-transform", "X-Accel-Buffering": "no", Connection: "keep-alive" });
-    res.flushHeaders();
-    const listener = new URL(req.url || "/", "http://localhost").searchParams.get("listener");
-    stream.attach(res, listener && /^[a-zA-Z0-9-]{1,80}$/.test(listener) ? listener : undefined);
+    // Send the frames as they are produced; the receiver keeps its own buffer.
+    res.socket?.setNoDelay(true);
+    stream.attach(res, timeline => {
+      res.writeHead(200, {
+        "Content-Type": "audio/mpeg", "Cache-Control": "no-cache, no-store, no-transform", "X-Accel-Buffering": "no", Connection: "keep-alive",
+        // Lets every browser place this connection on the shared server clock.
+        "X-Speaker-Timeline": [timeline.instance, timeline.epoch.toFixed(3), timeline.firstFrame, timeline.delayMs].join(";"),
+      });
+      res.flushHeaders();
+    });
   } catch (error) {
     console.error("[speaker stream] start failed", error instanceof Error ? error.message : "unknown error");
     if (!res.headersSent) res.writeHead(503).end();
@@ -65,7 +71,5 @@ export function speakerStreamDiagnostics() {
 }
 
 export function speakerStatusForZone(zoneId: string) { return streams.get(zoneId)?.status(); }
-
-export function speakerClockForZone(zoneId: string, listener: string) { return streams.get(zoneId)?.clock(listener); }
 
 export function speakerDiagnosticsForZone(zoneId: string) { return streams.get(zoneId)?.diagnostics(); }

@@ -21,6 +21,9 @@ import {
   activeSpeakerIsLive,
   activeSpeakerZone,
   activeSpeakerVolume,
+  activeSpeakerSync,
+  speakerTrimMs,
+  setSpeakerTrimMs,
   startSpeakerMode,
   stopSpeakerMode,
   subscribeSpeaker,
@@ -45,11 +48,16 @@ export default function ControlPage() {
     fetch("/api/me").then((r) => r.json()).then((d) => setMe({ admin: d.admin, email: d.email, name: d.name })).catch(() => {});
   }, []);
 
+  const lastZones = useRef("");
   const reload = useCallback(async () => {
     try {
       const r = await fetch("/api/zones");
       if (!r.ok) throw new Error(`zones ${r.status}`);
-      setZones(await r.json());
+      // Unchanged data must not re-render every zone card on each refresh.
+      const text = await r.text();
+      if (text === lastZones.current) return;
+      lastZones.current = text;
+      setZones(JSON.parse(text));
     } catch (e) {
       console.error("[control] reload failed:", e);
     } finally {
@@ -84,7 +92,8 @@ export default function ControlPage() {
       setSpeakerLive(activeSpeakerIsLive());
       setSpeakerStatus(activeSpeakerPlaybackStatus());
       const zoneId = activeSpeakerZone(), volume = activeSpeakerVolume();
-      if (zoneId && volume !== null) setZones(previous => previous.map(zone => zone.id === zoneId && zone.volume !== volume ? { ...zone, volume } : zone));
+      if (zoneId && volume !== null) setZones(previous => previous.some(zone => zone.id === zoneId && zone.volume !== volume)
+        ? previous.map(zone => zone.id === zoneId ? { ...zone, volume } : zone) : previous);
     };
     sync();
     return subscribeSpeaker(sync);
@@ -167,7 +176,7 @@ export default function ControlPage() {
           Noch keine Zonen in der Datenbank. Lege sie direkt in Postgres an.
         </div>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {zones.map((z) => (
             <ZoneCard
               key={z.id}
@@ -213,7 +222,13 @@ function LiveMeter({ startedAt, mode }: { startedAt: number; mode: BroadcastMode
   const [remaining, setRemaining] = useState<number | null>(null);
 
   useEffect(() => {
-    const frame = () => {
+    let shown = 0;
+    const frame = (time: number) => {
+      raf = requestAnimationFrame(frame);
+      // Twenty updates a second are smooth for a meter and leave the main
+      // thread free; rendering on every frame is not needed.
+      if (time - shown < 50) return;
+      shown = time;
       setLevel(peakLevel());
       setAnnouncement(announcementStatus());
       if (mode === "announce") {
@@ -222,7 +237,6 @@ function LiveMeter({ startedAt, mode }: { startedAt: number; mode: BroadcastMode
       } else {
         setRemaining(null);
       }
-      raf = requestAnimationFrame(frame);
     };
     let raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
@@ -292,6 +306,7 @@ function ZoneCard(props: {
     reconnecting: "Verbindung unterbrochen. Der Stream wird automatisch neu verbunden…",
     paused: "Wiedergabe pausiert. Mit „Wiedergabe fortsetzen“ oder über den Sperrbildschirm geht es weiter.",
     blocked: "Der Browser hat die Audiowiedergabe blockiert. Bitte Ton freigeben.",
+    unauthorized: "Die Anmeldung ist abgelaufen. Bitte die Seite neu laden und erneut anmelden; danach spielt der Lautsprecher weiter.",
     playing: speakerLive ? "Spielt den aktiven Live-Stream dieser Zone ab." : "Spielt den nativen Stream dieser Zone ab.",
   }[speakerStatus];
 
@@ -311,10 +326,10 @@ function ZoneCard(props: {
   const disableTabAudio = props.starting || (anyLive && !tabActive) || (!canStartTab);
 
   return (
-    <div className={`card space-y-5 ${liveHere ? "ring-2 ring-brand-500" : ""}`}>
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <h2 className="text-lg font-semibold sm:text-xl">{zone.name}</h2>
+    <div className={`card min-w-0 space-y-5 ${liveHere ? "ring-2 ring-brand-500" : ""}`}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <h2 className="break-words text-lg font-semibold sm:text-xl">{zone.name}</h2>
           <p className="text-xs text-neutral-500">
             {onlineCount}/{totalCount} Geräte online
             {(liveHere || si?.broadcasting) && (
@@ -335,7 +350,7 @@ function ZoneCard(props: {
             </p>
           )}
         </div>
-        <span className={zoneActive ? "badge-online" : "badge-offline"}>
+        <span className={`shrink-0 ${zoneActive ? "badge-online" : "badge-offline"}`}>
           <span className={`dot ${zoneActive ? "bg-green-500" : "bg-red-500"}`} />
           {zone.liveBroadcast ? "live" : zoneActive ? "aktiv" : "inaktiv"}
         </span>
@@ -418,11 +433,47 @@ function ZoneCard(props: {
             ? speakerMessage
             : "Dieses Gerät gibt den Zonen-Stream lokal wieder. Bei aktiver Tab-Audio/Durchsage wird automatisch der Live-Stream gespielt."}
         </p>
+        {speakerActive && <SpeakerSyncInfo />}
       </div>
 
       <p className="text-xs text-neutral-500">
         Wenn kein Live-Signal aktiv ist, läuft automatisch der native Stream aus den Zonen-Einstellungen.
       </p>
+    </div>
+  );
+}
+
+// Refreshes on its own so the measurement never re-renders the zone cards.
+function SpeakerSyncInfo() {
+  const [sync, setSync] = useState(activeSpeakerSync);
+  const [trim, setTrim] = useState(0);
+  useEffect(() => {
+    setTrim(speakerTrimMs());
+    const timer = setInterval(() => setSync(activeSpeakerSync()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  if (!sync) return null;
+  const change = (value: number) => { setTrim(value); setSpeakerTrimMs(value); };
+  return (
+    <div className="mt-2 space-y-2 rounded-lg border border-neutral-200 p-3 text-xs text-neutral-600 dark:border-neutral-800 dark:text-neutral-400">
+      <p>
+        {sync.synchronized && sync.errorMs !== null
+          ? `Im Takt mit allen Lautsprechern dieser Zone (Abweichung ${Math.abs(sync.errorMs)} ms).`
+          : "Gleichlauf mit den anderen Lautsprechern wird hergestellt…"}
+      </p>
+      <label className="block">
+        <span className="flex items-center justify-between gap-2">
+          <span>Feinabgleich dieses Geräts</span>
+          <span className="font-mono">{trim > 0 ? `${trim} ms früher` : trim < 0 ? `${-trim} ms später` : "aus"}</span>
+        </span>
+        <input
+          type="range" min={-500} max={500} step={10} value={trim}
+          onChange={(e) => change(Number(e.target.value))}
+          className="mt-1 w-full accent-brand-600"
+          aria-label="Feinabgleich dieses Geräts in Millisekunden"
+        />
+      </label>
+      <p>Nur nötig, wenn dieses Gerät hörbar versetzt spielt, etwa über Bluetooth. Die Einstellung bleibt auf diesem Gerät gespeichert.</p>
     </div>
   );
 }
