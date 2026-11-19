@@ -59,6 +59,8 @@ Audio liegt dauerhaft in der bestehenden PostgreSQL-Datenbank. Der lokale MP3-Ca
 | `RADIO_ENABLED` | `false` deaktiviert das automatische Programm |
 | `FFMPEG_PATH` / `FFPROBE_PATH` | Optional: alternative Binärpfade |
 
+Build und Start des Railway-Service `ahd-dj` stehen in `.railway/railway.ts` (Railway Infrastructure as Code; `railway.json` wird ab dem 01.12.2026 nicht mehr gelesen): Nixpacks mit `nixpacks.toml`, Startbefehl `npx prisma db push && npx tsx prisma/seed.ts && npm run start`, Healthcheck `/api/health` mit 180 Sekunden, Neustart bei Absturz höchstens fünfmal, kein Schlafmodus, eine Instanz. Railway liest die Datei nicht beim Deployment. Änderungen werden mit `railway config plan` geprüft und mit `railway config apply` übernommen; Variablen verwaltet die Datei nicht.
+
 Alte AzuraCast-Zonen werden beim Seed auf `radio` umgestellt; benutzerdefinierte Quellen und stumme Zonen bleiben erhalten. `AZURACAST_STREAM_URL` und die alten Logto-Variablen werden nicht mehr ausgewertet. Der Start synchronisiert das additive Prisma-Schema ohne `--accept-data-loss`.
 
 ## Anmeldung
