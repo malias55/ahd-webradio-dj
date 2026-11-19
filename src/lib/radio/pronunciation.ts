@@ -1,15 +1,23 @@
 import { spokenNumbers } from "./spoken-numbers";
-export const TURKISH_PRONUNCIATION_VERSION = "tr-dorsuk-terete-nokta-joined-endings-v4";
+export const TURKISH_PRONUNCIATION_VERSION = "tr-dorsuk-terete-nokta-joined-endings-v5";
 export const NUMBER_PRONUNCIATION_VERSION = "de-tr-spoken-numbers-v2";
 
 // Turkish writes a case ending after a proper noun behind an apostrophe:
-// "Erdoğan'ın". The apostrophe is not spoken, and the last consonant of the
-// name opens the next syllable: Er-do-ğa-nın. The voice model stops at the
-// apostrophe instead and reads the ending as a word of its own (Er-do-ğan | ın).
-// The speaking copy therefore joins the ending to the name, exactly as Turkish
-// spells every common noun (adamın, evde).
+// "Erdoğan'ın". The apostrophe is not spoken: Er-do-ğa-nın.
 //
-// Only names that are read as they are written are joined. For a foreign name
+// Measured with the station voice (2026-11-19): the voice reads the apostrophe
+// correctly, but the provider's text normalization does not. Whenever it
+// rewrites a text (it does for digits, acronyms and unusual characters) it
+// replaces these apostrophes with a space, and the voice then reads two words:
+// "Erdoğan. In", "Türkiye. Nin". Three measures prevent that:
+//  1. Names read as written get their ending joined, as Turkish spells every
+//     common noun (adamın, evde). The normalization leaves such words alone.
+//  2. A text without digits is sent with provider normalization switched off
+//     (providerNormalization); every apostrophe then reaches the voice intact.
+//  3. A text that still needs the provider for its numbers gets every
+//     remaining ending joined as well, also after foreign names.
+//
+// In step 1 only names that are read as they are written are joined. For a foreign name
 // the apostrophe keeps the stem recognisable ("Google'ın", "Biden'ın",
 // "Renault'nun"); joined, it would be read letter by letter in Turkish. Such a
 // name shows itself by an ending that follows its pronunciation rather than its
@@ -50,16 +58,38 @@ function joinsAsWritten(stem: string, ending: string) {
   return true;
 }
 
-export function joinTurkishEndings(text: string) {
-  return text.replace(/(?<![\p{L}\p{N}'’‘ʼ])(\p{L}+)['’‘ʼ](\p{Ll}+)(?![\p{L}\p{N}'’‘ʼ])/gu,
-    (match, stem: string, ending: string) => joinsAsWritten(stem, ending) ? stem + ending : match);
+// Real acronyms keep their apostrophe: the provider spells them out and keeps
+// it ("A B D'nin"). TERETE is the station's respelling of TRT and is a word.
+function joinsAnyEnding(stem: string, ending: string) {
+  if (!ENDING.test(ending)) return false;
+  return stem === "TERETE" || (stem.length >= 2 && stem !== stem.toLocaleUpperCase("tr"));
+}
+
+// `all` joins every ending, for texts the provider normalization will rewrite.
+// The stem may itself contain an apostrophe ("Kur'an'ı" becomes "Kur'anı").
+export function joinTurkishEndings(text: string, all = false) {
+  return text.replace(/(?<![\p{L}\p{N}'’‘ʼ])((?:\p{L}+['’‘ʼ])*\p{L}+)['’‘ʼ](\p{Ll}+)(?![\p{L}\p{N}'’‘ʼ])/gu,
+    (match, stem: string, ending: string) => (all ? joinsAnyEnding(stem, ending) : joinsAsWritten(stem, ending)) ? stem + ending : match);
+}
+
+// Digits and symbols that the station's own number rules deliberately leave to
+// the provider (ordinals, endings on figures).
+function needsProvider(spoken: string) { return /[\p{N}§#&+=<>]/u.test(spoken); }
+
+// What to request from the provider for a text that speechText has prepared.
+export function providerNormalization(spoken: string, language: "de" | "tr"): "on" | "off" {
+  return language === "tr" && !needsProvider(spoken) ? "off" : "on";
 }
 
 // Normalize only the speaking copy; source material and values stay unchanged.
 export function speechText(text: string, language: "de" | "tr") {
   if (language !== "tr") return spokenNumbers(text, language);
-  return spokenNumbers(joinTurkishEndings(text
+  const spoken = spokenNumbers(joinTurkishEndings(text
+    // Accents and primes typed in place of an apostrophe make the provider
+    // rewrite the text; give them the standard form first.
+    .replace(/(?<=[\p{L}\p{N}])[´`′ʹ‛＇](?=\p{L})/gu, "'")
     .replace(/\b(?:Dörrschuck|Doerrschuck)\b/giu, "Dörşuk"))
     .replace(/(?<![\p{L}\p{N}])T\.?\s*R\.?\s*T\.?(?!\p{L})/giu, "TERETE")
     .replace(/TERETE(?=\d)/g, "TERETE "), language);
+  return needsProvider(spoken) ? joinTurkishEndings(spoken, true) : spoken;
 }

@@ -2,7 +2,7 @@ import { naturalRadioText, germanBrandingAllowed } from "./presentation";
 import { assertNewsCredits } from "./elevenlabs";
 import { FAMILY_CONTENT_POLICY, FAMILY_CONTENT_VERSION, familyContentAllowed, assertFamilyContent } from "./family";
 import { createHash } from "node:crypto";
-import { speechText, TURKISH_PRONUNCIATION_VERSION, NUMBER_PRONUNCIATION_VERSION } from "./pronunciation";
+import { speechText, providerNormalization, TURKISH_PRONUNCIATION_VERSION, NUMBER_PRONUNCIATION_VERSION } from "./pronunciation";
 import { XMLParser } from "fast-xml-parser";
 import { load } from "cheerio";
 import { prisma } from "../prisma";
@@ -270,7 +270,7 @@ async function newsSegmentSpeech(text: string, voiceId: string, language: "de" |
   const settings = delivery === "service" ? serviceVoiceSettings(edition) : { stability: 0.65, similarity_boost: 0.75, style: 0.15, use_speaker_boost: true };
   // Do not reuse an old auto-normalized recording for grammar-dependent
   // numerals that intentionally remain as digits in the speaking copy.
-  const key = `news-voice:${stationTime(edition).date}:${createHash("sha256").update(JSON.stringify({ spoken, voiceId, language, model, settings, normalization: "on" })).digest("hex")}`;
+  const key = `news-voice:${stationTime(edition).date}:${createHash("sha256").update(JSON.stringify({ spoken, voiceId, language, model, settings, normalization: providerNormalization(spoken, language) })).digest("hex")}`;
   if (usesSlotUpdates(edition)) await recoverQuotaJob(key);
   await withJob(key, async () => {
     if (await prisma.radioAsset.findUnique({ where: { key }, select: { id: true } })) return;

@@ -1,7 +1,7 @@
 import { naturalRadioText, usesUpdatedBulletinAudio } from "./presentation";
 import { QUIET_MUSIC_PROMPT } from "./music-policy";
 import { assertFamilyContent } from "./family";
-import { speechText } from "./pronunciation";
+import { speechText, providerNormalization } from "./pronunciation";
 import { prisma } from "../prisma";
 import { normalizeMusic, withJob } from "./store";
 import { stationTime } from "./config";
@@ -74,11 +74,14 @@ export async function speech(text: string, voiceId: string, language: "de" | "tr
   assertFamilyContent(text);
   const spoken = naturalRadioText(text);
   if (!spoken) throw new Error("Kein verwendbarer Radiotext");
+  const prepared = speechText(spoken, language);
   return eleven(`/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`, {
-    text: speechText(spoken, language), model_id: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2", language_code: language,
+    text: prepared, model_id: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2", language_code: language,
     // Explicit German/Turkish words anchor the language even for Multilingual
-    // v2 (which ignores language_code); normalize remaining ordinal grammar.
-    apply_text_normalization: "on",
+    // v2 (which ignores language_code); the provider normalizes the remaining
+    // ordinal grammar. Turkish text without digits is sent as it is, because
+    // the provider's rewriting separates names from their endings.
+    apply_text_normalization: providerNormalization(prepared, language),
     voice_settings: delivery === "service" ? serviceVoiceSettings(slot) : { stability: 0.65, similarity_boost: 0.75, style: 0.15, use_speaker_boost: true },
   });
 }

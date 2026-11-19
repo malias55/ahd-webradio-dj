@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { speechText } from "../src/lib/radio/pronunciation";
+import { speechText, providerNormalization } from "../src/lib/radio/pronunciation";
 import { spokenNumber } from "../src/lib/radio/spoken-numbers";
 import { speech, serviceVoiceSettings } from "../src/lib/radio/providers";
 
@@ -100,8 +100,25 @@ test("Turkish case endings are joined to names that are read as written", () => 
     "AB'nin", "ABD'de", "TBMM'ye", "NATO'nun",                    // acronyms
     "Kur'an", "Kur'an'ı", "mes'ul", "Moody's", "O'Brien", "Côte d'Ivoire", "Kemal'in",
   ]) assert.equal(speechText(kept, "tr"), kept);
-  assert.equal(speechText("TRT'nin ve 2024’ün", "tr"), "TERETE'nin ve 2024’ün");
+  assert.equal(speechText("TRT'nin kararı", "tr"), "TERETE'nin kararı");
   assert.equal(speechText("Erdoğan'ın Rede in Türkiye's", "de"), "Erdoğan'ın Rede in Türkiye's", "German speech is unchanged");
+});
+
+test("the provider may only rewrite Turkish text in which no name can be separated from its ending", () => {
+  // Without digits the text reaches the voice exactly as prepared.
+  const plain = speechText("Biden'ın ve Erdoğan'ın açıklaması ABD'de, Kur'an'ı ve Kemal'in sözleri.", "tr");
+  assert.equal(plain, "Biden'ın ve Erdoğanın açıklaması ABD'de, Kur'an'ı ve Kemal'in sözleri.");
+  assert.equal(providerNormalization(plain, "tr"), "off");
+  assert.equal(providerNormalization(speechText("Dolar 41,05 lira, artış %3.", "tr"), "tr"), "off", "the station's own number rules leave no digit");
+  // Figures left to the provider: every ending is joined before it rewrites the text.
+  const figures = speechText("Erdoğan'ın 3. ziyareti: Biden'ın, Google'ın, Kemal'in, Mainz'da, TRT'nin, Kur'an'ı; ABD'nin ve AB'de 2024’ün kararı.", "tr");
+  assert.equal(figures, "Erdoğanın 3. ziyareti: Bidenın, Googleın, Kemalin, Mainzda, TERETEnin, Kur'anı; ABD'nin ve AB'de 2024’ün kararı.");
+  assert.equal(providerNormalization(figures, "tr"), "on");
+  assert.doesNotMatch(figures.replace(/\b[A-ZÇĞİÖŞÜ]{2,}['’]\p{Ll}+|\d+['’]\p{Ll}+|Kur'an/gu, ""), /['’]/, "only acronyms, figures and inner apostrophes keep one");
+  assert.equal(speechText(figures, "tr"), figures, "preparation stays idempotent");
+  assert.equal(speechText("Erdoğan´ın, Ankara`da ve Türkiye′nin", "tr"), "Erdoğanın, Ankarada ve Türkiyenin", "look-alike apostrophes are understood");
+  // German always keeps the provider normalization and its text.
+  assert.equal(providerNormalization("Ohne Zahlen.", "de"), "on");
 });
 
 test("large quantities and feed number formats do not round or change magnitude", () => {
@@ -131,7 +148,7 @@ test("the TTS boundary can normalize twice without changing meaning or source id
   }
 });
 
-test("actual ElevenLabs request always uses normalized words and enabled provider normalization", async () => {
+test("actual ElevenLabs request uses normalized words and provider normalization only where figures remain", async () => {
   const originalFetch = globalThis.fetch, key = process.env.ELEVENLABS_API_KEY;
   process.env.ELEVENLABS_API_KEY = "test-only";
   const requests: any[] = [];
@@ -142,7 +159,11 @@ test("actual ElevenLabs request always uses normalized words and enabled provide
     await speech("Bir dolar 41,05 Türk lirası.", "test-voice", "tr");
     assert.equal(requests[0].text, "Auf der A sechshundertdreiundvierzig: acht Minuten Zeitverlust.");
     assert.equal(requests[1].text, "Bir dolar kırk bir nokta sıfır beş Türk lirası.");
-    for (const request of requests) assert.equal(request.apply_text_normalization, "on");
+    await speech("Erdoğan'ın 3. ziyareti ve Biden'ın açıklaması.", "test-voice", "tr");
+    assert.equal(requests[0].apply_text_normalization, "on");
+    assert.equal(requests[1].apply_text_normalization, "off", "Turkish text without digits is not rewritten by the provider");
+    assert.equal(requests[2].text, "Erdoğanın 3. ziyareti ve Bidenın açıklaması.");
+    assert.equal(requests[2].apply_text_normalization, "on");
     assert.deepEqual(requests[0].voice_settings, serviceVoiceSettings(slot));
     assert.equal(requests[1].language_code, "tr");
   } finally { globalThis.fetch = originalFetch; if (key === undefined) delete process.env.ELEVENLABS_API_KEY; else process.env.ELEVENLABS_API_KEY = key; }
