@@ -524,7 +524,7 @@ async function prepareSlotNews(slot: Date, edition: Date, now: Date, simulatedNo
     const rendered = language === "tr"
       ? await renderBulletin(slot, await approvedDraft(edition, draftKey), false, false, service as MarketReport)
       : await renderGermanHourly(slot, await prisma.radioAsset.findUniqueOrThrow({ where: { id: mainId } }), false, fetchedAt, service as Awaited<ReturnType<typeof collectHourlyService>>);
-    await prisma.radioAsset.create({ data: { key, kind: "news", title: language === "tr" ? "Türkçe Haberler · Cavit" : "Nachrichten · Elias & Susanne", slot, ...rendered } });
+    await prisma.radioAsset.create({ data: { key, kind: "news", title: language === "tr" ? "Türkçe Haberler · Yusuf" : "Nachrichten · Elias & Susanne", slot, ...rendered } });
   });
 }
 
@@ -577,7 +577,7 @@ export async function prepareNews(slot: Date, simulatedNow?: Date) {
     if (language === "tr") {
       const content = (draft!.metadata as unknown as { content: EditorialContent }).content;
       const rendered = await renderBulletin(edition, content);
-      await prisma.radioAsset.create({ data: { key, kind: "news", title: "Türkçe Günlük Haberler · Cavit · 07/21 Uhr", slot: edition, ...rendered } });
+      await prisma.radioAsset.create({ data: { key, kind: "news", title: "Türkçe Günlük Haberler · Yusuf · 07/21 Uhr", slot: edition, ...rendered } });
       return;
     }
     if (!main) {
@@ -609,7 +609,7 @@ export async function generateNewsExample(language: "de" | "tr") {
     if (language === "tr") {
       const content = await editorialContent(slot);
       const rendered = await renderBulletin(slot, content, true);
-      await prisma.radioAsset.create({ data: { key, kind: "demo", title: "Hörbeispiel · Türkçe 07:00 · Cavit", ...rendered } });
+      await prisma.radioAsset.create({ data: { key, kind: "demo", title: "Hörbeispiel · Türkçe 07:00 · Yusuf", ...rendered } });
     } else {
       const mainKey = `${key}:main`;
       let main = await prisma.radioAsset.findUnique({ where: { key: mainKey } });

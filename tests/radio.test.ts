@@ -124,7 +124,7 @@ test("a single German daily recording serves every hourly slot, Turkish repeats 
     assert.equal(isRepeatSlot(slot), hour !== 8); assert.ok(isNewsSlot(slot));
   }
   const tr = new Date("2026-11-04T06:00:00Z"), evening = new Date("2026-11-04T20:00:00Z");
-  assert.equal(newsLanguage(evening), "tr"); assert.equal(presenterForSlot(evening).name, "Cavit");
+  assert.equal(newsLanguage(evening), "tr"); assert.equal(presenterForSlot(evening).name, "Yusuf");
   assert.equal(bulletinKey(tr), bulletinKey(evening)); assert.ok(isRepeatSlot(evening));
   assert.ok(isOnAir(evening)); assert.equal(isMusicHours(evening), false);
   assert.equal(isOnAir(new Date("2026-11-04T20:05:00Z")), false);
@@ -146,7 +146,7 @@ test("daily generation starts at 06/07 Berlin and remains catch-up capable befor
 test("07:00 Turkish slot opens the daily music programme", () => {
   const seven = new Date("2026-10-26T06:00:00Z");
   assert.equal(newsLanguage(seven), "tr"); assert.equal(isOnAir(seven), true); assert.equal(isMusicHours(seven), true);
-  assert.equal(presenterForSlot(seven).voiceId, "Q2IX97JeHBY3vNGzgM5s");
+  assert.equal(presenterForSlot(seven).voiceId, "tOqnHSMt5y3uRBgH7e8J");
   assert.equal(newsEditionSlot(seven).toISOString(), seven.toISOString());
   assert.equal(isRepeatSlot(seven), false);
   assert.equal(isOnAir(new Date("2026-10-26T06:05:00Z")), true);
