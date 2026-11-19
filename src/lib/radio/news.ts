@@ -2,15 +2,15 @@ import { naturalRadioText, germanBrandingAllowed } from "./presentation";
 import { assertNewsCredits } from "./elevenlabs";
 import { FAMILY_CONTENT_POLICY, FAMILY_CONTENT_VERSION, familyContentAllowed, assertFamilyContent } from "./family";
 import { createHash } from "node:crypto";
-import { speechText, providerNormalization, stationRecordingText, TURKISH_PRONUNCIATION_VERSION, NUMBER_PRONUNCIATION_VERSION } from "./pronunciation";
+import { speechText, providerNormalization, TURKISH_PRONUNCIATION_VERSION, NUMBER_PRONUNCIATION_VERSION } from "./pronunciation";
 import { XMLParser } from "fast-xml-parser";
 import { load } from "cheerio";
 import { prisma } from "../prisma";
-import { edenJson, presenterForHour, presenterForSlot, servicePresenter, turkishStationVoice, speech, serviceVoiceSettings, newsModelConfig, type ModelCall } from "./providers";
+import { edenJson, presenterForHour, presenterForSlot, servicePresenter, speech, voiceSettings, serviceVoiceSettings, newsModelConfig, type ModelCall } from "./providers";
 import { withJob } from "./store";
 import { mixDryBulletin, joinNewsParts, frameTurkishProgramme, appendNewsOutro, type Cue } from "./mix";
 import { bulletinOpenerAsset, turkishSignatureAsset, TURKISH_SIGNATURE_KEY, germanOutroAsset, GERMAN_OUTRO_KEY } from "./imaging";
-import { isNewsSlot, stationTime, stationHour, dailyNewsPlan, NEWS_SCHEDULE, newsLanguage, newsAllowedOn, weatherTrafficEnabled } from "./config";
+import { TURKISH_NEWS_MAX_SECONDS, isNewsSlot, stationTime, stationHour, dailyNewsPlan, NEWS_SCHEDULE, newsLanguage, newsAllowedOn, weatherTrafficEnabled } from "./config";
 import { collectDailyService, collectHourlyService, serviceFreshForSlot, serviceValidForDailyEdition } from "./service";
 import { collectMarketReport } from "./market";
 import type { Prisma, RadioAsset } from "@prisma/client";
@@ -33,9 +33,15 @@ export const TURKISH_NEWS_VERSION = "tr-daily-repeat-v13";
 
 // The invocation is identical every day: preserve Turkish spelling and language
 // and reuse its spoken audio instead of buying another TTS call per bulletin.
+// Recordings are stored per voice and delivery; another voice or other voice
+// settings voice the fixed parts again, once.
+function turkishDelivery() {
+  const voice = presenterForHour(7).voiceId;
+  return { voice, delivery: createHash("sha256").update(JSON.stringify(voiceSettings("tr", "standard", new Date()))).digest("hex").slice(0, 8) };
+}
 export async function turkishInvocation() {
-  const voice = turkishStationVoice().voiceId;
-  const key = `invocation:${TURKISH_OPENING_VERSION}:${voice}`;
+  const { voice, delivery } = turkishDelivery();
+  const key = `invocation:${TURKISH_OPENING_VERSION}:${voice}:${delivery}`;
   await withJob(key, async () => {
     if (await prisma.radioAsset.findUnique({ where: { key }, select: { id: true } })) return;
     const { normalizeAudio } = await import("./store");
@@ -47,13 +53,11 @@ export async function turkishInvocation() {
 }
 export const TURKISH_INTRO = "Autohaus Dörşuk Radyo'dan merhaba. Türkiye'den, Almanya'dan ve dünyadan seçtiğimiz haberleri dinliyorsunuz. Bu bülten yapay zekâ tarafından hazırlanmış ve seslendirilmiştir.";
 export const TURKISH_OUTRO = "Keyifli günler dileriz. Allah'ın selamı üzerinize olsun.";
-// Greeting and closing stay the recordings already on air, in the station
-// voice. The key reproduces the one they were stored under.
 export function turkishStaticRecording(role: "intro" | "outro", example = false) {
-  const voice = turkishStationVoice().voiceId;
+  const { voice, delivery } = turkishDelivery();
   const text = role === "outro" ? TURKISH_OUTRO : example ? TURKISH_INTRO.replace("Türkiye'den", "Bu, Türkçe sabah bültenimizin bir örneğidir. Türkiye'den") : TURKISH_INTRO;
   const model = process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2";
-  const hash = createHash("sha256").update(JSON.stringify({ text: stationRecordingText(text), voice, model })).digest("hex").slice(0, 24);
+  const hash = createHash("sha256").update(JSON.stringify({ text: speechText(text, "tr"), voice, model, delivery })).digest("hex").slice(0, 24);
   return { key: `speech-static:tr:${role}:${hash}`, voice, text, model };
 }
 export async function turkishStaticSpeech(role: "intro" | "outro", example = false) {
@@ -272,7 +276,7 @@ export async function bulletinForSlot(slot: Date) {
 
 async function newsSegmentSpeech(text: string, voiceId: string, language: "de" | "tr", edition: Date, delivery: "standard" | "service" = "standard") {
   const spoken = speechText(naturalRadioText(text), language), model = process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2";
-  const settings = delivery === "service" ? serviceVoiceSettings(edition) : { stability: 0.65, similarity_boost: 0.75, style: 0.15, use_speaker_boost: true };
+  const settings = voiceSettings(language, delivery, edition);
   // Do not reuse an old auto-normalized recording for grammar-dependent
   // numerals that intentionally remain as digits in the speaking copy.
   const key = `news-voice:${stationTime(edition).date}:${createHash("sha256").update(JSON.stringify({ spoken, voiceId, language, model, settings, normalization: providerNormalization(spoken, language) })).digest("hex")}`;
@@ -394,32 +398,51 @@ export async function renderBulletin(slot: Date, content: EditorialContent, exam
     ? TURKISH_OUTRO
     : mainPart && weatherTrafficEnabled() ? GERMAN_HANDOVER
     : GERMAN_SERVICE_OUTRO;
-  const paragraphs = [intro, ...content.stories.map(s => s.text), ...(market ? [market.text] : []), outro];
-  const segments = [];
-  for (let i = 0; i < paragraphs.length; i++) {
-    const kind = i === 0 ? "intro" as const : i === paragraphs.length - 1 ? "outro" as const : "story" as const;
-    const audio = language === "de" && kind === "intro" ? Buffer.from((await germanIntroSpeech()).audio)
-      : language === "tr" && kind !== "story"
-      ? Buffer.from((await turkishStaticSpeech(kind, example)).audio)
-      : await newsSegmentSpeech(paragraphs[i], presenter.voiceId, language, slot);
-    segments.push({ audio, kind });
-  }
-  let { timeline, ...audio } = await mixDryBulletin(segments, { opener: false, closer: false });
+  const limit = language === "tr" ? TURKISH_NEWS_MAX_SECONDS : 260;
+  let stories = content.stories, paragraphs: string[] = [], timeline: Cue[] = [];
+  let audio: Omit<Awaited<ReturnType<typeof mixDryBulletin>>, "timeline"> | undefined;
   let openerAssetId: string | null = null, outroAssetId: string | null = null;
-  if (language === "tr") {
-    const invocation = await turkishInvocation();
-    const signature = await turkishSignatureAsset();
-    const opener = await bulletinOpenerAsset(slot) ?? signature;
-    // The presenter carries the story transitions. Keep the dry mix's natural
-    // 0.7-second pauses even when a legacy divider asset remains in storage.
-    const combined = await frameTurkishProgramme(invocation, opener, { ...audio, timeline }, signature);
-    timeline = combined.timeline;
-    audio = { audio: combined.audio, duration: combined.duration };
-    openerAssetId = opener.id;
-    outroAssetId = signature.id;
+  for (;;) {
+    paragraphs = [intro, ...stories.map(s => s.text), ...(market ? [market.text] : []), outro];
+    const segments = [];
+    for (let i = 0; i < paragraphs.length; i++) {
+      const kind = i === 0 ? "intro" as const : i === paragraphs.length - 1 ? "outro" as const : "story" as const;
+      const voiced = language === "de" && kind === "intro" ? Buffer.from((await germanIntroSpeech()).audio)
+        : language === "tr" && kind !== "story"
+        ? Buffer.from((await turkishStaticSpeech(kind, example)).audio)
+        : await newsSegmentSpeech(paragraphs[i], presenter.voiceId, language, slot);
+      segments.push({ audio: voiced, kind });
+    }
+    try {
+      const mixed = await mixDryBulletin(segments, { opener: false, closer: false, limit });
+      timeline = mixed.timeline;
+      audio = { audio: mixed.audio, duration: mixed.duration };
+      if (language === "tr") {
+        const invocation = await turkishInvocation();
+        const signature = await turkishSignatureAsset();
+        const opener = await bulletinOpenerAsset(slot) ?? signature;
+        // The presenter carries the story transitions. Keep the dry mix's natural
+        // 0.7-second pauses even when a legacy divider asset remains in storage.
+        const combined = await frameTurkishProgramme(invocation, opener, { ...mixed, timeline }, signature, limit);
+        timeline = combined.timeline;
+        audio = { audio: combined.audio, duration: combined.duration };
+        openerAssetId = opener.id;
+        outroAssetId = signature.id;
+      }
+      if (audio.duration <= limit) break;
+    } catch (error) {
+      if (!(error instanceof Error) || !/Sendezeitfenster/.test(error.message)) throw error;
+    }
+    // A slower voice must shorten the edition, never cancel it: the stories are
+    // ordered by importance, so the last one is left out and the rest is mixed
+    // again. Recordings are stored per story, nothing is voiced twice.
+    if (language !== "tr" || stories.length <= 1) throw new Error("Die fertige Ausgabe überschreitet das Sendezeitfenster.");
+    stories = stories.slice(0, -1);
   }
-  if (audio.duration > 260) throw new Error("Die fertige Ausgabe überschreitet das Sendezeitfenster.");
-  return { ...audio, script: `${language === "tr" ? TURKISH_OPENING : ""}${paragraphs.map(p => speechText(naturalRadioText(p), language)).join("\n\n")}`,
+  const usedSources = new Set(stories.flatMap(story => story.sourceIds));
+  const omittedStories = content.stories.length - stories.length;
+  if (omittedStories) content = { ...content, stories, sources: content.sources.filter(source => usedSources.has(source.id)) };
+  return { ...audio!, script: `${language === "tr" ? TURKISH_OPENING : ""}${paragraphs.map(p => speechText(naturalRadioText(p), language)).join("\n\n")}`,
     metadata: { programmeVersion: language === "tr" ? TURKISH_NEWS_VERSION : GERMAN_NEWS_VERSION, voiceId: presenter.voiceId, presenter: presenter.name, language, gender: presenter.gender, aiGenerated: true, backgroundMusic: false, editorialVersion: language === "de" ? GERMAN_EDITORIAL_VERSION : null, familyContentVersion: FAMILY_CONTENT_VERSION,
       sources: [...content.sources, ...(market?.sources || []).map((s, i) => ({ ...s, id: Math.max(0, ...content.sources.map(ref => ref.id)) + i + 1, local: false }))], stories: content.stories, modelCalls: content.modelCalls, editionSlot: content.editionSlot, example,
       market: market ?? null,
@@ -427,6 +450,7 @@ export async function renderBulletin(slot: Date, content: EditorialContent, exam
       modelPolicy: newsModelConfig(),
       openingVersion: language === "tr" ? TURKISH_OPENING_VERSION : null, pronunciationVersion: language === "tr" ? TURKISH_PRONUNCIATION_VERSION : null, numberPronunciationVersion: NUMBER_PRONUNCIATION_VERSION,
       ttsModel: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2", imagingVersion: language === "tr" ? TURKISH_SIGNATURE_KEY : null, openerAssetId, outroAssetId, dividerVersion: null, storyTransitions: "speech-pauses-v1", timeline,
+      omittedStories,
       region: language === "tr" ? "Türkiye / Almanya" : process.env.NEWS_REGION || "Mainz und Rheinhessen" } };
 }
 
@@ -529,7 +553,7 @@ async function prepareSlotNews(slot: Date, edition: Date, now: Date, simulatedNo
     const rendered = language === "tr"
       ? await renderBulletin(slot, await approvedDraft(edition, draftKey), false, false, service as MarketReport)
       : await renderGermanHourly(slot, await prisma.radioAsset.findUniqueOrThrow({ where: { id: mainId } }), false, fetchedAt, service as Awaited<ReturnType<typeof collectHourlyService>>);
-    await prisma.radioAsset.create({ data: { key, kind: "news", title: language === "tr" ? "Türkçe Haberler · Yusuf" : "Nachrichten · Elias & Susanne", slot, ...rendered } });
+    await prisma.radioAsset.create({ data: { key, kind: "news", title: language === "tr" ? "Türkçe Haberler · Seyfullah" : "Nachrichten · Elias & Susanne", slot, ...rendered } });
   });
 }
 
@@ -582,7 +606,7 @@ export async function prepareNews(slot: Date, simulatedNow?: Date) {
     if (language === "tr") {
       const content = (draft!.metadata as unknown as { content: EditorialContent }).content;
       const rendered = await renderBulletin(edition, content);
-      await prisma.radioAsset.create({ data: { key, kind: "news", title: "Türkçe Günlük Haberler · Yusuf · 07/21 Uhr", slot: edition, ...rendered } });
+      await prisma.radioAsset.create({ data: { key, kind: "news", title: "Türkçe Günlük Haberler · Seyfullah · 07/21 Uhr", slot: edition, ...rendered } });
       return;
     }
     if (!main) {
@@ -614,7 +638,7 @@ export async function generateNewsExample(language: "de" | "tr") {
     if (language === "tr") {
       const content = await editorialContent(slot);
       const rendered = await renderBulletin(slot, content, true);
-      await prisma.radioAsset.create({ data: { key, kind: "demo", title: "Hörbeispiel · Türkçe 07:00 · Yusuf", ...rendered } });
+      await prisma.radioAsset.create({ data: { key, kind: "demo", title: "Hörbeispiel · Türkçe 07:00 · Seyfullah", ...rendered } });
     } else {
       const mainKey = `${key}:main`;
       let main = await prisma.radioAsset.findUnique({ where: { key: mainKey } });

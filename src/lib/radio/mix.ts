@@ -7,7 +7,7 @@ import { imagingAsset } from "./imaging";
 export type VoiceSegment = { audio: Buffer; kind: "intro" | "story" | "weather" | "traffic" | "outro" };
 export type Cue = { kind: string; start: number; end: number };
 
-export type DryMixOptions = { opener?: boolean; closer?: boolean };
+export type DryMixOptions = { opener?: boolean; closer?: boolean; limit?: number };
 
 export function newsDividerTimeline(programme: { duration: number; timeline: Cue[] }, soundDuration: number) {
   if (!Number.isFinite(soundDuration) || soundDuration <= 0 || soundDuration > 2.5 || programme.timeline.some(c => c.kind === "divider")) throw new Error("Invalid or duplicate story divider");
@@ -80,8 +80,8 @@ export async function mixDryBulletin(segments: VoiceSegment[], options: DryMixOp
       await writeFile(path, normalized.audio);
       clips.push({ path, duration: normalized.duration, kind: segments[i].kind });
     }
-    const timeline = dryNewsTimeline(clips, options);
-    if (timeline.duration > 260) throw new Error("Nachrichten überschreiten das Sendezeitfenster");
+    const timeline = dryNewsTimeline(clips, options), limit = options.limit ?? 260;
+    if (timeline.duration > limit) throw new Error("Nachrichten überschreiten das Sendezeitfenster");
     const args = ["-v", "error", "-nostdin"], filters: string[] = [], stems: string[] = [];
     for (const clip of clips) args.push("-i", clip.path);
     const voiceCues = timeline.cues.filter(c => !["opener", "closer", "divider"].includes(c.kind));
@@ -105,7 +105,7 @@ export async function mixDryBulletin(segments: VoiceSegment[], options: DryMixOp
     filters.push(`${stems.map(s => `[${s}]`).join("")}amix=inputs=${stems.length}:normalize=0,apad=whole_dur=${timeline.duration},atrim=duration=${timeline.duration},alimiter=limit=0.79:level=false:latency=true[out]`);
     const output = join(dir, "dry.wav");
     await command(process.env.FFMPEG_PATH || "ffmpeg", [...args, "-filter_complex", filters.join(";"), "-map", "[out]", "-ar", "44100", "-ac", "2", "-y", output]);
-    return { ...(await normalizeAudio(await readFile(output), 265)), timeline: timeline.cues };
+    return { ...(await normalizeAudio(await readFile(output), limit + 5)), timeline: timeline.cues };
   } finally { await rm(dir, { recursive: true, force: true }); }
 }
 
@@ -206,7 +206,7 @@ export async function prependInvocation(invocation: Buffer, programme: Uint8Arra
 
 // Invocation remains the first spoken content. The approved signature occupies a
 // separate interval after it; no instrumental audio is loaded under any voice.
-export async function frameTurkishProgramme(invocation: { audio: Uint8Array; duration: number }, signature: { audio: Uint8Array; duration: number }, body: { audio: Uint8Array; duration: number; timeline: Cue[] }, closer = signature) {
+export async function frameTurkishProgramme(invocation: { audio: Uint8Array; duration: number }, signature: { audio: Uint8Array; duration: number }, body: { audio: Uint8Array; duration: number; timeline: Cue[] }, closer = signature, limit = 260) {
   const dir = await mkdtemp(join(tmpdir(), "ahd-tr-frame-"));
   try {
     const first = join(dir, "invocation.mp3"), sound = join(dir, "signature.mp3"), speech = join(dir, "body.mp3"), output = join(dir, "framed.wav");
@@ -214,10 +214,10 @@ export async function frameTurkishProgramme(invocation: { audio: Uint8Array; dur
     const signatureStart = invocation.duration + 0.35, offset = signatureStart + signature.duration + 0.35;
     await command(process.env.FFMPEG_PATH || "ffmpeg", ["-v", "error", "-nostdin", "-i", first, "-i", sound, "-i", speech,
       "-filter_complex", "[0:a]apad=pad_dur=0.35[v];[1:a]apad=pad_dur=0.35[s];[v][s][2:a]concat=n=3:v=0:a=1[out]", "-map", "[out]", "-ar", "44100", "-ac", "2", "-y", output]);
-    const audio = await normalizeAudio(await readFile(output), 270);
-    if (audio.duration > 260) throw new Error("Türkische Ausgabe überschreitet das Sendezeitfenster");
+    const audio = await normalizeAudio(await readFile(output), limit + 10);
+    if (audio.duration > limit) throw new Error("Türkische Ausgabe überschreitet das Sendezeitfenster");
     const framed = { ...audio, timeline: [{ kind: "invocation", start: 0, end: invocation.duration }, { kind: "opener", start: signatureStart, end: signatureStart + signature.duration }, ...body.timeline.map(c => ({ ...c, start: c.start + offset, end: c.end + offset }))] };
-    return appendNewsOutro(framed, closer);
+    return appendNewsOutro(framed, closer, limit);
   } finally { await rm(dir, { recursive: true, force: true }); }
 }
 
@@ -231,7 +231,7 @@ export function newsOutroTimeline(programme: { duration: number; timeline: Cue[]
 }
 
 // A musical closing button starts only after the voice and a short clean gap.
-export async function appendNewsOutro(programme: { audio: Uint8Array; duration: number; timeline: Cue[] }, signature: { audio: Uint8Array; duration: number }) {
+export async function appendNewsOutro(programme: { audio: Uint8Array; duration: number; timeline: Cue[] }, signature: { audio: Uint8Array; duration: number }, limit = 260) {
   const plan = newsOutroTimeline(programme, signature.duration);
   const dir = await mkdtemp(join(tmpdir(), "ahd-news-outro-"));
   try {
@@ -240,8 +240,8 @@ export async function appendNewsOutro(programme: { audio: Uint8Array; duration: 
     await command(process.env.FFMPEG_PATH || "ffmpeg", ["-v", "error", "-nostdin", "-i", voice, "-i", sound,
       "-filter_complex", `[0:a]atrim=duration=${plan.trimEnd},asetpts=PTS-STARTPTS,apad=pad_dur=0.32[v];[v][1:a]concat=n=2:v=0:a=1[out]`,
       "-map", "[out]", "-ar", "44100", "-ac", "2", "-y", output]);
-    const audio = await normalizeAudio(await readFile(output), 270);
-    if (audio.duration > 260) throw new Error("Ausgabe mit Outro überschreitet das Sendezeitfenster");
+    const audio = await normalizeAudio(await readFile(output), limit + 10);
+    if (audio.duration > limit) throw new Error("Ausgabe mit Outro überschreitet das Sendezeitfenster");
     return { ...audio, timeline: plan.timeline };
   } finally { await rm(dir, { recursive: true, force: true }); }
 }

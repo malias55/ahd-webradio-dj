@@ -17,7 +17,7 @@ async function main() {
     if (!m.stories?.length || !m.sources?.length) throw new Error("No approved Turkish stories available for reuse");
     const content: EditorialContent = { stories: m.stories, sources: m.sources, editionSlot: slot.toISOString(), language: "tr", modelCalls: [] };
     const rendered = await renderBulletin(slot, content);
-    corrected = await prisma.radioAsset.create({ data: { key, kind: "news", slot, title: "Türkçe Sabah Bülteni · 7:00 Uhr · Yusuf", ...rendered,
+    corrected = await prisma.radioAsset.create({ data: { key, kind: "news", slot, title: "Türkçe Sabah Bülteni · 7:00 Uhr · Seyfullah", ...rendered,
       metadata: { ...rendered.metadata, remixedFrom: source.id, correctedAt: new Date().toISOString(), correction: "Turkish pronunciation and dry speech", originalModelCalls: m.modelCalls || [] } } });
   }
   if (!corrected.script?.startsWith(TURKISH_OPENING) || (corrected.metadata as { backgroundMusic?: boolean }).backgroundMusic !== false) throw new Error("Invalid corrected edition");

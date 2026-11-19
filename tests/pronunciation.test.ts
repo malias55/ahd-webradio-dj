@@ -169,18 +169,14 @@ test("actual ElevenLabs request uses normalized words and provider normalization
   } finally { globalThis.fetch = originalFetch; if (key === undefined) delete process.env.ELEVENLABS_API_KEY; else process.env.ELEVENLABS_API_KEY = key; }
 });
 
-test("the fixed Turkish recordings keep the station voice and their stored key; the news uses the presenter's voice", async () => {
-  const { createHash } = await import("node:crypto");
-  const { turkishStaticRecording, TURKISH_INTRO, TURKISH_OUTRO } = await import("../src/lib/radio/news");
-  const { presenterForHour, turkishStationVoice } = await import("../src/lib/radio/providers");
-  const cavit = "Q2IX97JeHBY3vNGzgM5s";
-  assert.equal(turkishStationVoice().voiceId, cavit);
-  assert.equal(presenterForHour(7).voiceId, "tOqnHSMt5y3uRBgH7e8J");
-  assert.equal(presenterForHour(21).name, "Yusuf");
-  // The key under which greeting and closing were stored before endings were joined.
-  for (const [role, text] of [["intro", TURKISH_INTRO], ["outro", TURKISH_OUTRO]] as const) {
-    const stored = createHash("sha256").update(JSON.stringify({ text, voice: cavit, model: "eleven_multilingual_v2" })).digest("hex").slice(0, 24);
-    assert.equal(turkishStaticRecording(role).key, `speech-static:tr:${role}:${stored}`);
-    assert.equal(turkishStaticRecording(role).voice, cavit);
-  }
+test("one voice reads the whole Turkish bulletin; fixed parts are stored per voice and delivery", async () => {
+  const { turkishStaticRecording } = await import("../src/lib/radio/news");
+  const { presenterForHour, voiceSettings, TURKISH_VOICE_SETTINGS } = await import("../src/lib/radio/providers");
+  assert.equal(presenterForHour(7).voiceId, "mF7tIc9VLrznhGooGjaT");
+  assert.equal(presenterForHour(21).name, "Seyfullah");
+  for (const role of ["intro", "outro"] as const) assert.equal(turkishStaticRecording(role).voice, "mF7tIc9VLrznhGooGjaT");
+  assert.notEqual(turkishStaticRecording("intro").key, turkishStaticRecording("outro").key);
+  assert.deepEqual(voiceSettings("tr", "standard", new Date()), TURKISH_VOICE_SETTINGS);
+  // German recordings keep their storage keys: same settings, same order.
+  assert.equal(JSON.stringify(voiceSettings("de", "standard", new Date())), '{"stability":0.65,"similarity_boost":0.75,"style":0.15,"use_speaker_boost":true}');
 });

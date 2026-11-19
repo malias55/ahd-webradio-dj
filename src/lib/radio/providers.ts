@@ -11,14 +11,8 @@ export function presenterForSlot(slot: Date) {
   return presenterForHour(stationTime(slot).hour);
 }
 export function presenterForHour(hour: number) {
-  if (hour === 7 || hour === 21) return { gender: "male" as const, name: "Yusuf", language: "tr" as const, voiceId: process.env.ELEVENLABS_TURKISH_VOICE_ID || "tOqnHSMt5y3uRBgH7e8J", assistant: "yapay zekâ haber sunucunuz" };
+  if (hour === 7 || hour === 21) return { gender: "male" as const, name: "Seyfullah", language: "tr" as const, voiceId: process.env.ELEVENLABS_TURKISH_VOICE_ID || "mF7tIc9VLrznhGooGjaT", assistant: "yapay zekâ haber sunucunuz" };
   return { gender: "male" as const, name: "Elias", language: "de" as const, voiceId: process.env.ELEVENLABS_MALE_VOICE_ID || "1h6gHcRvQugDNZgdAo9N", assistant: "Ihr KI-Nachrichtenassistent" };
-}
-// Opening, greeting and closing of the Turkish bulletin are fixed recordings
-// in the station's established voice (Cavit). The news itself is read by the
-// presenter above.
-export function turkishStationVoice() {
-  return { name: "Cavit", voiceId: process.env.ELEVENLABS_TURKISH_STATION_VOICE_ID || "Q2IX97JeHBY3vNGzgM5s" };
 }
 export function servicePresenter(slot = new Date()) {
   const defaultVoice = usesUpdatedBulletinAudio(slot) ? "NX39CipaoYitJ3sMwH5I" : "mjTSjCqHhkhULvdsy68o";
@@ -72,9 +66,18 @@ export async function germanVoice() {
 }
 
 export type SpeechDelivery = "standard" | "service";
+// The settings saved with the Turkish voice at ElevenLabs: its own unhurried
+// delivery, the way it sounds when it is auditioned there. Slower than the
+// previous voice, so the Turkish bulletin has a longer time limit (config.ts).
+export const TURKISH_VOICE_SETTINGS = { stability: 0.92, similarity_boost: 0.05, style: 0, use_speaker_boost: true, speed: 0.92 };
 export function serviceVoiceSettings(slot: Date) {
   const updated = usesUpdatedBulletinAudio(slot);
   return { stability: updated ? 0.48 : 0.4, similarity_boost: 0.75, style: updated ? 0.08 : 0.15, speed: updated ? 1.03 : 1.06, use_speaker_boost: true };
+}
+// One definition for the request and for the storage key of its recording.
+export function voiceSettings(language: "de" | "tr", delivery: SpeechDelivery, slot: Date) {
+  if (delivery === "service") return serviceVoiceSettings(slot);
+  return language === "tr" ? TURKISH_VOICE_SETTINGS : { stability: 0.65, similarity_boost: 0.75, style: 0.15, use_speaker_boost: true };
 }
 export async function speech(text: string, voiceId: string, language: "de" | "tr" = "de", delivery: SpeechDelivery = "standard", slot = new Date()) {
   assertFamilyContent(text);
@@ -88,7 +91,7 @@ export async function speech(text: string, voiceId: string, language: "de" | "tr
     // ordinal grammar. Turkish text without digits is sent as it is, because
     // the provider's rewriting separates names from their endings.
     apply_text_normalization: providerNormalization(prepared, language),
-    voice_settings: delivery === "service" ? serviceVoiceSettings(slot) : { stability: 0.65, similarity_boost: 0.75, style: 0.15, use_speaker_boost: true },
+    voice_settings: voiceSettings(language, delivery, slot),
   });
 }
 

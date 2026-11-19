@@ -33,9 +33,13 @@ export function isMusicHours(date = new Date()) {
   const { hour } = stationTime(date);
   return radioEnabled() && hour >= 7 && hour < 21;
 }
+// The Turkish voice reads at an unhurried pace. Its bulletin may run longer
+// than the German one, and the station stays on air for it after 21:00.
+export const TURKISH_NEWS_MAX_SECONDS = 370;
+export const TURKISH_NEWS_WINDOW_MINUTES = 7;
 export function isTurkishNewsWindow(date = new Date()) {
   const { hour, minute } = stationTime(date);
-  return radioEnabled() && newsAllowedOn(date) && (hour === 7 || hour === 21) && minute < 5;
+  return radioEnabled() && newsAllowedOn(date) && (hour === 7 || hour === 21) && minute < TURKISH_NEWS_WINDOW_MINUTES;
 }
 export function isOnAir(date = new Date()) { return isMusicHours(date) || isTurkishNewsWindow(date) || isHatimHours(date); }
 export function newsLanguage(slot: Date): "de" | "tr" { return [7, 21].includes(stationTime(slot).hour) ? "tr" : "de"; }
