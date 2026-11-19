@@ -77,6 +77,33 @@ test("dates, event times, years and roads have explicit spoken forms", () => {
   assert.equal(speechText("2024’ün", "tr"), "2024’ün", "suffixes requiring consonant changes are left to the provider normalizer");
 });
 
+test("Turkish case endings are joined to names that are read as written", () => {
+  const joined: [string, string][] = [
+    ["Cumhurbaşkanı Erdoğan'ın açıklaması", "Cumhurbaşkanı Erdoğanın açıklaması"],
+    ["Erdoğan’a göre Türkiye'nin kararı", "Erdoğana göre Türkiyenin kararı"],
+    ["Ankara'dan İstanbul'daki Meclis'te", "Ankaradan İstanbuldaki Mecliste"],
+    ["Berlin'de, Köln'de, Frankfurt'ta, Münih'te, Irak'a, Suriye'yle", "Berlinde, Kölnde, Frankfurtta, Münihte, Iraka, Suriyeyle"],
+    ["Dışişleri Bakanlığı'nın, Cumhurbaşkanlığı'ndan, Meclisi'nde", "Dışişleri Bakanlığının, Cumhurbaşkanlığından, Meclisinde"],
+    ["Fenerbahçe'nin, Galatasaray'ın, Beşiktaş'ın, Türkler'in", "Fenerbahçenin, Galatasarayın, Beşiktaşın, Türklerin"],
+    ["Autohaus Dörrschuck Radyo'dan merhaba. Almanya'dan", "Autohaus Dörşuk Radyodan merhaba. Almanyadan"],
+    ["Allah'ın selamı üzerinize olsun.", "Allahın selamı üzerinize olsun."],
+  ];
+  for (const [input, expected] of joined) {
+    assert.equal(speechText(input, "tr"), expected);
+    assert.equal(speechText(expected, "tr"), expected, "joining stays idempotent");
+  }
+  // The apostrophe stays where it keeps a differently pronounced stem intact.
+  for (const kept of [
+    "Google'ın", "Biden'ın", "Trump'ın", "Musk'ın", "Starmer'ın", // ending follows the pronunciation
+    "Renault'nun", "Mainz'da",                                    // buffer letter or voicing contradicts the spelling
+    "Washington'da", "Scholz'un", "Steinmeier'in", "Seattle'da",  // foreign spelling
+    "AB'nin", "ABD'de", "TBMM'ye", "NATO'nun",                    // acronyms
+    "Kur'an", "Kur'an'ı", "mes'ul", "Moody's", "O'Brien", "Côte d'Ivoire", "Kemal'in",
+  ]) assert.equal(speechText(kept, "tr"), kept);
+  assert.equal(speechText("TRT'nin ve 2024’ün", "tr"), "TERETE'nin ve 2024’ün");
+  assert.equal(speechText("Erdoğan'ın Rede in Türkiye's", "de"), "Erdoğan'ın Rede in Türkiye's", "German speech is unchanged");
+});
+
 test("large quantities and feed number formats do not round or change magnitude", () => {
   assert.equal(spokenNumber("1.234.567,08", "de"), "eine Million zweihundertvierunddreißigtausendfünfhundertsiebenundsechzig Komma null acht");
   assert.equal(spokenNumber("1.234.567,08", "tr"), "bir milyon iki yüz otuz dört bin beş yüz altmış yedi nokta sıfır sekiz");

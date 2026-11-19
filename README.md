@@ -188,6 +188,8 @@ python3 scripts/railway-local.py npx tsx scripts/radio-remix-example.ts <UUID-de
 
 Der Remix verwendet ausschließlich die dokumentierten Sprachintervalle einer trockenen deutschen Beispielausgabe; Texte, Quellen und ursprüngliche Wetter-/Verkehrsstände bleiben erhalten. Neue UUIDs dokumentieren Originaldatei und Mischung. Die kurze Vorschau liegt in `artifacts/uebergaenge-neu-hoerprobe.mp3`, die vollständige Ausgabe in `artifacts/nachrichten-mainz-de-sanfte-uebergaenge.mp3`.
 
+Türkische Kasusendungen nach Eigennamen: Die Schreibweise „Erdoğan'ın“ ließ die Stimme am Apostroph absetzen und die Endung als eigenes Wort lesen (Er-do-ğan | ın statt Er-do-ğa-nın). Der Sprechtext (`joinTurkishEndings` in `src/lib/radio/pronunciation.ts`) fügt die Endung deshalb an den Namen an: „Erdoğanın“, „Türkiyenin“, „Almanyada“, „Bakanlığının“. Das gilt nur für Namen, die so gelesen werden, wie sie geschrieben sind. Der Apostroph bleibt bei fremd ausgesprochenen Namen („Google'ın“, „Biden'ın“, „Renault'nun“, „Washington'da“), bei Abkürzungen („AB'nin“, „TERETE'nin“), bei Wörtern mit Apostroph im Wortinneren („Kur'an“) und bei Zahlen. Erkannt wird das an der Endung selbst: Sie muss nach Vokalharmonie, Bindekonsonant und Konsonantenhärtung zur Schreibung des Namens passen. Gespeicherte Texte und Quellen bleiben unverändert; Begrüßung und Abschluss werden mit dem neuen Sprechtext einmal neu vertont, der gesprochene Einstieg (`TURKISH_OPENING_VERSION`) bleibt unverändert.
+
 Türkische Klang- und Aussprachekorrekturen verwenden vorhandene, geprüfte Meldungen erneut. Nur geänderte Aussprache und noch fehlende statische Sprachbausteine benötigen neue TTS-Aufrufe; kein Textmodell-Aufruf:
 
 ```sh
