@@ -168,3 +168,19 @@ test("actual ElevenLabs request uses normalized words and provider normalization
     assert.equal(requests[1].language_code, "tr");
   } finally { globalThis.fetch = originalFetch; if (key === undefined) delete process.env.ELEVENLABS_API_KEY; else process.env.ELEVENLABS_API_KEY = key; }
 });
+
+test("the fixed Turkish recordings keep the station voice and their stored key; the news uses the presenter's voice", async () => {
+  const { createHash } = await import("node:crypto");
+  const { turkishStaticRecording, TURKISH_INTRO, TURKISH_OUTRO } = await import("../src/lib/radio/news");
+  const { presenterForHour, turkishStationVoice } = await import("../src/lib/radio/providers");
+  const cavit = "Q2IX97JeHBY3vNGzgM5s";
+  assert.equal(turkishStationVoice().voiceId, cavit);
+  assert.equal(presenterForHour(7).voiceId, "tOqnHSMt5y3uRBgH7e8J");
+  assert.equal(presenterForHour(21).name, "Yusuf");
+  // The key under which greeting and closing were stored before endings were joined.
+  for (const [role, text] of [["intro", TURKISH_INTRO], ["outro", TURKISH_OUTRO]] as const) {
+    const stored = createHash("sha256").update(JSON.stringify({ text, voice: cavit, model: "eleven_multilingual_v2" })).digest("hex").slice(0, 24);
+    assert.equal(turkishStaticRecording(role).key, `speech-static:tr:${role}:${stored}`);
+    assert.equal(turkishStaticRecording(role).voice, cavit);
+  }
+});

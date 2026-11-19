@@ -81,6 +81,16 @@ export function providerNormalization(spoken: string, language: "de" | "tr"): "o
   return language === "tr" && !needsProvider(spoken) ? "off" : "on";
 }
 
+// The fixed station recordings were voiced before endings were joined. Their
+// storage key is derived from this earlier form, so the approved recordings
+// stay in use instead of being voiced again.
+export function stationRecordingText(text: string) {
+  return spokenNumbers(text
+    .replace(/\b(?:Dörrschuck|Doerrschuck)\b/giu, "Dörşuk")
+    .replace(/(?<![\p{L}\p{N}])T\.?\s*R\.?\s*T\.?(?!\p{L})/giu, "TERETE")
+    .replace(/TERETE(?=\d)/g, "TERETE "), "tr");
+}
+
 // Normalize only the speaking copy; source material and values stay unchanged.
 export function speechText(text: string, language: "de" | "tr") {
   if (language !== "tr") return spokenNumbers(text, language);

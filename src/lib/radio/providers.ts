@@ -14,6 +14,12 @@ export function presenterForHour(hour: number) {
   if (hour === 7 || hour === 21) return { gender: "male" as const, name: "Yusuf", language: "tr" as const, voiceId: process.env.ELEVENLABS_TURKISH_VOICE_ID || "tOqnHSMt5y3uRBgH7e8J", assistant: "yapay zekâ haber sunucunuz" };
   return { gender: "male" as const, name: "Elias", language: "de" as const, voiceId: process.env.ELEVENLABS_MALE_VOICE_ID || "1h6gHcRvQugDNZgdAo9N", assistant: "Ihr KI-Nachrichtenassistent" };
 }
+// Opening, greeting and closing of the Turkish bulletin are fixed recordings
+// in the station's established voice (Cavit). The news itself is read by the
+// presenter above.
+export function turkishStationVoice() {
+  return { name: "Cavit", voiceId: process.env.ELEVENLABS_TURKISH_STATION_VOICE_ID || "Q2IX97JeHBY3vNGzgM5s" };
+}
 export function servicePresenter(slot = new Date()) {
   const defaultVoice = usesUpdatedBulletinAudio(slot) ? "NX39CipaoYitJ3sMwH5I" : "mjTSjCqHhkhULvdsy68o";
   return { gender: "female" as const, name: process.env.ELEVENLABS_SERVICE_VOICE_NAME || "Susanne", language: "de" as const, voiceId: process.env.ELEVENLABS_SERVICE_VOICE_ID || defaultVoice, assistant: "Ihre KI-Moderatorin für Wetter und Verkehr" };

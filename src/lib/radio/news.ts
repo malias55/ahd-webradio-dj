@@ -2,11 +2,11 @@ import { naturalRadioText, germanBrandingAllowed } from "./presentation";
 import { assertNewsCredits } from "./elevenlabs";
 import { FAMILY_CONTENT_POLICY, FAMILY_CONTENT_VERSION, familyContentAllowed, assertFamilyContent } from "./family";
 import { createHash } from "node:crypto";
-import { speechText, providerNormalization, TURKISH_PRONUNCIATION_VERSION, NUMBER_PRONUNCIATION_VERSION } from "./pronunciation";
+import { speechText, providerNormalization, stationRecordingText, TURKISH_PRONUNCIATION_VERSION, NUMBER_PRONUNCIATION_VERSION } from "./pronunciation";
 import { XMLParser } from "fast-xml-parser";
 import { load } from "cheerio";
 import { prisma } from "../prisma";
-import { edenJson, presenterForHour, presenterForSlot, servicePresenter, speech, serviceVoiceSettings, newsModelConfig, type ModelCall } from "./providers";
+import { edenJson, presenterForHour, presenterForSlot, servicePresenter, turkishStationVoice, speech, serviceVoiceSettings, newsModelConfig, type ModelCall } from "./providers";
 import { withJob } from "./store";
 import { mixDryBulletin, joinNewsParts, frameTurkishProgramme, appendNewsOutro, type Cue } from "./mix";
 import { bulletinOpenerAsset, turkishSignatureAsset, TURKISH_SIGNATURE_KEY, germanOutroAsset, GERMAN_OUTRO_KEY } from "./imaging";
@@ -34,7 +34,7 @@ export const TURKISH_NEWS_VERSION = "tr-daily-repeat-v13";
 // The invocation is identical every day: preserve Turkish spelling and language
 // and reuse its spoken audio instead of buying another TTS call per bulletin.
 export async function turkishInvocation() {
-  const voice = presenterForHour(7).voiceId;
+  const voice = turkishStationVoice().voiceId;
   const key = `invocation:${TURKISH_OPENING_VERSION}:${voice}`;
   await withJob(key, async () => {
     if (await prisma.radioAsset.findUnique({ where: { key }, select: { id: true } })) return;
@@ -47,12 +47,17 @@ export async function turkishInvocation() {
 }
 export const TURKISH_INTRO = "Autohaus Dörşuk Radyo'dan merhaba. Türkiye'den, Almanya'dan ve dünyadan seçtiğimiz haberleri dinliyorsunuz. Bu bülten yapay zekâ tarafından hazırlanmış ve seslendirilmiştir.";
 export const TURKISH_OUTRO = "Keyifli günler dileriz. Allah'ın selamı üzerinize olsun.";
-export async function turkishStaticSpeech(role: "intro" | "outro", example = false) {
-  const voice = presenterForHour(7).voiceId;
+// Greeting and closing stay the recordings already on air, in the station
+// voice. The key reproduces the one they were stored under.
+export function turkishStaticRecording(role: "intro" | "outro", example = false) {
+  const voice = turkishStationVoice().voiceId;
   const text = role === "outro" ? TURKISH_OUTRO : example ? TURKISH_INTRO.replace("Türkiye'den", "Bu, Türkçe sabah bültenimizin bir örneğidir. Türkiye'den") : TURKISH_INTRO;
   const model = process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2";
-  const hash = createHash("sha256").update(JSON.stringify({ text: speechText(text, "tr"), voice, model })).digest("hex").slice(0, 24);
-  const key = `speech-static:tr:${role}:${hash}`;
+  const hash = createHash("sha256").update(JSON.stringify({ text: stationRecordingText(text), voice, model })).digest("hex").slice(0, 24);
+  return { key: `speech-static:tr:${role}:${hash}`, voice, text, model };
+}
+export async function turkishStaticSpeech(role: "intro" | "outro", example = false) {
+  const { key, voice, text, model } = turkishStaticRecording(role, example);
   await withJob(key, async () => {
     if (await prisma.radioAsset.findUnique({ where: { key }, select: { id: true } })) return;
     const { normalizeAudio } = await import("./store");
