@@ -1,4 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import next from "next";
 import { parse } from "url";
 import { Server as SocketServer, type Socket } from "socket.io";
@@ -37,6 +39,11 @@ import { pushConfigForZone } from "./src/lib/serverActions";
 import { attachZoneNews, manualZoneSource, stopAllZoneNews } from "./src/lib/radio/zone-news";
 
 const dev = process.env.NODE_ENV !== "production";
+// The build the server runs. Open speaker pages compare it with the build they
+// were loaded from and reload once after a deployment. None in development.
+const APP_BUILD = dev ? undefined : (() => {
+  try { return readFileSync(join(process.cwd(), ".next", "BUILD_ID"), "utf8").trim() || undefined; } catch { return undefined; }
+})();
 const port = Number(process.env.PORT || 3000);
 const app = next({ dev });
 const handle = app.getRequestHandler();
@@ -159,6 +166,7 @@ async function handleCurrentSource(req: IncomingMessage, res: ServerResponse) {
     body.speakerStatus = speakerStatusForZone(zoneId);
     body.speakerDiagnostics = speakerDiagnosticsForZone(zoneId);
   }
+  body.build = APP_BUILD;
   res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-cache" }).end(JSON.stringify(body));
 }
 

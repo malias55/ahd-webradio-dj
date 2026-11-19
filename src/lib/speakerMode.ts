@@ -8,6 +8,7 @@ const STALL_TIMEOUT_MS = 15_000;
 const SELECTION_KEY = "ahd:speaker-zone:v1";
 const TRIM_KEY = "ahd:speaker-trim-ms:v1";
 const TIME_URL = "/api/speaker-time";
+const RELOADED_KEY = "ahd:reloaded-for-build:v1";
 
 export type SpeakerPlaybackStatus = "waiting" | "connecting" | "idle" | "playing" | "buffering" | "reconnecting" | "blocked" | "paused" | "unauthorized";
 
@@ -22,7 +23,7 @@ type State = {
   live: boolean;
   volume: number;
 };
-type ResolvedSource = Omit<State, "zoneId">;
+type ResolvedSource = Omit<State, "zoneId"> & { build?: string };
 
 const audioElements = new Map<string, HTMLAudioElement>();
 const retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -138,7 +139,7 @@ async function resolveSource(zoneId: string): Promise<ResolvedSource | null> {
         : data.url
           ? [{ url: data.url }]
           : [];
-    return { sources, continuous, upstreamStatus: ["waiting", "buffering", "reconnecting"].includes(data.speakerStatus) ? data.speakerStatus : undefined, live: data.live ?? false, volume: vol };
+    return { sources, continuous, upstreamStatus: ["waiting", "buffering", "reconnecting"].includes(data.speakerStatus) ? data.speakerStatus : undefined, live: data.live ?? false, volume: vol, build: typeof data.build === "string" ? data.build : undefined };
   } catch { return null; }
   finally {
     clearTimeout(timeout);
@@ -303,6 +304,26 @@ function applyState(session: State, next: ResolvedSource | null) {
 
   setAudioVolume(nextVol);
   notify();
+  reloadForNewBuild(session, next.build);
+}
+
+// A deployment replaces the server, not the code of pages already open. A
+// speaker therefore reloads itself once per new build; the remembered zone
+// resumes on the new page. Not during an announcement or a pause.
+function reloadForNewBuild(session: State, build: string | undefined) {
+  // Inlined into the page at build time; absent in development and tests. An
+  // update check must never break playback where no `process` exists at all.
+  let pageBuild: string | undefined;
+  try { pageBuild = process.env.NODE_ENV === "production" ? process.env.NEXT_PUBLIC_AHD_BUILD : undefined; } catch { return; }
+  if (!pageBuild || !build || build === pageBuild || userPaused || session.live) return;
+  try {
+    // Never reload in a loop if the reloaded page still reports another build.
+    if (sessionStorage.getItem(RELOADED_KEY) === build) return;
+    // Without the remembered zone the new page would not resume playback.
+    if (sessionStorage.getItem(SELECTION_KEY) !== session.zoneId) return;
+    sessionStorage.setItem(RELOADED_KEY, build);
+  } catch { return; }
+  globalThis.location?.reload();
 }
 
 function playAudio(key: string, el: HTMLAudioElement) {

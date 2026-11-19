@@ -411,3 +411,31 @@ test("starting news on the speaking device switches the source on the running pl
   assert.equal(activeSpeakerZone(), "showroom");
   await advance(2000); assert.equal(calls, before + 2, "polling continues on one schedule");
 });
+
+test("a speaker reloads once onto a newly deployed build and never in a loop", async () => {
+  const env = { mode: process.env.NODE_ENV, build: process.env.NEXT_PUBLIC_AHD_BUILD };
+  let reloads = 0;
+  Object.defineProperty(globalThis, "location", { configurable: true, value: { reload: () => { reloads++; } } });
+  Object.assign(process.env, { NODE_ENV: "production", NEXT_PUBLIC_AHD_BUILD: "build-a" });
+  try {
+    let build = "build-a", live = false;
+    reply = async () => Response.json({ sources: [{ url: "/radio.mp3" }], url: "/radio.mp3", volume: 80, live, build });
+    await startSpeakerMode("showroom");
+    await advance(4000);
+    assert.equal(reloads, 0, "same build: no reload");
+
+    build = "build-b"; live = true;
+    await advance(2000);
+    assert.equal(reloads, 0, "an announcement is never cut by an update");
+
+    live = false;
+    await advance(2000);
+    assert.equal(reloads, 1, "new build: reload once");
+    await advance(10_000);
+    assert.equal(reloads, 1, "the same new build never triggers another reload");
+  } finally {
+    (process.env as Record<string, string | undefined>).NODE_ENV = env.mode;
+    if (env.build === undefined) delete process.env.NEXT_PUBLIC_AHD_BUILD; else process.env.NEXT_PUBLIC_AHD_BUILD = env.build;
+    Reflect.deleteProperty(globalThis, "location");
+  }
+});
