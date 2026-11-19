@@ -5,7 +5,7 @@ import * as Popover from "@radix-ui/react-popover";
 import { Newspaper, Square } from "lucide-react";
 import type { Zone } from "@/types";
 import { newsAllowedOn } from "@/lib/radio/config";
-import { activeSpeakerZone, startSpeakerMode, stopSpeakerMode } from "@/lib/speakerMode";
+import { activeSpeakerZone, refreshSpeakerMode } from "@/lib/speakerMode";
 
 const labels = { tr: "Türkische Nachrichten", de: "Deutsche Nachrichten" };
 type Language = keyof typeof labels;
@@ -37,10 +37,9 @@ export function ZoneNewsControls({ zone, busy, onChange }: { zone: Zone; busy: b
       setActive(stop ? null : await response.json());
       setChoice(null);
       if (!stop) requestAnimationFrame(() => stopButton.current?.focus());
-      if (activeSpeakerZone() === zone.id) {
-        stopSpeakerMode();
-        void startSpeakerMode(zone.id);
-      }
+      // Never restart this device's speaker here: that tore down the playing
+      // stream and its audio element. The source changes on the running player.
+      if (activeSpeakerZone() === zone.id) refreshSpeakerMode();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Die Verbindung ist fehlgeschlagen.");
     } finally {

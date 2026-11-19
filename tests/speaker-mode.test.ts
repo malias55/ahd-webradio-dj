@@ -1,6 +1,6 @@
 import test, { beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { startSpeakerMode, stopSpeakerMode, activeSpeakerZone, activeSpeakerHasSource, activeSpeakerPlaybackStatus, resumeSpeakerPlayback, restoreSpeakerMode, suspendSpeakerMode, attachSpeakerLifecycle } from "../src/lib/speakerMode";
+import { startSpeakerMode, stopSpeakerMode, refreshSpeakerMode, activeSpeakerZone, activeSpeakerHasSource, activeSpeakerPlaybackStatus, resumeSpeakerPlayback, restoreSpeakerMode, suspendSpeakerMode, attachSpeakerLifecycle } from "../src/lib/speakerMode";
 
 class FakeAudio extends EventTarget {
   static instances: FakeAudio[] = [];
@@ -395,4 +395,19 @@ test("the built-in station uses the synchronized player on this page's own origi
     globalThis.fetch = statusFetch; URL.createObjectURL = createObjectURL; URL.revokeObjectURL = revokeObjectURL;
     Reflect.deleteProperty(scope, "MediaSource");
   }
+});
+
+test("starting news on the speaking device switches the source on the running player", async () => {
+  await startSpeakerMode("showroom");
+  const audio = FakeAudio.instances[0];
+  assert.equal(audio.src, "/radio.mp3"); assert.equal(audio.paused, false);
+  reply = async () => source("/news.mp3");
+  const before = calls;
+  refreshSpeakerMode(); await flush();
+  assert.equal(calls, before + 1, "the source is checked at once, not at the next poll");
+  assert.equal(FakeAudio.instances.length, 1, "no new audio element");
+  assert.equal(audio.src, "/news.mp3");
+  assert.equal(audio.paused, false);
+  assert.equal(activeSpeakerZone(), "showroom");
+  await advance(2000); assert.equal(calls, before + 2, "polling continues on one schedule");
 });

@@ -368,6 +368,17 @@ export async function startSpeakerMode(zoneId: string) {
   await poll(session);
 }
 
+// Checks the zone's source now instead of at the next poll, without touching
+// the running player. The server-routed stream switches to news on the same
+// connection; a direct source is swapped on the already-authorized element.
+export function refreshSpeakerMode() {
+  const session = state;
+  // While a status request is under way, its answer is at most moments away.
+  if (!session || !pollTimer) return;
+  clearTimeout(pollTimer); pollTimer = null;
+  void poll(session);
+}
+
 export function stopSpeakerMode() {
   try { sessionStorage.removeItem(SELECTION_KEY); } catch { /* Playback still stops without storage. */ }
   suspendSpeakerMode();
