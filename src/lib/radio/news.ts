@@ -6,7 +6,7 @@ import { speechText, providerNormalization, TURKISH_PRONUNCIATION_VERSION, NUMBE
 import { XMLParser } from "fast-xml-parser";
 import { load } from "cheerio";
 import { prisma } from "../prisma";
-import { edenJson, presenterForHour, presenterForSlot, servicePresenter, speech, voiceSettings, serviceVoiceSettings, newsModelConfig, type ModelCall } from "./providers";
+import { edenJson, presenterForHour, presenterForSlot, servicePresenter, speech, ttsModel, voiceSettings, serviceVoiceSettings, newsModelConfig, type ModelCall } from "./providers";
 import { withJob } from "./store";
 import { mixDryBulletin, joinNewsParts, frameTurkishProgramme, appendNewsOutro, type Cue } from "./mix";
 import { bulletinOpenerAsset, turkishSignatureAsset, TURKISH_SIGNATURE_KEY, germanOutroAsset, GERMAN_OUTRO_KEY } from "./imaging";
@@ -37,7 +37,7 @@ export const TURKISH_NEWS_VERSION = "tr-daily-repeat-v13";
 // settings voice the fixed parts again, once.
 function turkishDelivery() {
   const voice = presenterForHour(7).voiceId;
-  return { voice, delivery: createHash("sha256").update(JSON.stringify(voiceSettings("tr", "standard", new Date()))).digest("hex").slice(0, 8) };
+  return { voice, delivery: createHash("sha256").update(JSON.stringify({ model: ttsModel("tr"), settings: voiceSettings("tr", "standard", new Date()) ?? null })).digest("hex").slice(0, 8) };
 }
 export async function turkishInvocation() {
   const { voice, delivery } = turkishDelivery();
@@ -56,7 +56,7 @@ export const TURKISH_OUTRO = "Keyifli günler dileriz. Allah'ın selamı üzerin
 export function turkishStaticRecording(role: "intro" | "outro", example = false) {
   const { voice, delivery } = turkishDelivery();
   const text = role === "outro" ? TURKISH_OUTRO : example ? TURKISH_INTRO.replace("Türkiye'den", "Bu, Türkçe sabah bültenimizin bir örneğidir. Türkiye'den") : TURKISH_INTRO;
-  const model = process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2";
+  const model = ttsModel("tr");
   const hash = createHash("sha256").update(JSON.stringify({ text: speechText(text, "tr"), voice, model, delivery })).digest("hex").slice(0, 24);
   return { key: `speech-static:tr:${role}:${hash}`, voice, text, model };
 }
@@ -275,7 +275,7 @@ export async function bulletinForSlot(slot: Date) {
 }
 
 async function newsSegmentSpeech(text: string, voiceId: string, language: "de" | "tr", edition: Date, delivery: "standard" | "service" = "standard") {
-  const spoken = speechText(naturalRadioText(text), language), model = process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2";
+  const spoken = speechText(naturalRadioText(text), language), model = ttsModel(language);
   const settings = voiceSettings(language, delivery, edition);
   // Do not reuse an old auto-normalized recording for grammar-dependent
   // numerals that intentionally remain as digits in the speaking copy.
@@ -449,7 +449,7 @@ export async function renderBulletin(slot: Date, content: EditorialContent, exam
       authorModel: content.modelCalls.filter(c => c.purpose === "author" && c.status !== "failed").at(-1)?.resolvedModel || newsModelConfig().primary, reviewModel: content.modelCalls.filter(c => c.purpose === "review" && c.status !== "failed").at(-1)?.resolvedModel || newsModelConfig().primary,
       modelPolicy: newsModelConfig(),
       openingVersion: language === "tr" ? TURKISH_OPENING_VERSION : null, pronunciationVersion: language === "tr" ? TURKISH_PRONUNCIATION_VERSION : null, numberPronunciationVersion: NUMBER_PRONUNCIATION_VERSION,
-      ttsModel: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2", imagingVersion: language === "tr" ? TURKISH_SIGNATURE_KEY : null, openerAssetId, outroAssetId, dividerVersion: null, storyTransitions: "speech-pauses-v1", timeline,
+      ttsModel: ttsModel(language), imagingVersion: language === "tr" ? TURKISH_SIGNATURE_KEY : null, openerAssetId, outroAssetId, dividerVersion: null, storyTransitions: "speech-pauses-v1", timeline,
       omittedStories,
       region: language === "tr" ? "Türkiye / Almanya" : process.env.NEWS_REGION || "Mainz und Rheinhessen" } };
 }

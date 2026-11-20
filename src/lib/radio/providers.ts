@@ -66,11 +66,15 @@ export async function germanVoice() {
 }
 
 export type SpeechDelivery = "standard" | "service";
-// Seyfullah reads slowly by nature: measured on the station greeting, 10.6
-// characters per second with the voice's own settings and 11.8 with neutral
-// ones, against 15.4 for the previous voice. The provider's highest speed
-// brings him to a normal news pace (about 16 characters per second).
-export const TURKISH_VOICE_SETTINGS = { stability: 0.6, similarity_boost: 0.75, style: 0, use_speaker_boost: true, speed: 1.2 };
+// The Turkish bulletin is read the way the voice sounds at ElevenLabs: with the
+// current model and the voice's own saved settings, none sent from here. With
+// eleven_multilingual_v2 this voice stopped for up to a second inside
+// sentences ("Temsilciler Meclisi … Dış İlişkiler"); eleven_v4 reads the same
+// stories without such pauses, at about 14 characters per second.
+export const TURKISH_TTS_MODEL = "eleven_v4";
+export function ttsModel(language: "de" | "tr") {
+  return language === "tr" ? TURKISH_TTS_MODEL : process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2";
+}
 export function serviceVoiceSettings(slot: Date) {
   const updated = usesUpdatedBulletinAudio(slot);
   return { stability: updated ? 0.48 : 0.4, similarity_boost: 0.75, style: updated ? 0.08 : 0.15, speed: updated ? 1.03 : 1.06, use_speaker_boost: true };
@@ -78,21 +82,22 @@ export function serviceVoiceSettings(slot: Date) {
 // One definition for the request and for the storage key of its recording.
 export function voiceSettings(language: "de" | "tr", delivery: SpeechDelivery, slot: Date) {
   if (delivery === "service") return serviceVoiceSettings(slot);
-  return language === "tr" ? TURKISH_VOICE_SETTINGS : { stability: 0.65, similarity_boost: 0.75, style: 0.15, use_speaker_boost: true };
+  return language === "tr" ? undefined : { stability: 0.65, similarity_boost: 0.75, style: 0.15, use_speaker_boost: true };
 }
 export async function speech(text: string, voiceId: string, language: "de" | "tr" = "de", delivery: SpeechDelivery = "standard", slot = new Date()) {
   assertFamilyContent(text);
   const spoken = naturalRadioText(text);
   if (!spoken) throw new Error("Kein verwendbarer Radiotext");
-  const prepared = speechText(spoken, language);
+  const prepared = speechText(spoken, language), settings = voiceSettings(language, delivery, slot);
   return eleven(`/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`, {
-    text: prepared, model_id: process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2", language_code: language,
+    text: prepared, model_id: ttsModel(language), language_code: language,
     // Explicit German/Turkish words anchor the language even for Multilingual
     // v2 (which ignores language_code); the provider normalizes the remaining
     // ordinal grammar. Turkish text without digits is sent as it is, because
     // the provider's rewriting separates names from their endings.
     apply_text_normalization: providerNormalization(prepared, language),
-    voice_settings: voiceSettings(language, delivery, slot),
+    // Without voice_settings the provider uses the settings saved with the voice.
+    ...(settings ? { voice_settings: settings } : {}),
   });
 }
 

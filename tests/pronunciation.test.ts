@@ -171,12 +171,15 @@ test("actual ElevenLabs request uses normalized words and provider normalization
 
 test("one voice reads the whole Turkish bulletin; fixed parts are stored per voice and delivery", async () => {
   const { turkishStaticRecording } = await import("../src/lib/radio/news");
-  const { presenterForHour, voiceSettings, TURKISH_VOICE_SETTINGS } = await import("../src/lib/radio/providers");
+  const { presenterForHour, voiceSettings, ttsModel } = await import("../src/lib/radio/providers");
   assert.equal(presenterForHour(7).voiceId, "mF7tIc9VLrznhGooGjaT");
   assert.equal(presenterForHour(21).name, "Seyfullah");
   for (const role of ["intro", "outro"] as const) assert.equal(turkishStaticRecording(role).voice, "mF7tIc9VLrznhGooGjaT");
   assert.notEqual(turkishStaticRecording("intro").key, turkishStaticRecording("outro").key);
-  assert.deepEqual(voiceSettings("tr", "standard", new Date()), TURKISH_VOICE_SETTINGS);
+  // Turkish: current model, the voice's own saved settings (none sent).
+  assert.equal(ttsModel("tr"), "eleven_v4");
+  assert.equal(voiceSettings("tr", "standard", new Date()), undefined);
+  assert.equal(ttsModel("de"), process.env.ELEVENLABS_TTS_MODEL || "eleven_multilingual_v2");
   // German recordings keep their storage keys: same settings, same order.
   assert.equal(JSON.stringify(voiceSettings("de", "standard", new Date())), '{"stability":0.65,"similarity_boost":0.75,"style":0.15,"use_speaker_boost":true}');
 });
