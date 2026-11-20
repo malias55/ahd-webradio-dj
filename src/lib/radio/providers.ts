@@ -66,10 +66,11 @@ export async function germanVoice() {
 }
 
 export type SpeechDelivery = "standard" | "service";
-// The settings saved with the Turkish voice at ElevenLabs: its own unhurried
-// delivery, the way it sounds when it is auditioned there. Slower than the
-// previous voice, so the Turkish bulletin has a longer time limit (config.ts).
-export const TURKISH_VOICE_SETTINGS = { stability: 0.92, similarity_boost: 0.05, style: 0, use_speaker_boost: true, speed: 0.92 };
+// Seyfullah reads slowly by nature: measured on the station greeting, 10.6
+// characters per second with the voice's own settings and 11.8 with neutral
+// ones, against 15.4 for the previous voice. The provider's highest speed
+// brings him to a normal news pace (about 16 characters per second).
+export const TURKISH_VOICE_SETTINGS = { stability: 0.6, similarity_boost: 0.75, style: 0, use_speaker_boost: true, speed: 1.2 };
 export function serviceVoiceSettings(slot: Date) {
   const updated = usesUpdatedBulletinAudio(slot);
   return { stability: updated ? 0.48 : 0.4, similarity_boost: 0.75, style: updated ? 0.08 : 0.15, speed: updated ? 1.03 : 1.06, use_speaker_boost: true };
