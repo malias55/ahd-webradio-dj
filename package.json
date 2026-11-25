@@ -19,7 +19,7 @@
     "fast-xml-parser": "^5.11.2",
     "jose": "^6.2.2",
     "lucide-react": "^1.8.0",
-    "next": "^16.4.3",
+    "next": "^16.4.6",
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "socket.io": "^4.8.1",
