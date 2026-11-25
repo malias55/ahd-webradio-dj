@@ -9,7 +9,7 @@ import { presenterForSlot, editorialConfigured } from "./providers";
 import { prepareNews, bulletinForSlot, isBulletinRepeat, usesSlotUpdates, NEWS_REFRESH_LEAD_MS, GERMAN_NEWS_VERSION } from "./news";
 import { stationIdAsset, IMAGING_VERSION } from "./imaging";
 import { trackPlayback } from "./audit";
-import { NEWS_PLAYBACK_CODEC } from "./playback-level";
+import { NEWS_PLAYBACK_CODEC, musicFilter } from "./playback-level";
 import { isMusicTrack, musicInRotation, musicRotationEnabled, musicSeason, buildMusicQueue } from "./music-policy";
 import { MUSIC_FADE_SECONDS, musicPlayBlockedReason } from "./music-controls";
 
@@ -73,6 +73,12 @@ function stopTrack() {
   proc?.kill("SIGKILL");
 }
 
+// A fade continues the current track at the level it was playing at.
+function fadeOutFilter(kind: string, duration: number) {
+  const fade = `afade=t=out:st=0:d=${duration}:curve=hsin`;
+  return kind === "music" ? musicFilter(fade) : fade;
+}
+
 function silenceInput(seconds: number) {
   return [...realtime(), "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", String(seconds), ...ENCODE_MP3];
 }
@@ -87,7 +93,8 @@ async function play(item: Item | null, options: PlayOptions = {}) {
   if (revision !== state.revision || !isOnAir() || state.shutdown) return;
   const fadeIn = item?.kind === "music" && state.fadeInNextMusic;
   const codec = item?.kind === "news" ? NEWS_PLAYBACK_CODEC
-    : fadeIn ? ["-af", `afade=t=in:d=${FADE_SECONDS}:curve=hsin`, ...ENCODE_MP3] : ["-c:a", "copy"];
+    : item?.kind === "music" ? ["-af", musicFilter(fadeIn ? `afade=t=in:d=${FADE_SECONDS}:curve=hsin` : undefined), ...ENCODE_MP3]
+    : ["-c:a", "copy"];
   const input = options.input ?? (file ? [...realtime(), "-i", file, ...codec] : silenceInput(10));
   const proc = spawn(/* turbopackIgnore: true */ process.env.FFMPEG_PATH || "ffmpeg", ["-hide_banner", "-loglevel", "error", "-nostdin", ...input,
     "-vn", "-id3v2_version", "0", "-write_xing", "0", "-flush_packets", "1", "-f", "mp3", "pipe:1"], { stdio: ["ignore", "pipe", "pipe"] });
@@ -174,7 +181,7 @@ async function fadeCurrentMusic() {
   const duration = Math.min(MUSIC_FADE_SECONDS, state.playing.duration - offset);
   if (duration <= 0) { stopTrack(); return true; }
   return playTransitionStage(null, { input: [...realtime(), "-ss", String(offset), "-i", file, "-t", String(duration),
-    "-af", `afade=t=out:st=0:d=${duration}:curve=hsin`, ...ENCODE_MP3] });
+    "-af", fadeOutFilter(state.playing.kind, duration), ...ENCODE_MP3] });
 }
 
 export async function playMusicNow(id: string) {
@@ -247,7 +254,7 @@ async function playNews(news: Item, slot: Date) {
         const duration = Math.min(FADE_SECONDS, state.playing.duration - offset);
         if (duration > 0) {
           const input = [...realtime(), "-ss", String(offset), "-i", file, "-t", String(duration),
-            "-af", `afade=t=out:st=0:d=${duration}:curve=hsin`, ...ENCODE_MP3];
+            "-af", fadeOutFilter(state.playing.kind, duration), ...ENCODE_MP3];
           if (!await playTransitionStage(null, { input })) return;
         }
       }
