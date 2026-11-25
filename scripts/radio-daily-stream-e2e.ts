@@ -114,9 +114,10 @@ async function main(){
   console.log(JSON.stringify({nightStart:'22:00',bytes:nightAudio.length,persistedOffset:progress.offsetSeconds}));
   const nextDay = stationTime(new Date(stationHour(day,22).getTime()+8*3600000)).date;
   await db.hatimProgress.update({where:{id:HATIM_ID},data:{surah:1,offsetSeconds:17,completedLoops:0}});
-  const beforeCutoff = new Date(stationHour(nextDay,4).getTime()-20000);
+  // Room for Euzu, Besmele, a few verses and Sadakallahulazim before 04:00.
+  const beforeCutoff = new Date(stationHour(nextDay,4).getTime()-60000);
   await bootNight(beforeCutoff);
-  const ending = await captureStream(24000); // stream closes itself at 04:00
+  const ending = await captureStream(64000); // stream closes itself at 04:00
   const offAir = await fetch(origin+'/api/health').then(r=>r.json());
   assert.equal(offAir.radio.onAir,false);
   assert.equal((await fetch(origin+'/api/radio/stream')).status,503);

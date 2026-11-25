@@ -3,10 +3,14 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import type { ChildProcess } from "node:child_process";
-import { HatimPlayer, HATIM_CHAPTERS, hatimSegment, nextHatimCursor, type HatimCursor } from "../src/lib/radio/hatim";
+import { spawnSync } from "node:child_process";
+import { HatimPlayer, HATIM_CHAPTERS, HATIM_CLIP_SECONDS, hatimClipFile, hatimOpening, hatimSegment, nextHatimCursor, type HatimClip, type HatimCursor } from "../src/lib/radio/hatim";
 import { hatimWindowEnd, isHatimHours, stationHour } from "../src/lib/radio/config";
 
 const chapters = [1, 2].map(surah => ({ surah, name: "Test", verses: [[1, 0, 10], [2, 10, 25], [3, 25, 40]] }));
+const OPENING = HATIM_CLIP_SECONDS.euzu + HATIM_CLIP_SECONDS.besmele;
+const at = (seconds: number) => `out_time_us=${Math.round(seconds * 1_000_000)}\n`;
+const clipsIn = (args: string[]) => args.filter(arg => arg.endsWith(".flac")).map(arg => arg.split("/").at(-1));
 const settle = () => new Promise<void>(resolve => setImmediate(resolve));
 function fixture(initial: HatimCursor = { surah: 1, offsetSeconds: 17, completedLoops: 0 }) {
   let now = stationHour("2026-11-12", 22), saved = { ...initial };
@@ -63,43 +67,95 @@ test("progress comes from encoded audio; shutdown and restart resume the unfinis
   const f = fixture(), player = new HatimPlayer(f.deps);
   await player.tick();
   assert.equal(f.processes[0].args[f.processes[0].args.indexOf("-ss") + 1], "10");
-  f.processes[0].stdio[3].write("out_time_us=9000000\n");
+  assert.deepEqual(clipsIn(f.processes[0].args), ["euzu.flac", "besmele.flac"], "a mid-chapter start opens with Euzu and Besmele");
+  f.processes[0].stdio[3].write(at(OPENING - 1));
+  f.processes[0].stdio[3].write(at(OPENING + 9));
   await player.stop();
   assert.equal(f.saved.offsetSeconds, 19);
   f.processes[0].stdout.write(Buffer.from("late audio"));
   assert.equal(f.chunks.length, 0, "stopped processes cannot publish stale audio");
   const restarted = new HatimPlayer(f.deps); await restarted.tick();
   assert.equal(f.processes[1].args[f.processes[1].args.indexOf("-ss") + 1], "10");
+  assert.deepEqual(clipsIn(f.processes[1].args), ["euzu.flac", "besmele.flac"], "a restart opens again");
   f.processes[1].emit("close", 0); await settle();
   assert.deepEqual(f.saved, { surah: 2, offsetSeconds: 0, completedLoops: 0 });
   await restarted.tick(); f.processes[2].emit("close", 0); await settle();
+  assert.deepEqual(clipsIn(f.processes[2].args), [], "the next chapter of the same session continues without an opening");
+  assert.ok(f.processes[2].args.includes("-re"));
   assert.deepEqual(f.saved, { surah: 1, offsetSeconds: 0, completedLoops: 1 });
   await restarted.stop();
 });
 
 test("night cutoff pads silence and resumes at the next verse the following night", async () => {
   const f = fixture(), player = new HatimPlayer(f.deps);
-  f.setNow(new Date("2026-11-13T02:59:40Z")); // 03:59:40 Berlin
+  f.setNow(new Date("2026-11-13T02:59:10Z")); // 03:59:10 Berlin, 50 s left
   await player.tick();
-  assert.ok(f.processes[0].args.includes("atrim=duration=15,apad"));
-  f.processes[0].stdio[3].write("out_time_us=20000000\n");
+  const args = f.processes[0].args, graph = args[args.indexOf("-filter_complex") + 1];
+  assert.deepEqual(clipsIn(args), ["euzu.flac", "besmele.flac", "sadakallahulazim.flac"], "the last verse that fits is followed by Sadakallahulazim");
+  assert.ok(graph.includes("atrim=duration=15,") && graph.includes("concat=n=4") && graph.endsWith("apad,arealtime[out]"));
+  assert.equal(args[args.indexOf("-t") + 1], "50");
+  assert.ok(!args.includes("-re"), "the joined programme is paced once, after joining");
+  f.processes[0].stdio[3].write(at(OPENING + 20));
+  f.processes[0].stdio[3].write(at(45));
   f.processes[0].emit("close", 0); await settle();
   assert.equal(f.saved.offsetSeconds, 25, "silent padding does not advance the Quran");
   await player.tick(); assert.equal(f.processes.length, 1);
   f.setNow(stationHour("2026-11-13", 4)); await player.tick(); assert.equal(f.processes.length, 1);
   f.setNow(stationHour("2026-11-13", 22)); await player.tick();
   assert.equal(f.processes[1].args[f.processes[1].args.indexOf("-ss") + 1], "25");
+  assert.deepEqual(clipsIn(f.processes[1].args), ["euzu.flac", "besmele.flac"], "the next night opens again");
   await player.stop();
+});
+
+test("a chapter that ends just before 04:00 is still closed with Sadakallahulazim", async () => {
+  const f = fixture({ surah: 1, offsetSeconds: 0, completedLoops: 0 }), player = new HatimPlayer(f.deps);
+  f.setNow(new Date("2026-11-13T02:58:00Z")); // 120 s left, the 41 s chapter fits
+  await player.tick();
+  assert.deepEqual(clipsIn(f.processes[0].args), [], "Al-Fatiha's own recording already opens with Euzu and Besmele");
+  f.processes[0].emit("close", 0); await settle();
+  f.setNow(new Date("2026-11-13T02:59:45Z")); await player.tick(); // 15 s left: no further verse fits
+  const args = f.processes[1].args;
+  assert.deepEqual(clipsIn(args), ["sadakallahulazim.flac"]);
+  assert.ok(!args.includes("-ss"), "no verse of the next chapter is started");
+  assert.equal(args[args.indexOf("-t") + 1], "15");
+  f.processes[1].emit("close", 0); await settle();
+  assert.deepEqual(f.saved, { surah: 2, offsetSeconds: 0, completedLoops: 0 });
+  await player.stop();
+});
+
+test("too little time for a verse plays silence without opening or closing", async () => {
+  const f = fixture(), player = new HatimPlayer(f.deps);
+  f.setNow(new Date("2026-11-13T02:59:40Z")); await player.tick();
+  assert.deepEqual(clipsIn(f.processes[0].args), []);
+  assert.ok(f.processes[0].args.includes("anullsrc=r=44100:cl=stereo"));
+  await player.stop();
+});
+
+test("Euzu and Besmele complete what each chapter recording lacks", () => {
+  assert.deepEqual(hatimOpening(1, 0), [], "Al-Fatiha's file has both");
+  assert.deepEqual(hatimOpening(9, 0), [], "At-Tawba's file has Euzu, and no Besmele belongs there");
+  assert.deepEqual(hatimOpening(2, 0), ["euzu"], "other files open with the Besmele only");
+  assert.deepEqual(hatimOpening(2, 400), ["euzu", "besmele"]);
+  assert.deepEqual(hatimOpening(9, 400), ["euzu"]);
+});
+
+test("clip lengths match the recordings", () => {
+  for (const clip of Object.keys(HATIM_CLIP_SECONDS) as HatimClip[]) {
+    const probe = spawnSync(process.env.FFPROBE_PATH || "ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", hatimClipFile(clip)], { encoding: "utf8" });
+    assert.equal(probe.status, 0, clip);
+    assert.ok(Math.abs(Number(probe.stdout) - HATIM_CLIP_SECONDS[clip]) < 0.05, `${clip}: ${probe.stdout}`);
+  }
 });
 
 test("decoder failure keeps progress and retries without skipping the unfinished verse", async () => {
   const f = fixture(), player = new HatimPlayer(f.deps); await player.tick();
-  f.processes[0].stdio[3].write("out_time_us=7000000\n");
+  f.processes[0].stdio[3].write(at(OPENING + 7));
   f.processes[0].emit("close", 1); await settle();
   assert.equal(f.saved.surah, 1); assert.equal(f.saved.offsetSeconds, 17); assert.equal(f.errors.length, 1);
   await player.tick(); assert.equal(f.processes.length, 1);
   f.setNow(new Date(stationHour("2026-11-12", 22).getTime() + 11000)); await player.tick();
-  assert.equal(f.processes[1].args[f.processes[1].args.indexOf("-ss") + 1], "10"); await player.stop();
+  assert.equal(f.processes[1].args[f.processes[1].args.indexOf("-ss") + 1], "10");
+  assert.deepEqual(clipsIn(f.processes[1].args), ["euzu.flac", "besmele.flac"], "after a break the recitation opens again"); await player.stop();
 });
 
 test("a late download cannot start playback after shutdown or after 04:00", async () => {
